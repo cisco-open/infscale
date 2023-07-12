@@ -1,6 +1,7 @@
 import torch
-import deepspeed
+from torchsummary import summary
 import json
+from functools import partial
 from deepspeed.profiling.flops_profiler import FlopsProfiler, num_to_string, number_to_string, macs_to_string, params_to_string, duration_to_string, flops_to_string
 from deepspeed.profiling.flops_profiler import get_module_flops, get_module_duration, get_module_macs
 
@@ -69,20 +70,25 @@ def json_dump_model_aggregated_profile(output_obj, model, module_depth=-1, top_m
         json_add(obj, "MACs", sort_macs)
         json_add(obj, "fwd latency", sort_time)
 
-def model2json(model: torch.nn.Module):
+def model2json(module: torch.nn.Module):
     """Translate the structure of a NN model to a json object"""
     json_obj = dict()
     extra = []
-    extra_repr = model.extra_repr()
+    extra_repr = module.extra_repr()
 
     if extra_repr:
         json_obj["extra"] = extra_repr
-    if len(model._modules.items()) > 0:
+    if hasattr(module, "__input_shape__"):
+        json_obj["input_shape"] = module.__input_shape__
+    if hasattr(module, "__output_shape__"):
+        json_obj["output_shape"] = module.__output_shape__
+
+    if len(module._modules.items()) > 0:
         json_obj['children'] = dict()
-        for key, module in model._modules.items():
+        for key, module in module._modules.items():
             json_obj['children'][key] = model2json(module)
 
-    json_obj["name"] = model._get_name()
+    json_obj["name"] = module._get_name()
 
     return json_obj
 
@@ -158,6 +164,7 @@ def json_dump_model_profile(model: torch.nn.Module, profiler: FlopsProfiler, pro
     json_add(psas_output, 'fwd latency', '{:<8}'.format(duration_to_string(fwd_latency)))
     json_add(psas_output, 'fwd FLOPS per GPU', '{:<8}'.format(flops_to_string(total_flops / fwd_latency)))
 
+    print("DS engine:", profiler.ds_engine)
     if profiler.ds_engine and profiler.ds_engine.wall_clock_breakdown():
         bwd_factor = 2 + profiler.recompute_fwd_factor
         bwd_latency = profiler.ds_engine.timers('backward').elapsed(False) / 1000.0
@@ -303,7 +310,34 @@ def get_model_inference_profile(model,
                 _ = model(*args)
             if mode == 'generate':
                 _ = model.generate(*args)
+
     prof.start_profile(ignore_list=ignore_modules)
+
+    # add input shape and output shape hook
+    def register_io_shape_hook(module, ignore_list):
+        if ignore_list and type(module) in ignore_list:
+            return
+        
+        def io_shape_hook(module, input, output):
+            print("input:", input)
+            print("output", output)
+            if len(input) > 0:
+                module.__input_shape__ = list(input[0].size())
+            if hasattr(output, '__iter__') or hasattr(output, '__getitem__'):
+                module.__output_shape__ = [
+                    [-1] + list(o.size())[1:] for o in output
+                ]
+            else:
+                module.__output_shape__ = list(output.size())
+
+        if (
+            not isinstance(module, torch.nn.Sequential)
+            and not isinstance(module, torch.nn.ModuleList)
+            and not (module == model)
+        ):
+            module.__io_shape_hook_handle__ = module.register_forward_hook(io_shape_hook)
+
+    model.apply(partial(register_io_shape_hook, ignore_list=ignore_modules))
 
     if kwargs:
         if mode == 'forward':
@@ -326,6 +360,11 @@ def get_model_inference_profile(model,
                                  detailed=detailed,
                                  output_file=output_file)
 
+    def remove_io_shape_hook(module):
+        if hasattr(module, "__io_shape_hook_handle__"):
+            module.__io_shape_hook_handle__.remove()
+
+    model.apply(remove_io_shape_hook)
     prof.end_profile()
     if as_string:
         return number_to_string(flops), macs_to_string(macs), params_to_string(params)
