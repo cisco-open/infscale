@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 import math
 import random
 import time
+import statistics
 
-def get_leaf_modules(profiling_res: dict) -> list:
+def get_leaf_modules(profiling_res: dict, leaf_module_name_list = None) -> list:
     def walk_through_model(model_profile: dict, path: list, leaves: dict()):
-        if "children" not in model_profile:
+        if "children" not in model_profile or model_profile["name"] in leaf_module_name_list:
             # find a leaf node
             leaves[".".join(path)] = model_profile
         else:
@@ -67,13 +68,12 @@ def plot_random_partition_std_dev_curve(leaf_layers, num_partition, num_rounds =
     latency_arr = [time_str_to_float((v["extra"]["fwd latency"])) for k, v in leaf_layers.items()]
     m = len(latency_arr)
     n = num_partition
-    E_x = sum(latency_arr) / m # average latency of partitions is the same as the average latency of all elements
 
     std_dev = []
     for j in range(num_rounds):
         print("{}-th round".format(j))
         random.seed(time.time())
-        splits = {0, m - 1}
+        splits = {0, m}
         while len(splits) < n + 1:
             k = random.randint(1, m - 1)
             if k not in splits:
@@ -81,27 +81,27 @@ def plot_random_partition_std_dev_curve(leaf_layers, num_partition, num_rounds =
 
         splits = sorted(splits)
         print("splits:", splits)
-        sum_x2 = 0
+        x = []
         for i in range(len(splits) - 1):
-            print(sum(latency_arr[splits[i]:splits[i+1]]), end=" ")
-            sum_x2 += pow(sum(latency_arr[splits[i]:splits[i+1]]), 2)
+            x.append(sum(latency_arr[splits[i]:splits[i+1]]))
 
-        print()
-        temp = math.sqrt((sum_x2 / n) - pow(E_x, 2))
+        print("x:", x)
+        temp = statistics.stdev(x)
         print("std_dev:", temp)
         std_dev.append(temp)
 
     print(std_dev)
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1)
-    ax.plot(range(1, n + 1), std_dev)
+    ax.plot(range(1, num_rounds + 1), std_dev)
 
 if __name__ == "__main__":
     profiling_file = "llama13b_profile.json"
     with open(profiling_file) as pf:
         profiling_res = json.load(pf)
-        max_num_partition = 10
-        leaf_layers = get_leaf_modules(profiling_res)
+        max_num_partition = 6
+        leaf_layers = get_leaf_modules(profiling_res, leaf_module_name_list=["LlamaDecoderLayer"])
 
+        print(leaf_layers.keys())
         # plot_min_std_dev_curve(leaf_layers, max_num_partition)
-        plot_random_partition_std_dev_curve(leaf_layers, max_num_partition)
+        plot_random_partition_std_dev_curve(leaf_layers, max_num_partition, 100)
