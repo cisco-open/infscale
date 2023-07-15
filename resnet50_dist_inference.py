@@ -34,7 +34,7 @@ def conv1x1(in_planes, out_planes, stride=1):
 
 class ResNetBase(nn.Module):
     def __init__(self, block, inplanes, num_classes=1000,
-                 groups=1, width_per_group=64, norm_layer=None):
+                 groups=1, width_per_group=64, norm_layer=None, *args, **kwargs):
         super(ResNetBase, self).__init__()
 
         self._lock = threading.Lock()
@@ -138,7 +138,7 @@ class ResNetShard2(ResNetBase):
 
 class DistResNet50(nn.Module):
     """
-    Assemble two parts as an nn.Module and define pipelining logic
+    Assemble two ResNet parts as an nn.Module and define pipelining logic
     """
     def __init__(self, split_size, workers, *args, **kwargs):
         super(DistResNet50, self).__init__()
@@ -190,37 +190,121 @@ class DistResNet50(nn.Module):
         remote_params.extend(self.p1_rref.remote().parameter_rrefs().to_here())
         remote_params.extend(self.p2_rref.remote().parameter_rrefs().to_here())
         return remote_params
+    
+class RRDistResNet50(nn.Module):
+    """
+    Assemble two ResNet parts as an nn.Module and define pipelining logic
+    May have several replicas for one ResNet part
+    Use round-robin to schedule workload across replicas
+    """
+    def __init__(self, split_size, workers, devices, *args, **kwargs):
+        super(RRDistResNet50, self).__init__()
+
+        self.split_size = split_size
+
+        if "pre_trained" in kwargs and kwargs["pre_trained"] == True:
+            resnet50 = torch.hub.load('NVIDIA/DeepLearningExamples:torchhub', 'nvidia_resnet50', pretrained=True)
+            kwargs['conv1'] = resnet50._modules['conv1']
+            kwargs['bn1'] = resnet50._modules['bn1']
+            kwargs['relu'] = resnet50._modules['relu']
+            kwargs['maxpool'] = resnet50._modules['maxpool']
+            kwargs['avgpool'] = resnet50._modules['avgpool']
+            kwargs['fc'] = resnet50._modules['fc']
+            for i in range(4):
+                kwargs['seq{}'.format(i)] = resnet50._modules['layers']._modules[str(i)]
+
+        assert len(workers) > 0
+        self.p1_rrefs = [] # list of part 1 references
+        self.p2_rrefs = [] # list of part 2 references
+
+        if 'shards' in kwargs:
+            # place shards according to configuration
+            for i in range(len(workers)):
+                shard = ResNetShard1 if kwargs['shards'][i] == 1 else ResNetShard2
+                rref = rpc.remote(
+                    workers[i],
+                    shard,
+                    args = (devices[i],) + args,
+                    kwargs = kwargs
+                )
+                print("Start", workers[i], "with", shard)
+                if kwargs['shards'][i] == 1:
+                    self.p1_rrefs.append(rref)
+                else:
+                    self.p2_rrefs.append(rref)
+        else:
+            # place shards uniformly
+            for i in range(len(workers)):
+                if i % 2 == 0:
+                    rref = rpc.remote(
+                        workers[i],
+                        ResNetShard1,
+                        args = (devices[i],) + args,
+                        kwargs = kwargs
+                    )
+                    self.p1_rrefs.append(rref)
+                else:
+                    rref = rpc.remote(
+                        workers[i],
+                        ResNetShard2,
+                        args = (devices[i],) + args,
+                        kwargs = kwargs
+                    )
+                    self.p2_rrefs.append(rref)
+
+    def forward(self, xs):
+        # Split the input batch xs into micro-batches, and collect async RPC
+        # futures into a list
+        out_futures = []
+        p1 = 0
+        p2 = 0
+        for x in iter(xs.split(self.split_size, dim=0)):
+            x_rref = RRef(x)
+            y_rref = self.p1_rrefs[p1].remote().forward(x_rref)
+            p1 = (p1 + 1) % len(self.p1_rrefs)
+            z_fut = self.p2_rrefs[p2].rpc_async().forward(y_rref)
+            p2 = (p2 + 1) % len(self.p2_rrefs)
+            out_futures.append(z_fut)
+
+        # collect and cat all output tensors into one tensor.
+        return torch.cat(torch.futures.wait_all(out_futures))
+
+    def parameter_rrefs(self):
+        remote_params = []
+        remote_params.extend(self.p1_rref.remote().parameter_rrefs().to_here())
+        remote_params.extend(self.p2_rref.remote().parameter_rrefs().to_here())
+        return remote_params
 
 
 #########################################################
 #                   Run RPC Processes                   #
 #########################################################
 
-num_batches = 3
+num_batches = 100
 batch_size = 120
 image_w = 128
 image_h = 128
 
 
-def run_master(split_size):
+def run_master(split_size, num_workers):
 
-    # put the two model parts on worker1 and worker2 respectively
-    model = DistResNet50(split_size, ["worker1", "worker2"])
+    # model = DistResNet50(split_size, ["worker{}".format(i + 1) for i in range(num_workers)], args=(), pre_trained=True)
+    model = RRDistResNet50(split_size, ["worker{}".format(i + 1) for i in range(num_workers)], ["cuda:{}".format(i) for i in range(4)], args=(), shards=[1, 2, 2], pre_trained=True)
 
     one_hot_indices = torch.LongTensor(batch_size) \
                            .random_(0, num_classes) \
                            .view(batch_size, 1)
 
+    # generating inputs
+    inputs = torch.randn(batch_size, 3, image_w, image_h)
+    labels = torch.zeros(batch_size, num_classes) \
+                    .scatter_(1, one_hot_indices, 1)
+    
     for i in range(num_batches):
         print(f"Processing batch {i}")
         # generate random inputs and labels
-        inputs = torch.randn(batch_size, 3, image_w, image_h)
-        labels = torch.zeros(batch_size, num_classes) \
-                      .scatter_(1, one_hot_indices, 1)
 
         outputs = model(inputs)
-        print("labels:", labels)
-        print("outputs:", outputs)
 
 
 def run_worker(rank, world_size, num_split):
@@ -237,7 +321,7 @@ def run_worker(rank, world_size, num_split):
             world_size=world_size,
             rpc_backend_options=options
         )
-        run_master(num_split)
+        run_master(num_split, num_workers=world_size - 1)
     else:
         rpc.init_rpc(
             f"worker{rank}",
@@ -252,7 +336,7 @@ def run_worker(rank, world_size, num_split):
 
 
 if __name__=="__main__":
-    world_size = 3
+    world_size = 4
     for num_split in [1, 2, 4, 8]:
         tik = time.time()
         mp.spawn(run_worker, args=(world_size, num_split), nprocs=world_size, join=True)
