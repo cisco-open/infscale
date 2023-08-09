@@ -32,7 +32,7 @@ class RR_CNNPipeline(nn.Module):
 
         self.split_size = split_size
         layer_partitions = []
-        partitions = [0] + partitions + [len(partitions)]
+        partitions = [0] + partitions + [len(layers)]
         for i in range(len(partitions) - 1):
             layer_partitions.append(layers[partitions[i]:partitions[i+1]])
 
