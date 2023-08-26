@@ -1,4 +1,4 @@
-import threading
+import threading, time
 import sys
 from typing import Iterator, List, Optional, Tuple, Union, Callable
 from functools import reduce
@@ -16,6 +16,9 @@ from transformers import PreTrainedModel
 ###########################################################################################
 
 def list2csvcell(l):
+    if len(l) == 0:
+        return "0"
+    
     s = str(l[0])
     for i in range(1, len(l)):
         s += "-" + str(l[i])
@@ -33,13 +36,50 @@ class CNNShardBase(nn.Module):
         self.lock = threading.Lock()
         self.layers = [m.to(device) if isinstance(m, nn.Module) else m for m in layers]
         self.device = device
+        self.shard_index = kwargs["sid"] if "sid" in kwargs else None # index of the shard in the global set of shards
+        self.partition_index = kwargs["pid"] if "pid" in kwargs else None # index of the partition of layers beared by this shard
+        if self.shard_index is not None and self.partition_index is not None:
+            self.log_en = kwargs["logging"] if "logging" in kwargs else False
+        else:
+            self.log_en = False
+
+        if self.log_en:
+            self.logfile = open("shard-{}-{}.log".format(self.shard_index, self.partition_index), "w")
+            print("Layers:", self.layers, file=self.logfile, flush=True)
+
+        self.accumulated_processing_time = 0
+        self.accumulated_local_trans_time = 0
+        self.accumulated_locking_time = 0
+        self.forward_times = 0
     
     def forward(self, x_rref):
-        x = x_rref.to_here().to(self.device)
+        t1 = time.time()
+        x = x_rref.to_here()
+        t2 = time.time()
+        x = x.to(self.device)
+        t3 = time.time()
         with self.lock:
+            t4 = time.time()
             for m in self.layers:
                 x = m(x)
+            t5 = time.time()
+        if self.log_en:
+            with self.lock:
+                self.forward_times += 1
+                print(f"Remote Data Transmission Time: {t2 - t1} s", file=self.logfile)
+                print(f"Local Data Transmission Time: {t3 - t2} s", file=self.logfile)
+                self.accumulated_local_trans_time += (t3 - t2)
+                print(f"Locking Time: {t4 - t3} s", file=self.logfile)
+                self.accumulated_locking_time += (t4 - t3)
+                print(f"Data Processing Time: {t5 - t4} s", file=self.logfile)
+                self.accumulated_processing_time += (t5 - t4)
         return x.cpu()
+    
+    def __del__(self):
+        if self.log_en:
+            print(f"Avg Local Data Transmission Time: {self.accumulated_local_trans_time / self.forward_times} s", file=self.logfile)
+            print(f"Avg Locking Time: {self.accumulated_locking_time / self.forward_times}", file=self.logfile)
+            print(f"Avg Data Processing Time: {self.accumulated_processing_time / self.forward_times} s", file=self.logfile, flush=True)
     
 class RR_CNNPipeline(nn.Module):
     """
@@ -62,15 +102,17 @@ class RR_CNNPipeline(nn.Module):
 
         # place shards according to configuration
         for i in range(len(shards)):
-            shard_id = shards[i] - 1
-            shard_layers = layer_partitions[shard_id]
+            partition_id = shards[i] - 1
+            shard_layers = layer_partitions[partition_id]
+            kwargs["pid"] = partition_id
+            kwargs["sid"] = i
             rref = rpc.remote(
                 workers[i],
                 CNNShardBase,
                 args = (devices[i], shard_layers, ) + args,
                 kwargs = kwargs
             )
-            self.shards_ref[shard_id].append(rref)
+            self.shards_ref[partition_id].append(rref)
 
     def forward(self, xs):
         # Split the input batch xs into micro-batches, and collect async RPC
@@ -183,12 +225,22 @@ def merge_tupled_tensors(tlist: list):
 ###########################################################################################
 
 class TransformerShardBase(nn.Module):
-    def __init__(self, device, layers, index = None, *args, **kwargs):
+    def __init__(self, device, layers, *args, **kwargs):
         super(TransformerShardBase, self).__init__()
 
         self.lock = threading.Lock()
         self.layers = [m.to(device) for m in layers]
         self.device = device
+
+        self.shard_index = kwargs["sid"] if "sid" in kwargs else None # index of the shard in the global set of shards
+        self.partition_index = kwargs["pid"] if "pid" in kwargs else None # index of the partition of layers beared by this shard
+        if self.shard_index is not None and self.partition_index is not None:
+            self.log_en = kwargs["logging"] if "logging" in kwargs else False
+        else:
+            self.log_en = False
+
+        if self.log_en:
+            self.logfile = open("shard-{}-{}.log".format(self.shard_index, self.partition_index), "w")
     
     def forward(self, x_rref):
         x = x_rref.to_here()
@@ -251,17 +303,17 @@ class RR_TransformerPipeline(PreTrainedModel):
         self.shards_ref = [[] for i in range(len(layer_partitions))]
         # place shards according to configuration
         for i in range(len(shards)):
-            shard_id = shards[i] - 1
-            shard_layers = layer_partitions[shard_id]
+            partition_id = shards[i] - 1
+            shard_layers = layer_partitions[partition_id]
             print("--------------------------------")
-            print("Starting {} with shard_id:{}".format(workers[i], shard_id), flush=True)
+            print("Starting {} with shard_id:{}".format(workers[i], partition_id), flush=True)
             rref = rpc.remote(
                 workers[i],
                 TransformerShardBase,
                 args = (devices[i], shard_layers, i) + args,
                 kwargs = kwargs
             )
-            self.shards_ref[shard_id].append(rref)
+            self.shards_ref[partition_id].append(rref)
 
     def forward(
         self,
