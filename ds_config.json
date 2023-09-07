@@ -1,15 +1,12 @@
 {
-    "train_batch_size": 8,
-    "gradient_accumulation_steps": 1,
-    "optimizer": {
-      "type": "SGD",
-      "params": {
-        "lr": 0.00015
-      }
-    },
-    "fp16": {
-      "enabled": true
-    },
-    "zero_optimization": false,
-    "zero_allow_untested_optimizer": true
-  }
+  "train_batch_size": 64,
+  "optimizer": {
+    "type": "SGD",
+    "params": {
+      "lr": 0.00015
+    }
+  },
+  "zero_optimization": false,
+  "zero_allow_untested_optimizer": true,
+  "train_micro_batch_size_per_gpu": 8
+}

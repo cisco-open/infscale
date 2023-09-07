@@ -6,13 +6,10 @@ from functools import wraps
 
 import torch
 import torch.nn as nn
-import torch.distributed.autograd as dist_autograd
 import torch.distributed.rpc as rpc
 import torch.multiprocessing as mp
-import torch.optim as optim
-from torch.distributed.optim import DistributedOptimizer
 from torch.distributed.rpc import RRef
-from torchvision.models.resnet import Bottleneck, resnet50, ResNet50_Weights
+from torchvision.models.resnet import resnet50, ResNet50_Weights
 
 sys.path.append(".")
 from inference_pipeline import CNNShardBase, RR_CNNPipeline, list2csvcell
