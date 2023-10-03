@@ -46,9 +46,14 @@ class CNNShardBase
 ```
 The class implements the abstraction of a shard of pipelined Convolutional Neural Networks.
 ```
-class CNNPipelineCollector
+class CNNPipelineCollector (To be corrected)
 ```
-This class implements a collector that receives unordered results of mini-batches from shards of the last stage of the pipeline and reorders them to obtain the consistent result of the input batch data. 
+This class implements a collector that receives unordered results of mini-batches from shards of the last stage of the pipeline and reorders them to obtain the consistent result of the input batch data.
+**This class is not completely correct yet! See the problem below:**
+The objects of this class will start several threads to receive results from shards of the last pipeline stage. Since the object may be reused for different batches of input data, it is hard to stop those threads gracefully, i.e. terminate the threads with minimal user involvement and no restrictions on the operations of the Pipeline.
+Right now, there seem to be two options:
+- in the destruction function of CNNPipeline class, we explicitly call a method of CNNPipelineCollector to terminate all the threads
+- every run of forwarding function of CNN Pipeline class will initialize a new instance of CNNPipelineCollector and then destroy it at the end.
 ```
 class CNNPipeline
 ```
