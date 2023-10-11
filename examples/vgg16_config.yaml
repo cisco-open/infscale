@@ -1,17 +1,16 @@
 ---
 partitions:
-- 3
-- 6
-repeat_times: 1
-placements:
-- - 1
-  - 2
-  - 3
+  - index: 0
+    shards: 1
+  - index: 3
+    shards: 1
+  - index: 6
+    shards: 1
 micro_batch_size: 8
-pre_trained: 'True'
-logging: 'False'
+pre_trained: true
 devices:
 - cuda:0
 - cuda:1
 - cuda:2
 - cuda:3
+repetition: 1

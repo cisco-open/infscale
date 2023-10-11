@@ -6,7 +6,9 @@ import torch
 import torch.distributed.rpc as rpc
 import torch.multiprocessing as mp
 import yaml
-from infscale.optim_inference_pipeline import CNNPipeline, list2csvcell
+from infscale.config import Config
+from infscale.pipeline.cnn import CNNPipeline
+from infscale.pipeline.util import list2csvcell
 from torchvision.models.resnet import ResNet50_Weights, resnet50
 
 #########################################################
@@ -78,7 +80,6 @@ def run_master(
         )
 
     file = open("./resnet50.csv", "a")
-    original_stdout = sys.stdout
     sys.stdout = file
 
     print("{}".format(list2csvcell(shards)), end=", ")
@@ -93,8 +94,6 @@ def run_master(
 
     tok = time.time()
     print(f"{split_size}, {tok - tik}, {(num_batches * batch_size) / (tok - tik)}")
-
-    sys.stdout = original_stdout
 
 
 def run_worker(
@@ -118,9 +117,10 @@ def run_worker(
     )
 
     if rank == 0:
-        rpc.init_rpc(
-            "master", rank=rank, world_size=world_size, rpc_backend_options=options
-        )
+        # rpc.init_rpc(
+        #     "master", rank=rank, world_size=world_size, rpc_backend_options=options
+        # )
+        rpc.init_rpc("master", rank=rank, rpc_backend_options=options)
         run_master(
             split_size,
             num_workers=world_size - 1,
@@ -131,12 +131,13 @@ def run_worker(
             logging=logging,
         )
     else:
-        rpc.init_rpc(
-            f"worker{rank}",
-            rank=rank,
-            world_size=world_size,
-            rpc_backend_options=options,
-        )
+        # rpc.init_rpc(
+        #     f"worker{rank}",
+        #     rank=rank,
+        #     world_size=world_size,
+        #     rpc_backend_options=options,
+        # )
+        rpc.init_rpc(f"worker{rank}", rank=rank, rpc_backend_options=options)
         pass
 
     # block until all rpcs finish
@@ -144,11 +145,21 @@ def run_worker(
 
 
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("config", nargs="?", default="./config.json")
+
+    args = parser.parse_args()
+
+    config = Config(args.config)
+
+    print(config)
+    exit(0)
+    
     with open("resnet50_config.yaml", "r") as config_file:
         config = yaml.safe_load(config_file)
         file = open("./resnet50.log", "w")
-        open("./resnet50.csv", "w")
-        original_stdout = sys.stdout
         sys.stdout = file
 
         partitions = config["partitions"]
@@ -183,5 +194,3 @@ if __name__ == "__main__":
                 print(
                     f"size of micro-batches = {split_size}, end-to-end execution time = {tok - tik} s"
                 )
-
-        sys.stdout = original_stdout
