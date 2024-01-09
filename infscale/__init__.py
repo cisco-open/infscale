@@ -15,7 +15,7 @@ formatter = logging.Formatter(
     "%(asctime)s | %(filename)s:%(lineno)d | %(levelname)s | %(threadName)s | %(funcName)s | %(message)s"
 )
 
-logger_registry = set()
+logger_registry = dict()
 
 
 def get_logger(name: str = __name__) -> Logger:
@@ -24,7 +24,7 @@ def get_logger(name: str = __name__) -> Logger:
     A log file is created with the name under $HOME/infscale folder.
     """
     if name in logger_registry:
-        print(f"WARNING: logger with name {name} already exists")
+        return logger_registry[name]
 
     logfile_path = os.path.join(logfile_prefix, name + ".log")
     fileHandler = logging.FileHandler(logfile_path)
@@ -37,6 +37,6 @@ def get_logger(name: str = __name__) -> Logger:
     logger.addHandler(fileHandler)
     logger.addHandler(streamHandler)
 
-    logger_registry.add(name)
+    logger_registry[name] = logger
 
     return logger

@@ -22,7 +22,7 @@ message AgentID {
 }
 
 message RegReq {
-  string id = 1; // ip address, host name or random string
+  string id = 1; // a unique string: ip address, host name or random string
 }
 
 message RegRes {

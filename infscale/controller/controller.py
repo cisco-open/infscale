@@ -1,18 +1,14 @@
 """Controller class."""
 
-import socket
 from typing import AsyncIterable
 
 import grpc
 from grpc.aio import ServicerContext
 from infscale import get_logger
-from infscale.constants import CONTROLLER_PORT
+from infscale.constants import CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
-
-GRPC_MAX_MESSAGE_LENGTH = 1073741824  # 1GB
-
 
 logger = get_logger()
 
@@ -27,16 +23,14 @@ class Controller:
         self.contexts: dict[str, AgentContext] = dict()
 
     async def _start_server(self):
-        server = grpc.aio.server(
-            options=[
-                ("grpc.max_send_message_length", GRPC_MAX_MESSAGE_LENGTH),
-                ("grpc.max_receive_message_length", GRPC_MAX_MESSAGE_LENGTH),
-            ]
-        )
-        pb2_grpc.add_ManagementRouteServicer_to_server(ControllerServiver(self), server)
+        server_options = [
+            ("grpc.max_send_message_length", GRPC_MAX_MESSAGE_LENGTH),
+            ("grpc.max_receive_message_length", GRPC_MAX_MESSAGE_LENGTH),
+        ]
+        server = grpc.aio.server(options=server_options)
+        pb2_grpc.add_ManagementRouteServicer_to_server(ControllerServicer(self), server)
 
-        ip_addr = socket.gethostbyname(socket.gethostname())
-        endpoint = f"{ip_addr}:{self.port}"
+        endpoint = f"[::]:{self.port}"
         _ = server.add_insecure_port(endpoint)
 
         logger.info(f"serving on {endpoint}")
@@ -50,10 +44,15 @@ class Controller:
 
     async def handle_register(self, id: str) -> tuple[bool, str]:
         """Handle registration message."""
+        logger.debug(f"recevied id = {id}")
         if id in self.contexts:
             return False, f"{id} already registered"
 
         self.contexts[id] = AgentContext(self, id)
+        # since registration is done, let's keep agent context alive
+        self.contexts[id].keep_alive()
+
+        logger.debug(f"successfully registered {id}")
 
         return True, ""
 
@@ -70,7 +69,7 @@ class Controller:
         # TODO: implement this
         logger.info("not implemented")
 
-    def delete_agent_context(self, id: str) -> None:
+    def reset_agent_context(self, id: str) -> None:
         """Remove agent context from contexts dictionary."""
         if id not in self.contexts:
             # nothing to do
@@ -81,7 +80,7 @@ class Controller:
         del self.contexts[id]
 
 
-class ControllerServiver(pb2_grpc.ManagementRouteServicer):
+class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     """Controller Servicer class."""
 
     def __init__(self, ctrl: Controller):

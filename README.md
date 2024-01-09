@@ -1,3 +1,26 @@
+# Installation
+We use Makefile for installation and uninstallation. Run `make install` to install infscale and `make uninstall` to delete it.
+
+# To Run Without Installation
+This is useful during local development. Under `infscale` (top folder), run the following command
+```
+python -m infscale
+```
+This command will print out the following (for example):
+```
+Usage: python -m infscale [OPTIONS] COMMAND [ARGS]...
+
+Options:
+  --version  Show the version and exit.
+  --help     Show this message and exit.
+
+Commands:
+  agent       Run agent.
+  controller  Run controller.
+```
+
+# Below Outdated
+
 # LLM-Inference
 A Cisco Research project to optimize Large Language Model Inference systems. Internal project name: InfScale
 

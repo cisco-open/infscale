@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Union
 
+from infscale import get_logger
 from infscale.constants import HEART_BEAT_PERIOD
 from infscale.utils.timer import Timer
 
@@ -11,7 +12,10 @@ if TYPE_CHECKING:
     from grpc import ServicerContext
     from infscale.controller.controller import Controller
 
-DEFAULT_TIMEOUT = 1.5 * HEART_BEAT_PERIOD
+DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD
+
+
+logger = get_logger()
 
 
 class AgentContext:
@@ -49,14 +53,16 @@ class AgentContext:
 
     def keep_alive(self):
         """Set agent's status to alive."""
+        logger.debug(f"keeping agent context alive for {self.id}")
         self.alive = True
 
         if not self.timer:
-            self.timer = Timer(DEFAULT_TIMEOUT, self.ctrl.delete_agent_context, self.id)
+            self.timer = Timer(DEFAULT_TIMEOUT, self.ctrl.reset_agent_context, self.id)
         self.timer.renew()
 
     def reset(self):
         """Reset the agent context state."""
+        logger.debug(f"agent {self.id} context reset")
         self.alive = False
         self.timer = None
 
