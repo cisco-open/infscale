@@ -28,15 +28,12 @@ class Worker:
 
         self._initialize()
 
-    def run(self) -> None:
+    async def run(self) -> None:
         """Run the worker."""
         logger.info(f"worker {self.local_rank}")
 
         pipeline = Pipeline(self.spec, self.ir, self.dataset)
-        pipeline.run()
-        # config stage
-        # join communication group
-        # send tensors based on the flow graph
+        await pipeline.run()
 
     def _initialize(self) -> None:
         # load model meta info from zoo

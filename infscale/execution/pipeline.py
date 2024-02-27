@@ -3,6 +3,7 @@
 import asyncio
 import os
 import random
+from collections.abc import Iterator
 
 import torch
 import torch.distributed as dist
@@ -12,11 +13,14 @@ from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.stage import Stage
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
+from torch.utils.data import DataLoader
 
 logger = get_logger()
 
 MASTER_ADDR = "127.0.0.1"
 MASTER_PORT = "29500"
+
+DEFAULT_ROUTER_QUEUE_SIZE = 3
 
 
 class Pipeline:
@@ -53,6 +57,7 @@ class Pipeline:
         rank = self.spec.rank_map[self.spec.stage.id]
         size = len(self.spec.rank_map)
         dist.init_process_group(backend, rank=rank, world_size=size)
+        logger.info("initializing distributed: done")
 
     def _initialize_worker(self, spec: ServeConfig, modelir: ModelIR):
         (start, end, my_id) = (
@@ -66,25 +71,56 @@ class Pipeline:
         self.stage = Stage(my_id, layers)
 
     async def _run_server(self):
-        index = 0
+        async def _send_request(router: Router, data_iter: Iterator):
+            seqno = 0
+            while True:
+                try:
+                    batch = next(data_iter)
+                except StopIteration:
+                    break
+
+                # send batch to the first stage
+                await router.tx_q.put((batch, seqno))
+                seqno += 1
+
+        async def _recv_resp(router: Router, max_seqno: int = -1):
+            """
+            Receive inference results from the last stage.
+
+            max_seqno: if it's -1, run forever;
+                       come out of loop if seqno is max_seqno
+            """
+            seqno = -1
+            while max_seqno == -1 or max_seqno != seqno:
+                outputs, seqno = await router.rx_q.get()
+                logger.info(f"{seqno}: {outputs}")
+
+        # create router
         router = Router(self.spec)
         router.prepare()
-        while True:
-            # TODO: read input from dataset
-            inputs = None
-            router.tx_q.put((inputs, index))  # send input to the first stage
-            outputs, seqno = router.rx_q.get()  # receive
-            index += 1
 
-            logger.info(f"{seqno}: {outputs}")
+        # TODO: we read data directly from a dataset right now.
+        #       in the future, we need to take dataset from stream as well.
+        dataset_size = len(self.dataset.dataset)
+        dataloader = DataLoader(
+            self.dataset.dataset,
+            self.spec.micro_batch_size,
+            collate_fn=self.dataset.data_collator,
+        )
+        data_iter = iter(dataloader)
+
+        # send and recv asynchronously
+        send_task = asyncio.create_task(_send_request(router, data_iter))
+        recv_task = asyncio.create_task(_recv_resp(router, dataset_size - 1))
+        await asyncio.wait([send_task, recv_task])
 
     async def _run_worker(self):
         router = Router(self.spec)
         router.prepare()
         while True:
-            inputs, index = router.rx_q.get()
+            inputs, index = await router.rx_q.get()
             outputs = self.stage(inputs)
-            router.tx_q.put((outputs, index))
+            await router.tx_q.put((outputs, index))
 
     async def run(self):
         """Run pipeline."""
@@ -96,8 +132,8 @@ class Router:
 
     def __init__(self, spec: ServeConfig):
         """Initialize Router instance."""
-        self._rx_q = asyncio.Queue()  # used in pipeline
-        self._tx_q = asyncio.Queue()  # used in pipeline
+        self._rx_q = asyncio.Queue(DEFAULT_ROUTER_QUEUE_SIZE)  # used in pipeline
+        self._tx_q = asyncio.Queue(DEFAULT_ROUTER_QUEUE_SIZE)  # used in pipeline
 
         # a collection of ranks that receive data from me
         self.receiver_ranks: dict[int] = []
@@ -105,7 +141,7 @@ class Router:
 
         # a collection of ranks that send data to me
         self.sender_ranks: list[int] = []
-        self.__rx_q = asyncio.Queue()
+        self.__rx_q = asyncio.Queue(DEFAULT_ROUTER_QUEUE_SIZE)
 
         my_id = spec.stage.id
         self.rank = spec.rank_map[my_id]
@@ -114,7 +150,7 @@ class Router:
                 for other_id in v:
                     rank = spec.rank_map[other_id]
                     self.receiver_ranks.append(rank)
-                    self.__tx_qs[rank] = asyncio.Queue()
+                    self.__tx_qs[rank] = asyncio.Queue(DEFAULT_ROUTER_QUEUE_SIZE)
             elif my_id in v:  # I am a receiver from k
                 self.sender_ranks.append(spec.rank_map[k])
 
@@ -142,25 +178,25 @@ class Router:
         receiver = TensorReceiver(rank, device)
         while True:
             tensor, index = receiver.recv()
-            self.__rx_q.put((tensor, index))
+            await self.__rx_q.put((tensor, index))
 
     async def _send(self, rank: int, device: torch.device):
         sender = TensorSender(rank, device)
         tx_q = self.__tx_qs[rank]
 
         while True:
-            tensor, index = tx_q.get()
+            tensor, index = await tx_q.get()
             sender.send(tensor, index)
 
     async def _recv_arbiter(self):
         while True:
-            tensor, index = self.__rx_q.get()
+            tensor, index = await self.__rx_q.get()
             # TODO: introduce a prioritization policy
-            self._rx_q.put((tensor, index))
+            await self._rx_q.put((tensor, index))
 
     async def _send_arbiter(self):
         while True:
-            tensor, index = self._tx_q.get()
+            tensor, index = await self._tx_q.get()
             # TODO: introduce a prioritization policy
             #       current default policy is to choose receiving rank randomly
 

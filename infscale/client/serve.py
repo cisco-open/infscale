@@ -1,5 +1,7 @@
 """implementation of serve restapi call."""
 
+import asyncio
+
 import yaml
 from infscale.actor.worker import Worker
 from infscale.openapi import ApiClient, Configuration, DefaultApi, ServeSpec
@@ -27,6 +29,5 @@ def serve(host: str, port: int, specfile: str):
         except Exception as e:
             print(f"Exception during serve api call: {e}")
 
-    w = Worker(0, None, spec_dict)
-
-    w.run()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(Worker(0, None, spec_dict).run())
