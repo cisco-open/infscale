@@ -253,7 +253,7 @@ batch_size = 16
 seq_len = 128
 
 
-def run_master(
+def run_leader(
     inputs,
     split_size,
     num_workers,
@@ -339,17 +339,17 @@ def run_worker(
     pre_trained,
     logging,
 ):
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29500"
+    os.environ["LEADER_ADDR"] = "localhost"
+    os.environ["LEADER_PORT"] = "29500"
 
     # Higher timeout is added to accommodate for kernel compilation time in case of ROCm.
     options = rpc.TensorPipeRpcBackendOptions(num_worker_threads=256, rpc_timeout=300)
 
     if rank == 0:
         rpc.init_rpc(
-            "master", rank=rank, world_size=world_size, rpc_backend_options=options
+            "leader", rank=rank, world_size=world_size, rpc_backend_options=options
         )
-        run_master(
+        run_leader(
             inputs,
             split_size,
             num_workers=world_size - 1,

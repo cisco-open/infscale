@@ -104,8 +104,8 @@ def run_leader(config: Config):
 
 def run_worker(rank, config: Config):
     """Run worker."""
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "29500"
+    os.environ["LEADER_ADDR"] = "localhost"
+    os.environ["LEADER_PORT"] = "29500"
 
     world_size = config.partitions.get_num_shards() + 1
 

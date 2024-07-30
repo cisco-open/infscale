@@ -33,7 +33,7 @@ def flat_func(x):
     return torch.flatten(x, 1)
 
 
-def run_master(
+def run_leader(
     split_size,
     num_workers,
     partitions,
@@ -121,9 +121,9 @@ def run_worker(
 
     if rank == 0:
         rpc.init_rpc(
-            "master", rank=rank, world_size=world_size, rpc_backend_options=options
+            "leader", rank=rank, world_size=world_size, rpc_backend_options=options
         )
-        run_master(
+        run_leader(
             split_size,
             num_workers=world_size - 1,
             partitions=partitions,
