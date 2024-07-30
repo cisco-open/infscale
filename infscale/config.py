@@ -200,6 +200,8 @@ class ServeConfig:
 
     backend: str = "gloo"
 
+    device: str = "cpu"
+
     nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
 
     micro_batch_size: int = 8
@@ -211,6 +213,10 @@ class ServeConfig:
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
                 self.flow_graph[k][i] = WorkerInfo(**item)
+
+        assert (self.backend == "gloo" and self.device == "cpu") or (
+            self.backend == "nccl" and "cuda" in self.device
+        )
 
 
 def parse_serve_config(data: dict) -> ServeConfig:

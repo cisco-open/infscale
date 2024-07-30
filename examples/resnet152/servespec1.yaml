@@ -6,6 +6,8 @@ nfaults: 1
 # after development is done, they need to be revised accordingly
 # to automate building flow_graph, etc.
 micro_batch_size: 8
+backend: nccl
+device: cuda:1
 
 stage:
   start: 0

@@ -47,6 +47,9 @@ class TensorSender:
 
         self.sent_tensor_meta = False
 
+    async def _send(self, tensor: torch.Tensor) -> None:
+        await self.communicator.send(tensor, self.rank, self.world_name)
+
     async def send(self, tensors: tuple[torch.Tensor], seqno: int) -> None:
         """Send tensors to destination rank.
 
@@ -62,7 +65,7 @@ class TensorSender:
             t_dim -> t_dtype -> t_shape
             """
             count = torch.LongTensor(data=[len(tensors)]).to(self.device)
-            await self.communicator.send(count, self.world_name, self.rank)
+            await self._send(count)
 
             for tensor in tensors:
                 dim = len(tensor.size())
@@ -75,9 +78,9 @@ class TensorSender:
                 t_shape = torch.LongTensor(data=shape).to(self.device)
 
                 # TODO: Make send asynchronous
-                await self.communicator.send(t_dim, self.world_name, self.rank)
-                await self.communicator.send(t_dtype, self.world_name, self.rank)
-                await self.communicator.send(t_shape, self.world_name, self.rank)
+                await self._send(t_dim)
+                await self._send(t_dtype)
+                await self._send(t_shape)
 
         logger.debug("calling send")
         if not self.sent_tensor_meta:
@@ -89,11 +92,11 @@ class TensorSender:
 
         logger.debug("sending tensors")
         for tensor in tensors:
-            await self.communicator.send(tensor, self.world_name, self.rank)
+            await self._send(tensor)
         logger.debug("sent tensors")
 
         seqno = torch.tensor([seqno], dtype=torch.int).to(self.device)
-        await self.communicator.send(seqno, self.world_name, self.rank)
+        await self._send(seqno)
         logger.debug(f"sent seqno {seqno}")
 
 
@@ -115,8 +118,8 @@ class TensorReceiver:
 
         self.buffer: torch.Tensor = None
 
-    async def _recv(self, tensor: torch.LongTensor):
-        await self.communicator.recv(tensor, self.world_name, self.rank)
+    async def _recv(self, tensor: torch.Tensor):
+        await self.communicator.recv(tensor, self.rank, self.world_name)
 
     async def recv(self) -> tuple[tuple[torch.Tensor], int]:
         """Receive tensors from source rank.
@@ -131,6 +134,7 @@ class TensorReceiver:
             receiving order of the meta data:
             t_dim -> t_dtype -> t_shape
             """
+
             count = torch.LongTensor(data=[0]).to(self.device)
             await self._recv(count)
             num_tensors = count.item()

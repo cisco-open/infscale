@@ -100,7 +100,7 @@ class HuggingFaceDataset:
         """Set micro batch size."""
         self.micro_batch_size = micro_batch_size
 
-    def next_batch(self) -> Union[Tuple[Tensor, Tensor], None]:
+    def next_batch(self, device: torch.device) -> Union[Tuple[Tensor, Tensor], None]:
         """Return next data tensor.
 
         Once all the data is consumed, it returns None.
@@ -120,7 +120,7 @@ class HuggingFaceDataset:
             return None
 
         if self.model_group == ModelGroup.IMAGE:
-            return (batch["pixel_values"], batch["labels"])
+            return (batch["pixel_values"].to(device), batch["labels"].to(device))
         else:
             # TODO: implement this later
             raise NotImplementedError

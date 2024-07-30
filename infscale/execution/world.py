@@ -6,7 +6,7 @@ from dataclasses import dataclass
 class WorldInfo:
     """Information about World.
 
-    Currently we only consider a world with one master and one worker.
+    Currently we only consider a world with one leader and one worker.
     Since there are two processes in each world, rank is either 0 or 1.
     """
 

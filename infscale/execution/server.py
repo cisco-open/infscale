@@ -15,7 +15,7 @@ logger = get_logger()
 class Server:
     """Server class.
 
-    This class is a master node in the pipeline and
+    This class is a leader node in the pipeline and
     acts as a proxy between input to the server and model.
     """
 
