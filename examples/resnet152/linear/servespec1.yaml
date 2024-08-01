@@ -16,15 +16,18 @@ stage:
 
 flow_graph:
   s-0:
-    - addr: "127.0.0.1"
+    - name: w0
+      addr: "127.0.0.1"
       port: 29500
       peers: [0-0]
   0-0:
-    - addr: "127.0.0.1"
+    - name: w1
+      addr: "127.0.0.1"
       port: 30500
       peers: [1-0]
   1-0:
-    - addr: "127.0.0.1"
+    - name: w2
+      addr: "127.0.0.1"
       port: 31500
       peers: [s-0]
 

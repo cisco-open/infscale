@@ -62,7 +62,7 @@ class Pipeline:
     async def _initialize_multiworld(self):
         my_id = self.spec.stage.id
 
-        for world_idx, (k, v) in enumerate(self.spec.flow_graph.items()):
+        for k, v in self.spec.flow_graph.items():
             for wrk_info in v:
                 if my_id == k:
                     my_rank = 0
@@ -73,21 +73,22 @@ class Pipeline:
                 else:
                     continue
 
-                world_name = f"w{world_idx}"
-                logger.info(f"initializing world {world_name} with my rank {my_rank}")
+                logger.info(
+                    f"initializing world {wrk_info.name} with my rank {my_rank}"
+                )
                 logger.info(f"leader addr={wrk_info.addr}, port={wrk_info.port}")
                 await self.world_manager.initialize_world(
-                    world_name,
+                    wrk_info.name,
                     my_rank,
-                    len(wrk_info.peers)+1,
+                    len(wrk_info.peers) + 1,
                     backend=self.spec.backend,
                     addr=wrk_info.addr,
                     port=wrk_info.port,
                 )
-                data = {"name": world_name, "me": my_rank, "other": other_rank}
+                data = {"name": wrk_info.name, "me": my_rank, "other": other_rank}
                 world_info = WorldInfo(**data)
                 self.world_info_list.append(world_info)
-                logger.debug(f"done initializing {world_name}")
+                logger.debug(f"done initializing {wrk_info.name}")
 
     def _initialize_worker(self, modelir: ModelIR):
         output_parser = modelir.output_parser if self.spec.stage.is_last else None

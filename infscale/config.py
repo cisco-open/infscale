@@ -194,6 +194,7 @@ class Dataset:
 class WorkerInfo:
     """Specification about worker info in the flow graph."""
 
+    name: str
     addr: str
     port: int
     peers: list[str]
