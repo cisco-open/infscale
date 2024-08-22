@@ -1,0 +1,55 @@
+---
+name: resnet152_example
+model: microsoft/resnet-152
+nfaults: 1
+# the following entries are for local development only
+# after development is done, they need to be revised accordingly
+# to automate building flow_graph, etc.
+micro_batch_size: 8
+backend: nccl
+fwd_policy: "static"
+
+flow_graph:
+  s-0:
+    - name: w0
+      addr: "127.0.0.1"
+      port: 29500
+      peers: [1-0]
+  0-0:
+    - name: w1
+      addr: "127.0.0.1" 
+      port: 30500
+      peers: [s-0]
+  1-0:
+    - name: w2
+      addr: "127.0.0.1"
+      port: 31500
+      peers: [0-0]
+
+rank_map: # run worker in this rank order
+  s-0: 0
+  0-0: 1
+  1-0: 2
+
+dataset: # huggingface dataset
+  path: "cifar10"
+  name: ""
+  split: test
+
+workers:
+  - id: s-0
+    device: cuda:0
+    stage:
+      start: -1
+      end: -1
+  - id: 0-0
+    device: cuda:1
+    stage:
+      start: 0
+      end: 25
+  - id: 1-0
+    device: cuda:2
+    stage:
+      start: 26
+      end: 51
+      is_last: True

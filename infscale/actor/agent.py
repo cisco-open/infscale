@@ -26,6 +26,7 @@ import grpc
 import torch
 from infscale import get_logger
 from infscale.actor.worker import Worker
+from infscale.config import JobConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.monitor.gpu import GpuMonitor, GpuStat, VramStat
 from infscale.proto import management_pb2 as pb2
@@ -47,14 +48,16 @@ class WorkerMetaData:
 class Agent:
     """Agent class manages workers in a node."""
 
-    def __init__(self, id: str, endpoint: str):
+    def __init__(self, id: str, endpoint: str, job_config: JobConfig):
         """Initialize the agent instance."""
         # TODO: there can be more than one worker per GPU
         #       if resource (gpu memory, gpu cycle) are available
         #       explore this possibility later
         # one worker per GPU
+
         self.id = id
         self.endpoint = endpoint
+        self.job_config = job_config
 
         self.n_workers = torch.cuda.device_count()
         self._workers: dict[int, WorkerMetaData] = {}

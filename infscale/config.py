@@ -238,6 +238,45 @@ class ServeConfig:
         )
 
 
+@dataclass
+class JobConfig:
+    """Class for job config"""
+
+    workers: list
+    name: str
+    model: str
+    flow_graph: dict[str, list[WorkerInfo]]
+    rank_map: dict[str, int]
+    dataset: Dataset
+    nfaults: int = 0
+    micro_batch_size: int = 8
+    backend: str = "gloo"
+    fwd_policy: str = "random"
+
+    def get_serve_configs(self):
+        """Convert job config into a list of serve config dict."""
+
+        serve_configs = []
+
+        for item in self.workers:
+            config = {
+                "name": self.name,
+                "model": self.model,
+                "flow_graph": self.flow_graph,
+                "stage": {**item["stage"], "id": item["id"]},
+                "rank_map": self.rank_map,
+                "dataset": self.dataset,
+                "nfaults": self.nfaults,
+                "micro_batch_size": self.micro_batch_size,
+                "backend": self.backend,
+                "fwd_policy": self.fwd_policy,
+                "device": item["device"],
+            }
+            serve_configs.append(ServeConfig(**config))
+
+        return serve_configs
+
+
 def parse_serve_config(data: dict) -> ServeConfig:
     """Return ServeConfig object after parsing data."""
     return ServeConfig(**data)
