@@ -16,9 +16,9 @@
 
 """run subcommand."""
 import asyncio
-import yaml
 
 import click
+import yaml
 from infscale.actor.agent import Agent
 from infscale.config import JobConfig
 from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
@@ -43,9 +43,10 @@ def controller(port: int, apiport: int):
 @run.command()
 @click.option("--host", default=LOCALHOST, help="Controller's IP or hostname")
 @click.option("--port", default=CONTROLLER_PORT, help="Controller's port number")
+@click.option("--skip_controller", default=True, help="Skip controller connection")
 @click.argument("id")
 @click.argument("jobconfig")
-def agent(host: str, port: int, id: str, jobconfig: str):
+def agent(host: str, port: int, skip_controller: bool, id: str, jobconfig: str):
     """Run agent."""
     endpoint = f"{host}:{port}"
     print(f"Controller endpoint: {endpoint}")
@@ -60,5 +61,5 @@ def agent(host: str, port: int, id: str, jobconfig: str):
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(
-        Agent(id=id, endpoint=endpoint, job_config=job_config).run()
+        Agent(id=id, endpoint=endpoint, job_config=job_config, skip_controller=skip_controller).run()
     )

@@ -17,13 +17,12 @@
 """Agent class."""
 
 import asyncio
-import multiprocessing as mp
-import os
 from dataclasses import dataclass
 from multiprocessing import connection
 
 import grpc
 import torch
+import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.worker import Worker
 from infscale.config import JobConfig
@@ -48,7 +47,9 @@ class WorkerMetaData:
 class Agent:
     """Agent class manages workers in a node."""
 
-    def __init__(self, id: str, endpoint: str, job_config: JobConfig):
+    def __init__(
+        self, id: str, endpoint: str, job_config: JobConfig, skip_controller: bool
+    ):
         """Initialize the agent instance."""
         # TODO: there can be more than one worker per GPU
         #       if resource (gpu memory, gpu cycle) are available
@@ -58,6 +59,7 @@ class Agent:
         self.id = id
         self.endpoint = endpoint
         self.job_config = job_config
+        self.skip_controller = skip_controller
 
         self.n_workers = torch.cuda.device_count()
         self._workers: dict[int, WorkerMetaData] = {}
@@ -78,17 +80,18 @@ class Agent:
         """Start the agent."""
         logger.info("run agent")
 
-        # register agent
-        reg_req = pb2.RegReq(id=self.id)
-        try:
-            reg_res = await self.stub.register(reg_req)
-        except grpc.aio.AioRpcError:
-            logger.debug("can't proceed: no grpc channel available")
-            return
+        if not self.skip_controller:
+            reg_req = pb2.RegReq(id=self.id)  # register agent
 
-        if not reg_res.status:
-            logger.error(f"registration failed: {reg_res.reason}")
-            return
+            try:
+                reg_res = await self.stub.register(reg_req)
+            except grpc.aio.AioRpcError:
+                logger.debug("can't proceed: no grpc channel available")
+                return
+
+            if not reg_res.status:
+                logger.error(f"registration failed: {reg_res.reason}")
+                return
 
         # create a task to send heart beat periodically
         _ = asyncio.create_task(self.heart_beat())
@@ -115,17 +118,19 @@ class Agent:
     def launch(self):
         """Launch workers."""
         ctx = mp.get_context("spawn")
+        processes = []
 
-        for local_rank in range(self.n_workers):
-            os.environ[ENV_CUDA_VIS_DEVS] = str(local_rank)
-
+        for local_rank, config in enumerate(self.job_config.get_serve_configs()):
             pipe, child_pipe = ctx.Pipe()
-            w = Worker(local_rank, child_pipe)
-            process = mp.Process(target=w.run, args=(), daemon=True)
+            w = Worker(local_rank, child_pipe, config)
+            process = ctx.Process(target=w.run, args=(), daemon=True)
             self._workers[local_rank] = WorkerMetaData(pipe, process)
+            process.start()
+            processes.append(process)
+            print(f"Process ID: {process.pid}")
 
-        if self.n_workers > 0:
-            os.environ.pop(ENV_CUDA_VIS_DEVS)
+        for p in processes:
+            p.join()
 
     def configure(self):
         """Configure workers."""

@@ -20,6 +20,7 @@ import asyncio
 
 import yaml
 from infscale.actor.worker import Worker
+from infscale.config import ServeConfig
 from infscale.openapi import ApiClient, Configuration, DefaultApi, ServeSpec
 
 
@@ -46,4 +47,4 @@ def serve(host: str, port: int, specfile: str):
             print(f"Exception during serve api call: {e}")
 
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(Worker(0, None, spec_dict).run())
+    loop.run_until_complete(Worker(0, None, ServeConfig(**spec_dict))._run())

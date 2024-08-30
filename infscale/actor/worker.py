@@ -15,12 +15,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Worker class."""
-
+import asyncio
 from multiprocessing.connection import Connection
 from typing import Any
 
 from infscale import get_logger
-from infscale.config import parse_serve_config
+from infscale.config import ServeConfig
 from infscale.execution.pipeline import Pipeline
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
@@ -32,11 +32,11 @@ logger = get_logger()
 class Worker:
     """Worker class."""
 
-    def __init__(self, local_rank: int, conn: Connection, spec: dict[str, Any]):
+    def __init__(self, local_rank: int, conn: Connection, spec: ServeConfig):
         """Initialize an instance."""
         self.local_rank = local_rank
         self.conn = conn
-        self.spec = parse_serve_config(spec)
+        self.spec = spec
         logger.info(f"{self.spec}")
 
         self.dataset: HuggingFaceDataset = None
@@ -44,7 +44,10 @@ class Worker:
 
         self._initialize()
 
-    async def run(self) -> None:
+    def run(self) -> None:
+        asyncio.run(self._run())
+
+    async def _run(self) -> None:
         """Run the worker."""
         logger.info(f"worker {self.local_rank}")
 

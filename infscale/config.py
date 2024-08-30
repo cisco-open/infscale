@@ -230,7 +230,9 @@ class ServeConfig:
         self.stage = Stage(**self.stage)
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
-                worker_info = WorkerInfo(**item)
+                worker_info = (
+                    item if isinstance(item, WorkerInfo) else WorkerInfo(**item)
+                )
                 self.flow_graph[k][i] = worker_info
 
                 if worker_info.backend == "nccl":
@@ -271,8 +273,3 @@ class JobConfig:
             serve_configs.append(ServeConfig(**config))
 
         return serve_configs
-
-
-def parse_serve_config(data: dict) -> ServeConfig:
-    """Return ServeConfig object after parsing data."""
-    return ServeConfig(**data)
