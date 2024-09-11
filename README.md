@@ -25,13 +25,13 @@ Run the following under the top folder (`infscale`):
 pip install .
 ```
 
-This will install dependencies as well as infscale package.
+This will install dependencies as well as InfScale package.
 
 ## Running development code
 
 This is useful during local development. As a prerequisite, dependencies should
 be resolved.
-Thus, it is necessary to install infscale once
+Thus, it is necessary to install InfScale once
 (see [Installation](#installation)).
 Once dependencies are resolved, under `infscale` (top folder), run the following
 command:
@@ -56,7 +56,7 @@ Commands:
 
 ## Quickstart
 
-For minimal execution of infscale, one controller and one agent are needed.
+For minimal execution of InfScale, one controller and one agent are needed.
 Run controller first and then agent, each on a separate terminal.
 
 ```bash
@@ -67,7 +67,7 @@ python -m infscale controller
 python -m infscale agent id123
 ```
 
-To see some log messages, add `LOG_LEVEL=DEBUG` before each of the above command.
+To see some log messages, add `INFSCALE_LOG_LEVEL=DEBUG` before each of the above command.
 
 ## To Run Tests
 

@@ -6,8 +6,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name="infscale"
 dynamic = ["version"]
-authors = [{ name="Infscale Maintainers", email="infscale-github-owners@cisco.com" }]
-description="This package is a python library to serve ML model in the infscale system"
+authors = [{ name="InfScale Maintainers", email="infscale-maintainers@cisco.com" }]
+description="InfScale is a model serving system that supports deep learning models reliably and scalably"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
