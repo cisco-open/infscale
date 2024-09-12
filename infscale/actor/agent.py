@@ -17,7 +17,6 @@
 """Agent class."""
 
 import asyncio
-from dataclasses import dataclass
 
 import grpc
 import torch
@@ -25,11 +24,12 @@ import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_monitor import JobMonitor, WorkerMetaData
 from infscale.actor.worker import Worker
-from infscale.config import JobConfig
+from infscale.config import JobConfig, ServeConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
-from infscale.monitor.gpu import GpuMonitor, GpuStat, VramStat
+from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
+from multiprocess.connection import Pipe
 
 ENV_CUDA_VIS_DEVS = "CUDA_VISIBLE_DEVICES"
 
@@ -114,8 +114,15 @@ class Agent:
 
         for local_rank, config in enumerate(self.job_config.get_serve_configs()):
             pipe, child_pipe = ctx.Pipe()
-            w = Worker(local_rank, child_pipe, config)
-            process = ctx.Process(target=w.run, args=(), daemon=True)
+            process = ctx.Process(
+                target=_run_worker,
+                args=(
+                    local_rank,
+                    child_pipe,
+                    config,
+                ),
+                daemon=True,
+            )
             self._workers[local_rank] = WorkerMetaData(pipe, process)
             process.start()
             processes.append(process)
@@ -159,3 +166,8 @@ class Agent:
 
     async def _monitor_gpu(self):
         await self.gpu_monitor.start()
+
+
+def _run_worker(local_rank: int, child_pipe: Pipe, config: ServeConfig):
+    w = Worker(local_rank, child_pipe, config)
+    w.run()

@@ -17,7 +17,6 @@
 """Worker class."""
 import asyncio
 from multiprocessing.connection import Connection
-from typing import Any
 
 from infscale import get_logger
 from infscale.actor.worker_monitor import WorkerMonitor
@@ -42,10 +41,11 @@ class Worker:
         self.dataset: HuggingFaceDataset = None
         self.ir: ModelIR = None
         self.worker_monitor = WorkerMonitor(self.conn)
-        self.worker_monitor.send_message(f"I am a running worker")
         self._initialize()
 
     def run(self) -> None:
+        """Run worker."""
+        self.worker_monitor.send_message("I am a running worker")
         asyncio.run(self._run())
 
     async def _run(self) -> None:
