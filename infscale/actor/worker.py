@@ -45,14 +45,13 @@ class Worker:
 
     def run(self) -> None:
         """Run worker."""
-        self.worker_monitor.send_message("I am a running worker")
         asyncio.run(self._run())
 
     async def _run(self) -> None:
         """Run the worker."""
         logger.info(f"worker {self.local_rank}")
 
-        pipeline = Pipeline(self.spec, self.ir, self.dataset)
+        pipeline = Pipeline(self.spec, self.ir, self.dataset, self.worker_monitor)
         await pipeline.run()
 
     def _initialize(self) -> None:

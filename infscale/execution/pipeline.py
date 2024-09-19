@@ -20,6 +20,7 @@ import asyncio
 import time
 import os
 
+from infscale.actor.worker_monitor import WorkerMonitor
 import torch
 from infscale import get_logger
 from infscale.config import ServeConfig, WorkerInfo
@@ -29,6 +30,7 @@ from infscale.execution.stage import Stage
 from infscale.execution.world import WorldInfo
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
+from infscale.actor.job_manager import Message, MessageType
 from multiworld.manager import WorldManager
 
 logger = get_logger()
@@ -42,12 +44,13 @@ class Pipeline:
         spec: ServeConfig,
         modelir: ModelIR,
         dataset: HuggingFaceDataset,
+        worker_monitor: WorkerMonitor,
     ):
         """Initialize pipeline instance."""
         self.stage: Stage = None
         self.spec = spec
         self.world_manager = WorldManager()
-
+        self.worker_monitor = worker_monitor
         self.device = torch.device(self.spec.device)
 
         self.world_info_list: list[WorldInfo] = list()
@@ -196,10 +199,21 @@ class Pipeline:
             if idx % 100 == 0:
                 if start_time is None:
                     start_time = time.perf_counter()
-                print(f"Process ID: {os.getpid()} processed {idx+1} batches")
+    
+                self.worker_monitor.send_message(
+                    Message(
+                        MessageType.LOG,
+                        f"Process ID: {os.getpid()} processed {idx+1} batches",
+                    )
+                )
             idx += 1
         end_time = time.perf_counter()
-        print(f"Process ID: {os.getpid()} elapsed time: {end_time - start_time}")
+        self.worker_monitor.send_message(
+            Message(
+                MessageType.TERMINATE,
+                f"Server recv done, elapsed time: {end_time - start_time}, terminating worker processes",
+            )
+        )
 
         logger.info("_server_recv task done")
 
