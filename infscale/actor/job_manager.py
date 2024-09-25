@@ -21,23 +21,9 @@ from multiprocessing import connection
 
 import torch.multiprocessing as mp
 from infscale import get_logger
+from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 
 logger = get_logger()
-
-
-class MessageType(Enum):
-    """MessageType enum."""
-
-    LOG = "log"
-    TERMINATE = "terminate"
-
-
-@dataclass
-class Message:
-    """WorkerMetaData dataclass."""
-
-    type: MessageType
-    content: str
 
 
 @dataclass
@@ -46,44 +32,81 @@ class WorkerMetaData:
 
     pipe: connection.Connection
     process: mp.Process
+    status: WorkerStatus
 
 
 class JobManager:
     """JobManager class."""
 
-    def __init__(self, metadata: WorkerMetaData):
-        self.metadata = metadata
+    def __init__(self, workers: dict[int, WorkerMetaData]):
+        self._workers = workers
 
     def message_listener(self) -> None:
         """Asynchronous parent listener to handle communication with workers."""
         loop = asyncio.get_event_loop()
 
-        for worker_data in self.metadata.values():
+        for worker_data in self._workers.values():
             loop.add_reader(
-                worker_data.pipe.fileno(), self.on_read_ready, worker_data, loop
+                worker_data.pipe.fileno(),
+                self.on_read_ready,
+                worker_data,
+                loop,
+                worker_data.pipe.fileno(),
             )
 
     def on_read_ready(
-        self, worker_data: WorkerMetaData, loop: asyncio.AbstractEventLoop
+        self,
+        worker_data: WorkerMetaData,
+        loop: asyncio.AbstractEventLoop,
+        descriptor: int,
     ) -> None:
         if worker_data.pipe.poll():  # Check if there's data to read
             try:
                 message = worker_data.pipe.recv()  # Receive the message
-                self._handle_message(message, worker_data.process.pid)
+                self._handle_message(message, worker_data, descriptor)
             except EOFError:
-                loop.remove_reader(worker_data.pipe.fileno())  # Clean up the reader
+                self._handle_worker_failure(loop, worker_data)
 
-    def _handle_message(self, message: Message, process_id: int) -> None:
-        if message.content:
-            self._print_message(message.content, process_id)
+    def _handle_worker_failure(self, loop, worker_data: WorkerMetaData) -> None:
+        loop.remove_reader(worker_data.pipe.fileno())  # Clean up the reader
+        self._terminate_workers()
 
+    def _handle_message(
+        self, message: Message, worker_data: WorkerMetaData, descriptor: int
+    ) -> None:
         match message.type:
-            case MessageType.TERMINATE:
+            case MessageType.LOG:
+                self._print_message(message.content, worker_data.process.pid)
+
+            case MessageType.STATUS:
+                self._handle_status(message, descriptor)
+
+    def _handle_status(self, message: Message, descriptor: int) -> None:
+        self._update_worker_status(message, descriptor)
+
+        match message.content:
+            case WorkerStatus.DONE:
                 self._terminate_workers()
 
+            case WorkerStatus.STARTED:
+                pass
+
+            case WorkerStatus.RUNNING:
+                pass
+
+            case WorkerStatus.TERMINATED:
+                pass
+
+            case WorkerStatus.FAILED:
+                pass
+
+    def _update_worker_status(self, message: Message, descriptor: int) -> None:
+        self._workers[descriptor].status = message.content
+
     def _terminate_workers(self) -> None:
-        for worker_data in self.metadata.values():
+        for worker_data in self._workers.values():
             # TODO: update logic to terminate workers belonging to a terminated server only
+            worker_data.status = WorkerStatus.TERMINATED
             worker_data.process.terminate()
 
     def _print_message(self, content: str, process_id: int) -> None:

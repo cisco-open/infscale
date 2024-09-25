@@ -254,7 +254,7 @@ class JobConfig:
     micro_batch_size: int = 8
     fwd_policy: str = "random"
 
-    def get_serve_configs(self):
+    def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
         serve_configs = []
 

@@ -17,12 +17,13 @@
 """Pipeline class."""
 
 import asyncio
-import time
 import os
+import time
 
-from infscale.actor.worker_monitor import WorkerMonitor
 import torch
 from infscale import get_logger
+from infscale.actor.job_msg import Message, MessageType, WorkerStatus
+from infscale.actor.worker_monitor import WorkerMonitor
 from infscale.config import ServeConfig, WorkerInfo
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.router import Router
@@ -30,7 +31,6 @@ from infscale.execution.stage import Stage
 from infscale.execution.world import WorldInfo
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
-from infscale.actor.job_manager import Message, MessageType
 from multiworld.manager import WorldManager
 
 logger = get_logger()
@@ -199,19 +199,21 @@ class Pipeline:
             if idx % 100 == 0:
                 if start_time is None:
                     start_time = time.perf_counter()
-    
+
                 self.worker_monitor.send_message(
                     Message(
-                        MessageType.LOG,
-                        f"Process ID: {os.getpid()} processed {idx+1} batches",
+                        MessageType.STATUS,
+                        WorkerStatus.RUNNING,
                     )
                 )
+
             idx += 1
         end_time = time.perf_counter()
+        print(f"Server recv done, elapsed time: {end_time - start_time}")
         self.worker_monitor.send_message(
             Message(
-                MessageType.TERMINATE,
-                f"Server recv done, elapsed time: {end_time - start_time}, terminating worker processes",
+                MessageType.STATUS,
+                WorkerStatus.DONE,
             )
         )
 
@@ -257,6 +259,12 @@ class Pipeline:
     async def run(self):
         """Run pipeline."""
         # initialize pipeline
+        self.worker_monitor.send_message(
+            Message(
+                MessageType.STATUS,
+                WorkerStatus.RUNNING,
+            )
+        )
         await self._initialize_pipeline()
         # run pipeline
         await self._run()

@@ -19,6 +19,7 @@ import asyncio
 from multiprocessing.connection import Connection
 
 from infscale import get_logger
+from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker_monitor import WorkerMonitor
 from infscale.config import ServeConfig
 from infscale.execution.pipeline import Pipeline
@@ -42,6 +43,12 @@ class Worker:
         self.ir: ModelIR = None
         self.worker_monitor = WorkerMonitor(self.conn)
         self._initialize()
+        self.worker_monitor.send_message(
+            Message(
+                MessageType.STATUS,
+                WorkerStatus.STARTED,
+            )
+        )
 
     def run(self) -> None:
         """Run worker."""

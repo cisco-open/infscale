@@ -23,6 +23,7 @@ import torch
 import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager, WorkerMetaData
+from infscale.actor.job_msg import WorkerStatus
 from infscale.actor.worker import Worker
 from infscale.config import JobConfig, ServeConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
@@ -130,7 +131,9 @@ class Agent:
                 ),
                 daemon=True,
             )
-            self._workers[local_rank] = WorkerMetaData(pipe, process)
+            self._workers[pipe.fileno()] = WorkerMetaData(
+                pipe, process, WorkerStatus.READY
+            )
             process.start()
             print(f"Process ID: {process.pid}")
 
