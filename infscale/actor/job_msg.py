@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from infscale.config import ServeConfig
+
 
 class MessageType(Enum):
     """MessageType enum."""
@@ -8,6 +10,7 @@ class MessageType(Enum):
     LOG = "log"
     TERMINATE = "terminate"
     STATUS = "status"
+    CONFIG = "config"
 
 
 class WorkerStatus(Enum):
@@ -26,4 +29,4 @@ class Message:
     """Message dataclass."""
 
     type: MessageType
-    content: str | WorkerStatus
+    content: str | WorkerStatus | ServeConfig

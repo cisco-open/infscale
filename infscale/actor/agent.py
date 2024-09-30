@@ -21,18 +21,17 @@ import asyncio
 import grpc
 import torch
 import torch.multiprocessing as mp
+from multiprocess.connection import Pipe
+
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager, WorkerMetaData
-from infscale.actor.job_msg import WorkerStatus
+from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker import Worker
 from infscale.config import JobConfig, ServeConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
-from multiprocess.connection import Pipe
-
-ENV_CUDA_VIS_DEVS = "CUDA_VISIBLE_DEVICES"
 
 logger = get_logger()
 
@@ -55,7 +54,6 @@ class Agent:
         self.skip_controller = skip_controller
 
         self.n_workers = torch.cuda.device_count()
-        self._workers: dict[int, WorkerMetaData] = {}
 
         self.channel = grpc.aio.insecure_channel(
             endpoint,
@@ -110,14 +108,9 @@ class Agent:
 
     def launch(self):
         """Launch workers."""
-        self.create_workers()
+        job_manager = JobManager()
 
-        job_manager = JobManager(self._workers)
         # create a task to monitor the job
-        job_manager.message_listener()
-
-    def create_workers(self):
-        """Create Worker processes"""
         ctx = mp.get_context("spawn")
 
         for local_rank, config in enumerate(self.job_config.get_serve_configs()):
@@ -127,27 +120,21 @@ class Agent:
                 args=(
                     local_rank,
                     child_pipe,
-                    config,
                 ),
                 daemon=True,
             )
-            self._workers[pipe.fileno()] = WorkerMetaData(
-                pipe, process, WorkerStatus.READY
-            )
             process.start()
+            w = WorkerMetaData(pipe, process, WorkerStatus.READY)
+            job_manager.add_worker(w)
+            job_manager.send_message(w, Message(MessageType.CONFIG, config))
+
             print(f"Process ID: {process.pid}")
+
+        job_manager.message_listener()
 
     def configure(self):
         """Configure workers."""
         pass
-
-    def terminate(self):
-        """Terminate workers."""
-        logger.info("terminate workers")
-
-        for rank, wmd in self._workers.items():
-            logger.info(f"terminate worker {rank}")
-            wmd.process.terminate()
 
     async def report(self):
         """Report status about resources and workers to controller."""
@@ -174,6 +161,6 @@ class Agent:
         await self.gpu_monitor.start()
 
 
-def _run_worker(local_rank: int, child_pipe: Pipe, config: ServeConfig):
-    w = Worker(local_rank, child_pipe, config)
+def _run_worker(local_rank: int, child_pipe: Pipe):
+    w = Worker(local_rank, child_pipe)
     w.run()

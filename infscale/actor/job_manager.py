@@ -16,10 +16,10 @@
 
 import asyncio
 from dataclasses import dataclass
-from enum import Enum
 from multiprocessing import connection
 
 import torch.multiprocessing as mp
+
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 
@@ -38,8 +38,11 @@ class WorkerMetaData:
 class JobManager:
     """JobManager class."""
 
-    def __init__(self, workers: dict[int, WorkerMetaData]):
-        self._workers = workers
+    def __init__(self):
+        self._workers: dict[int, WorkerMetaData] = {}
+
+    def add_worker(self, worker: WorkerMetaData) -> None:
+        self._workers[worker.pipe.fileno()] = worker
 
     def send_message(self, worker: WorkerMetaData, message: Message) -> None:
         """Send message to worker."""

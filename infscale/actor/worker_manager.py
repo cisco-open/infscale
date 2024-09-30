@@ -20,6 +20,7 @@ import asyncio
 from multiprocessing import connection
 
 from infscale import get_logger
+from infscale.actor.job_msg import Message, MessageType
 
 logger = get_logger()
 
@@ -29,6 +30,7 @@ class WorkerManager:
 
     def __init__(self, pipe: connection.Connection):
         self.pipe = pipe
+        self.config_q = asyncio.Queue()
 
     def send_message(self, message: str):
         """Send message to Agent."""
@@ -52,7 +54,12 @@ class WorkerManager:
         if self.pipe.poll():
             try:
                 message = self.pipe.recv()
-                print(f'received message: {message}')
+                self._handle_message(message)
             except EOFError:
                 # TODO: TBD on pipe failure case
                 loop.remove_reader(self.pipe.fileno())
+
+    def _handle_message(self, message: Message) -> None:
+        match message.type:
+            case MessageType.CONFIG:
+                _ = asyncio.create_task(self.config_q.put(message.content))
