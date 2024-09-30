@@ -23,7 +23,7 @@ import time
 import torch
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
-from infscale.actor.worker_monitor import WorkerMonitor
+from infscale.actor.worker_manager import WorkerManager
 from infscale.config import ServeConfig, WorkerInfo
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.router import Router
@@ -44,13 +44,13 @@ class Pipeline:
         spec: ServeConfig,
         modelir: ModelIR,
         dataset: HuggingFaceDataset,
-        worker_monitor: WorkerMonitor,
+        worker_manager: WorkerManager,
     ):
         """Initialize pipeline instance."""
         self.stage: Stage = None
         self.spec = spec
         self.world_manager = WorldManager()
-        self.worker_monitor = worker_monitor
+        self.worker_manager = worker_manager
         self.device = torch.device(self.spec.device)
 
         self.world_info_list: list[WorldInfo] = list()
@@ -191,7 +191,7 @@ class Pipeline:
         seqno = -1
         idx = 0
         start_time = None
-        self.worker_monitor.send_message(
+        self.worker_manager.send_message(
             Message(
                 MessageType.STATUS,
                 WorkerStatus.RUNNING,
@@ -209,7 +209,7 @@ class Pipeline:
             idx += 1
         end_time = time.perf_counter()
         print(f"Server recv done, elapsed time: {end_time - start_time}")
-        self.worker_monitor.send_message(
+        self.worker_manager.send_message(
             Message(
                 MessageType.STATUS,
                 WorkerStatus.DONE,
@@ -258,7 +258,7 @@ class Pipeline:
     async def run(self):
         """Run pipeline."""
         # initialize pipeline
-        self.worker_monitor.send_message(
+        self.worker_manager.send_message(
             Message(
                 MessageType.STATUS,
                 WorkerStatus.RUNNING,

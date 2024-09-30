@@ -41,6 +41,10 @@ class JobManager:
     def __init__(self, workers: dict[int, WorkerMetaData]):
         self._workers = workers
 
+    def send_message(self, worker: WorkerMetaData, message: Message) -> None:
+        """Send message to worker."""
+        worker.pipe.send(message)
+
     def message_listener(self) -> None:
         """Asynchronous parent listener to handle communication with workers."""
         loop = asyncio.get_event_loop()
@@ -60,6 +64,7 @@ class JobManager:
         loop: asyncio.AbstractEventLoop,
         descriptor: int,
     ) -> None:
+        """Callback to wait for messages."""
         if worker_data.pipe.poll():  # Check if there's data to read
             try:
                 message = worker_data.pipe.recv()  # Receive the message
@@ -74,6 +79,7 @@ class JobManager:
     def _handle_message(
         self, message: Message, worker_data: WorkerMetaData, descriptor: int
     ) -> None:
+        """Handle received messages."""
         match message.type:
             case MessageType.LOG:
                 self._print_message(message.content, worker_data.process.pid)
@@ -82,6 +88,7 @@ class JobManager:
                 self._handle_status(message, descriptor)
 
     def _handle_status(self, message: Message, descriptor: int) -> None:
+        """Handle status update from Workers."""
         self._update_worker_status(message, descriptor)
 
         match message.content:
@@ -101,13 +108,16 @@ class JobManager:
                 pass
 
     def _update_worker_status(self, message: Message, descriptor: int) -> None:
+        """Update Worker status."""
         self._workers[descriptor].status = message.content
 
     def _terminate_workers(self) -> None:
+        """Terminate Workers."""
         for worker_data in self._workers.values():
             # TODO: update logic to terminate workers belonging to a terminated server only
             worker_data.status = WorkerStatus.TERMINATED
             worker_data.process.terminate()
 
     def _print_message(self, content: str, process_id: int) -> None:
+        """Print received messages."""
         print(f"Process ID: {process_id}, Message: {content}")

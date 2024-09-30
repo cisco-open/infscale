@@ -16,17 +16,43 @@
 
 """Worker class."""
 
-from infscale import get_logger
+import asyncio
 from multiprocessing import connection
+
+from infscale import get_logger
 
 logger = get_logger()
 
 
-class WorkerMonitor:
-    """WorkerMonitor class."""
+class WorkerManager:
+    """WorkerManager class."""
 
     def __init__(self, pipe: connection.Connection):
         self.pipe = pipe
 
     def send_message(self, message: str):
+        """Send message to Agent."""
         self.pipe.send(message)
+
+    def message_listener(self) -> None:
+        """Asynchronous worker listener to handle communication with agent."""
+        loop = asyncio.get_event_loop()
+
+        loop.add_reader(
+            self.pipe.fileno(),
+            self.on_read_ready,
+            loop,
+        )
+
+    def on_read_ready(
+        self,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        """Callback to wait for messages."""
+        if self.pipe.poll():
+            try:
+                message = self.pipe.recv()
+                print(f'received message: {message}')
+            except EOFError:
+                # TODO: TBD on pipe failure case
+                loop.remove_reader(self.pipe.fileno())

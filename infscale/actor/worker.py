@@ -20,7 +20,7 @@ from multiprocessing.connection import Connection
 
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
-from infscale.actor.worker_monitor import WorkerMonitor
+from infscale.actor.worker_manager import WorkerManager
 from infscale.config import ServeConfig
 from infscale.execution.pipeline import Pipeline
 from infscale.module.dataset import HuggingFaceDataset
@@ -41,9 +41,9 @@ class Worker:
         logger.info(f"{self.spec}")
         self.dataset: HuggingFaceDataset = None
         self.ir: ModelIR = None
-        self.worker_monitor = WorkerMonitor(self.conn)
+        self.worker_manager = WorkerManager(self.conn)
         self._initialize()
-        self.worker_monitor.send_message(
+        self.worker_manager.send_message(
             Message(
                 MessageType.STATUS,
                 WorkerStatus.STARTED,
@@ -57,8 +57,9 @@ class Worker:
     async def _run(self) -> None:
         """Run the worker."""
         logger.info(f"worker {self.local_rank}")
+        self.worker_manager.message_listener()
 
-        pipeline = Pipeline(self.spec, self.ir, self.dataset, self.worker_monitor)
+        pipeline = Pipeline(self.spec, self.ir, self.dataset, self.worker_manager)
         await pipeline.run()
 
     def _initialize(self) -> None:
