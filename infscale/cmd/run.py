@@ -43,13 +43,12 @@ def controller(port: int, apiport: int):
 @run.command()
 @click.option("--host", default=LOCALHOST, help="Controller's IP or hostname")
 @click.option("--port", default=CONTROLLER_PORT, help="Controller's port number")
-@click.option("--skip_controller", default=True, help="Skip controller connection")
+@click.option("--controller/--no-controller", default=False, help="Use controller")
 @click.argument("id")
 @click.argument("jobconfig")
-def agent(host: str, port: int, skip_controller: bool, id: str, jobconfig: str):
+def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
     """Run agent."""
     endpoint = f"{host}:{port}"
-    print(f"Controller endpoint: {endpoint}")
 
     # Don't use the following code asyncio.run()
     # see https://github.com/grpc/grpc/issues/32480 for more details
@@ -57,9 +56,13 @@ def agent(host: str, port: int, skip_controller: bool, id: str, jobconfig: str):
     with open(jobconfig) as f:
         spec = yaml.safe_load(f)
         job_config = JobConfig(**spec)
-        print(f"job config: {job_config}")
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(
-        Agent(id=id, endpoint=endpoint, job_config=job_config, skip_controller=skip_controller).run()
+        Agent(
+            id=id,
+            endpoint=endpoint,
+            job_config=job_config,
+            use_controller=controller,
+        ).run()
     )
