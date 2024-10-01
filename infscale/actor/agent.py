@@ -147,7 +147,7 @@ class Agent:
             self.job_manager.add_worker(w)
             self.job_manager.send_message(w, Message(MessageType.CONFIG, config))
 
-            print(f"Process ID: {process.pid}")
+            print(f"Process ID: {process.pid} - Worker: {config.stage.id}")
 
         self.job_manager.message_listener()
 

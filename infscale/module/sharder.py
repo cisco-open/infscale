@@ -23,15 +23,18 @@ SOFTWARE.
 # This file was modified from
 # https://github.com/SymbioticLab/Oobleck/blob/3b7a0c2f19bff0991e623ffbeb8a5b365853bf3a/oobleck/module/sharding.py
 
-
+import sys
 from collections import defaultdict
 from itertools import chain
 from typing import Dict, List, Optional, Tuple
 
 import torch.fx
+from infscale import get_logger
 from infscale.module.model_metadata import BaseModelMetaData
 from torch.fx.node import Node
 from transformers.utils.fx import symbolic_trace
+
+logger = get_logger()
 
 
 class Sharder:
@@ -67,13 +70,11 @@ def _split_nodes(
     shard_id_to_node: Dict[int, List[Node]] = defaultdict(list)
     shard_id = 0
 
-    nodes_so_far: List[str] = []
     extra_output: Dict[int, List[str]] = {}
 
     for node in traced.graph.nodes:
         if node.op == "placeholder":
             node_name_to_shard_id[node.name] = shard_id
-            nodes_so_far.append(node.name)
             shard_id_to_node[shard_id].append(node)
         elif node.op in [
             "get_attr",
@@ -82,7 +83,6 @@ def _split_nodes(
             "call_module",
         ]:
             node_name_to_shard_id[node.name] = shard_id
-            nodes_so_far.append(node.name)
             shard_id_to_node[shard_id].append(node)
 
             point = next(
@@ -133,7 +133,12 @@ def shard_model(
     """
     module_list: List[torch.fx.GraphModule] = []
 
-    traced = symbolic_trace(model, input_names=concrete_args)
+    try:
+        traced = symbolic_trace(model, input_names=concrete_args)
+    except Exception as e:
+        logger.critical(f"symbolic tracing failed: {e}")
+        sys.exit("symbolic tracing failed")
+
     split_points = [p.replace(".", "_") for p in split_points]
 
     node_name_to_shard_id, extra_outputs = _split_nodes(traced, split_points)
@@ -159,6 +164,7 @@ def shard_model(
                     if prev_shard_id in extra_outputs:
                         outputs = extra_outputs[prev_shard_id]
                         outputs = {i: env[i] for i in outputs}
+                        # print(f"outputs = {outputs}")
                         new_graph.output(outputs)
                     else:
                         new_graph.output({prev_node.name: env[prev_node.name]})

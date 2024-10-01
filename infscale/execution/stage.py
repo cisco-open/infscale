@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import traceback
 from copy import deepcopy
 from typing import TYPE_CHECKING, Callable, Union
 
@@ -54,7 +55,12 @@ class Stage(nn.Module):
         self.device = device
 
         self.modelir = modelir
-        self._init_layers()
+
+        try:
+            self._init_layers()
+        except Exception as e:
+            traceback.print_exc()
+            raise e
 
         # An output parser is only useful for the last stage.
         # The outputs from the last stage need to be sent back to the inference
@@ -80,6 +86,16 @@ class Stage(nn.Module):
         named_parameters = dict()
         for name, param in model.named_parameters():
             named_parameters[name] = param
+
+        # Huggingface's CausalLM models don't include lm_head as model parameter
+        # see https://github.com/huggingface/transformers/issues/6291
+        # but init_empty_weights() somehow includes lm_head as model parameter
+        # To initialize layers correctly, we include lm_head as well
+        # Not sure if this is a correct way to handle the issue
+        if hasattr(model, "lm_head"):
+            for name, param in model.lm_head.named_parameters():
+                name = "lm_head." + name
+                named_parameters[name] = param
 
         named_buffers = dict()
         for name, buffer in model.named_buffers():

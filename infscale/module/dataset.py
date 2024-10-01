@@ -35,7 +35,6 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import (CenterCrop, Compose, Normalize, Resize,
                                     ToTensor)
 from transformers import AutoImageProcessor, AutoTokenizer
-from transformers.data.data_collator import default_data_collator
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
@@ -64,7 +63,21 @@ class HuggingFaceDataset:
                 max_seq_length,
             )
 
-            self.data_collator = default_data_collator
+            def collate_fn(examples):
+                input_ids = []
+                attention_mask = []
+                for ex in examples:
+                    ids = torch.tensor(ex["input_ids"], dtype=torch.int64)
+                    input_ids.append(ids)
+                    mask = torch.tensor(ex["attention_mask"], dtype=torch.int64)
+                    attention_mask.append(mask)
+
+                return {
+                    "input_ids": torch.stack(input_ids),
+                    "attention_mask": torch.stack(attention_mask),
+                }
+
+            self.data_collator = collate_fn
 
         elif mmd.model_group == ModelGroup.IMAGE:
             self.tokenizer, self.dataset = HuggingFaceDataset.create_image_dataset(
@@ -119,12 +132,11 @@ class HuggingFaceDataset:
             self.data_iter = None
             return None
 
-        if self.model_group == ModelGroup.IMAGE:
-            batch["pixel_values"] = batch["pixel_values"].to(device)
-            return batch
-        else:
-            # TODO: implement this later
-            raise NotImplementedError
+        # send batch to a right device
+        for k in batch.keys():
+            batch[k] = batch[k].to(device)
+
+        return batch
 
     def num_of_batches(self) -> int:
         """Return the number of batches from dataset.
@@ -198,9 +210,14 @@ class HuggingFaceDataset:
 
         # no need to load all datasets; since we need a dataset for inference
         dataset = load_dataset(dataset_path, dataset_name, split=split)
+        column_names = set(dataset.features)
 
-        column_names = list(dataset.features)
-        text_column_name = "text" if "text" in column_names else column_names[0]
+        if "text" in column_names:
+            text_column_name = "text"
+        elif "prompt" in column_names:
+            text_column_name = "prompt"
+        else:
+            text_column_name = column_names[0]
 
         if max_seq_length is None:
             max_seq_length = tokenizer.model_max_length

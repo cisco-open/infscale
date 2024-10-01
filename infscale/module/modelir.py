@@ -71,4 +71,4 @@ class ModelIR:
         self.output_parser: Union[Callable, None] = mmd.get_output_parser()
         self.predict_fn: Union[Callable, None] = mmd.get_predict_fn()
 
-        logger.debug(f"# of layers = {len(self.layers)}")
+        logger.info(f"# of layers = {len(self.layers)}")

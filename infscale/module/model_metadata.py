@@ -19,15 +19,15 @@ from abc import abstractmethod
 from enum import Enum
 from typing import Callable, List, Union
 
-from accelerate import (infer_auto_device_map, init_empty_weights,
-                        load_checkpoint_and_dispatch)
-from huggingface_hub import hf_hub_download
+import torch
+from accelerate import init_empty_weights
 from infscale import get_logger
-from torch import Tensor, nn
+from torch import Tensor
 from transformers import (AutoModelForCausalLM,
                           AutoModelForImageClassification,
-                          AutoModelForPreTraining, PretrainedConfig,
-                          PreTrainedModel)
+                          AutoModelForPreTraining, AutoTokenizer,
+                          PretrainedConfig, PreTrainedTokenizer,
+                          PreTrainedTokenizerFast)
 
 AutoModelType = (
     AutoModelForPreTraining | AutoModelForCausalLM | AutoModelForImageClassification
@@ -54,25 +54,20 @@ class BaseModelMetaData:
         self.config: PretrainedConfig = config
 
         self.model: AutoModelType = None
+        self.tokenizer: Union[PreTrainedTokenizer, PreTrainedTokenizerFast] = None
         self.split_points: List[str] = None
         self._trace_inputs: list[str] = None
 
     def _init_model(self, auto_model_type: AutoModelType):
         with init_empty_weights():
             model = auto_model_type.from_config(self.config)
+            model.eval()  # disable training mode
+            self.model_type = auto_model_type
             return model
 
-    def load_model(self) -> nn.Module:
-        """Load a model from a checkpoint and dispatch it to cpu."""
-        location = hf_hub_download(self.name, "pytorch_model.bin")
-
-        device_map = infer_auto_device_map(self.model)
-        for k in device_map.keys():
-            device_map[k] = "cpu"
-
-        loaded_model = load_checkpoint_and_dispatch(
-            self.model, location, device_map=device_map
-        )
+    def load_model(self) -> AutoModelType:
+        """Load a model onto cpu."""
+        loaded_model = self.model_type.from_pretrained(self.name)
 
         return loaded_model
 
@@ -87,7 +82,7 @@ class BaseModelMetaData:
         self._trace_inputs = names
 
     @abstractmethod
-    def get_model(self) -> PreTrainedModel:
+    def get_model(self) -> AutoModelType:
         """Abstract method to get model."""
 
     @abstractmethod
@@ -112,12 +107,22 @@ class Gpt2ModelMetaData(BaseModelMetaData):
 
         self.model_group = ModelGroup.LANG
 
-    def get_model(self) -> PreTrainedModel:
+    @property
+    def trace_inputs(self) -> list[str]:
+        """Get input names to trace."""
+        return self._trace_inputs
+
+    @trace_inputs.setter
+    def trace_inputs(self, names: list[str]) -> None:
+        """Set input argument names to trace."""
+        self._trace_inputs = names
+
+    def get_model(self) -> AutoModelType:
         """Get model."""
         if self.model:
             return self.model
 
-        self.model = self._init_model(AutoModelForPreTraining)
+        self.model = self._init_model(AutoModelForCausalLM)
 
         assert self.model, f"Given model {self.name} is not supported yet."
 
@@ -133,6 +138,7 @@ class Gpt2ModelMetaData(BaseModelMetaData):
         for i in range(self.config.num_hidden_layers):
             self.split_points.append(f"transformer.h.{i}")
         self.split_points.append("transformer.ln_f")
+        # self.split_points.append("lm_head.weight")
 
         logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
 
@@ -140,11 +146,30 @@ class Gpt2ModelMetaData(BaseModelMetaData):
 
     def get_output_parser(self) -> Union[Callable, None]:
         """Return function to parse output."""
-        raise NotImplementedError
+
+        def inner(outputs):
+            return outputs
+
+        return inner
 
     def get_predict_fn(self) -> Union[Callable, None]:
         """Return function to predict."""
-        raise NotImplementedError
+        if not self.tokenizer:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.name, config=self.config
+            )
+
+        def inner(tensors: dict[str, Tensor]) -> list[str]:
+            results = []
+            tensors = tensors["logits"]
+            for tensor in tensors:
+                logits = tensor[-1, :]
+                argmax = torch.argmax(logits)
+
+                results.append(self.tokenizer.decode(argmax))
+            return results
+
+        return inner
 
 
 class BertModelMetaData(BaseModelMetaData):
@@ -156,7 +181,7 @@ class BertModelMetaData(BaseModelMetaData):
 
         self.model_group = ModelGroup.LANG
 
-    def get_model(self) -> PreTrainedModel:
+    def get_model(self) -> AutoModelType:
         """Get model."""
         if self.model:
             return self.model
@@ -200,7 +225,7 @@ class T5ModelMetaData(BaseModelMetaData):
 
         self.model_group = ModelGroup.LANG
 
-    def get_model(self) -> PreTrainedModel:
+    def get_model(self) -> AutoModelType:
         """Get model."""
         if self.model:
             return self.model
@@ -247,7 +272,7 @@ class VitModelMetaData(BaseModelMetaData):
 
         self.model_group = ModelGroup.IMAGE
 
-    def get_model(self) -> PreTrainedModel:
+    def get_model(self) -> AutoModelType:
         """Get model."""
         if self.model:
             return self.model
@@ -293,7 +318,7 @@ class ResnetModelMetaData(BaseModelMetaData):
 
         self.model_group = ModelGroup.IMAGE
 
-    def get_model(self) -> PreTrainedModel:
+    def get_model(self) -> AutoModelType:
         """Get model."""
         if self.model:
             return self.model
