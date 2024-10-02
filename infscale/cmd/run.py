@@ -20,6 +20,7 @@ import asyncio
 import click
 import yaml
 from infscale.actor.agent import Agent
+from infscale.actor.mock_controller import MockController
 from infscale.config import JobConfig
 from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
 from infscale.controller import controller as ctrl
@@ -45,7 +46,7 @@ def controller(port: int, apiport: int):
 @click.option("--port", default=CONTROLLER_PORT, help="Controller's port number")
 @click.option("--controller/--no-controller", default=False, help="Use controller")
 @click.argument("id")
-@click.argument("jobconfig")
+@click.argument("jobconfig", nargs=-1)
 def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
     """Run agent."""
     endpoint = f"{host}:{port}"
@@ -53,16 +54,14 @@ def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
     # Don't use the following code asyncio.run()
     # see https://github.com/grpc/grpc/issues/32480 for more details
 
-    with open(jobconfig) as f:
-        spec = yaml.safe_load(f)
-        job_config = JobConfig(**spec)
+    mock_controller = MockController(list(jobconfig))
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(
         Agent(
             id=id,
             endpoint=endpoint,
-            job_config=job_config,
             use_controller=controller,
+            controller=mock_controller,
         ).run()
     )

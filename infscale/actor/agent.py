@@ -21,17 +21,17 @@ import asyncio
 import grpc
 import torch
 import torch.multiprocessing as mp
-from multiprocess.connection import Pipe
-
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager, WorkerMetaData
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
+from infscale.actor.mock_controller import MockController
 from infscale.actor.worker import Worker
 from infscale.config import JobConfig, ServeConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
+from multiprocess.connection import Pipe
 
 logger = get_logger()
 
@@ -40,7 +40,7 @@ class Agent:
     """Agent class manages workers in a node."""
 
     def __init__(
-        self, id: str, endpoint: str, job_config: JobConfig, use_controller: bool
+        self, id: str, endpoint: str, use_controller: bool, controller: MockController
     ):
         """Initialize the agent instance."""
         # TODO: there can be more than one worker per GPU
@@ -50,8 +50,11 @@ class Agent:
 
         self.id = id
         self.endpoint = endpoint
-        self.job_config = job_config
+        self.job_config = None
         self.use_controller = use_controller
+        self.controller = controller
+        self.job_manager = JobManager()
+        self.cfg_event = asyncio.Event()
 
         self.n_workers = torch.cuda.device_count()
 
@@ -70,6 +73,10 @@ class Agent:
     async def run(self):
         """Start the agent."""
         logger.info("run agent")
+        _ = asyncio.create_task(self.controller.start_sending())
+        _ = asyncio.create_task(self.handle_config())
+
+        await self.cfg_event.wait()
 
         if self.use_controller:
             reg_req = pb2.RegReq(id=self.id)  # register agent
@@ -99,6 +106,21 @@ class Agent:
         # wait forever
         await asyncio.Event().wait()
 
+    async def handle_config(self) -> None:
+        while True:
+            config = await self.controller.config_q.get()
+            print(f"got new config: {config}")
+
+            if config is None:
+                continue
+
+            if self.job_config is None:
+                self.job_config = config
+
+            self.cfg_event.set()
+
+            # TODO: TBD - send new config to Workers using Pipe
+
     async def heart_beat(self):
         """Send a heart beat message periodically."""
         agent_id = pb2.AgentID(id=self.id)
@@ -108,9 +130,6 @@ class Agent:
 
     def launch(self):
         """Launch workers."""
-        job_manager = JobManager()
-
-        # create a task to monitor the job
         ctx = mp.get_context("spawn")
 
         for local_rank, config in enumerate(self.job_config.get_serve_configs()):
@@ -125,12 +144,12 @@ class Agent:
             )
             process.start()
             w = WorkerMetaData(pipe, process, WorkerStatus.READY)
-            job_manager.add_worker(w)
-            job_manager.send_message(w, Message(MessageType.CONFIG, config))
+            self.job_manager.add_worker(w)
+            self.job_manager.send_message(w, Message(MessageType.CONFIG, config))
 
             print(f"Process ID: {process.pid}")
 
-        job_manager.message_listener()
+        self.job_manager.message_listener()
 
     def configure(self):
         """Configure workers."""
