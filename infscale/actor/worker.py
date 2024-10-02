@@ -36,8 +36,6 @@ class Worker:
         """Initialize an instance."""
         self.local_rank = local_rank
         self.conn = conn
-        self.dataset: HuggingFaceDataset = None
-        self.ir: ModelIR = None
         self.worker_manager = WorkerManager(self.conn)
         self.worker_manager.send_message(
             Message(
@@ -54,26 +52,5 @@ class Worker:
         """Run the worker."""
         logger.info(f"worker {self.local_rank}")
         self.worker_manager.message_listener()
-
-        self.spec = await self.worker_manager.config_q.get()
-
-        logger.debug(f"{self.spec}")
-        self._initialize()
-
-        pipeline = Pipeline(self.spec, self.ir, self.dataset, self.worker_manager)
+        pipeline = Pipeline(self.worker_manager)
         await pipeline.run()
-
-    def _initialize(self) -> None:
-        # load model meta info from zoo
-        mmd = Zoo.get_model_metadata(self.spec.model)
-        (path, name, split) = (
-            self.spec.dataset.path,
-            self.spec.dataset.name,
-            self.spec.dataset.split,
-        )
-
-        # load dataset
-        self.dataset = HuggingFaceDataset(mmd, path, name, split)
-
-        # load model intermediate representation
-        self.ir = ModelIR(mmd)

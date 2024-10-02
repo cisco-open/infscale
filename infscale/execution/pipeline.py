@@ -17,7 +17,6 @@
 """Pipeline class."""
 
 import asyncio
-import os
 import time
 
 import torch
@@ -31,6 +30,7 @@ from infscale.execution.stage import Stage
 from infscale.execution.world import WorldInfo
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
+from infscale.module.zoo import Zoo
 from multiworld.manager import WorldManager
 
 logger = get_logger()
@@ -41,29 +41,16 @@ class Pipeline:
 
     def __init__(
         self,
-        spec: ServeConfig,
-        modelir: ModelIR,
-        dataset: HuggingFaceDataset,
         worker_manager: WorkerManager,
     ):
         """Initialize pipeline instance."""
         self.stage: Stage = None
-        self.spec = spec
         self.world_manager = WorldManager()
         self.worker_manager = worker_manager
-        self.device = torch.device(self.spec.device)
-
+        self.spec = None
+        self.device = None
         self.world_info_list: list[WorldInfo] = list()
-
-        if spec.stage.is_server:
-            logger.info("I am server and leader")
-            self.dataset = dataset
-            self._run = self._run_server
-            self._predict_fn = modelir.predict_fn
-        else:
-            logger.info("I am a worker")
-            self._run = self._run_worker
-            self._initialize_worker(modelir)
+        self.cfg_event = asyncio.Event()
 
     async def _initialize_multiworld(self):
         my_id = self.spec.stage.id
@@ -177,7 +164,6 @@ class Pipeline:
             # send batch to the first stage
             await router.tx_q.put((batch, seqno))
             seqno += 1
-
         logger.info("_server_send task done")
 
     async def _server_recv(self, router: Router, max_count: int = -1):
@@ -207,6 +193,7 @@ class Pipeline:
                     start_time = time.perf_counter()
 
             idx += 1
+
         end_time = time.perf_counter()
         print(f"Server recv done, elapsed time: {end_time - start_time}")
         self.worker_manager.send_message(
@@ -255,15 +242,59 @@ class Pipeline:
             await router.tx_q.put((outputs, seqno))
             logger.debug("put output into tx_q")
 
+    async def handle_config(self) -> None:
+        while True:
+            spec = await self.worker_manager.config_q.get()
+
+            if spec is None:
+                continue
+
+            self.spec = spec
+            self._init_assets()
+            self._prepare_worker()
+            await self._initialize_pipeline()
+            self.cfg_event.set()
+
+    def _init_assets(self) -> None:
+        # load model meta info from zoo
+        mmd = Zoo.get_model_metadata(self.spec.model)
+        (path, name, split) = (
+            self.spec.dataset.path,
+            self.spec.dataset.name,
+            self.spec.dataset.split,
+        )
+
+        # load dataset
+        self.dataset = HuggingFaceDataset(mmd, path, name, split)
+        self.device = torch.device(self.spec.device)
+
+        # load model intermediate representation
+        self.modelir = ModelIR(mmd)
+
+    def _prepare_worker(self) -> None:
+        if self.spec.stage.is_server:
+            logger.info("I am server and leader")
+            self.dataset = self.dataset
+            self._predict_fn = self.modelir.predict_fn
+        else:
+            logger.info("I am a worker")
+            self._initialize_worker(self.modelir)
+
+    async def _run(self) -> None:
+        await self.cfg_event.wait()
+
+        if self.spec.stage.is_server:
+            await self._run_server()
+        else:
+            await self._run_worker()
+
     async def run(self):
         """Run pipeline."""
-        # initialize pipeline
         self.worker_manager.send_message(
             Message(
                 MessageType.STATUS,
                 WorkerStatus.RUNNING,
             )
         )
-        await self._initialize_pipeline()
-        # run pipeline
+        _ = asyncio.create_task(self.handle_config())
         await self._run()
