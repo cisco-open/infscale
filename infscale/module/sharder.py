@@ -38,11 +38,10 @@ class Sharder:
     """A wrapper class that shards a model."""
 
     @classmethod
-    def shard(
-        cls, mmd: BaseModelMetaData, concrete_args: List[str]
-    ) -> List[torch.fx.GraphModule]:
+    def shard(cls, mmd: BaseModelMetaData) -> List[torch.fx.GraphModule]:
         """Return a list of layer objects that can be sharded."""
         split_points = mmd.get_split_points()
+        concrete_args = mmd.trace_inputs
 
         assert (
             split_points

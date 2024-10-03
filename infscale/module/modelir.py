@@ -25,11 +25,11 @@ SOFTWARE.
 from __future__ import annotations
 
 import random
-from typing import TYPE_CHECKING, Any, Callable, Union
+from typing import TYPE_CHECKING, Callable, Union
 
 import torch
 from infscale import get_logger
-from infscale.module.sharding import Sharder
+from infscale.module.sharder import Sharder
 
 if TYPE_CHECKING:
     from infscale.module.model_metadata import BaseModelMetaData
@@ -52,17 +52,15 @@ class ModelIR:
     Model initialization must be done before distributed initialization.
     """
 
-    def __init__(self, mmd: BaseModelMetaData, sample_inputs: dict[str, Any]):
+    def __init__(self, mmd: BaseModelMetaData):
         """Initialize the class."""
         # Initialize CPU seed
         random.seed(RANDOM_SEED)
         torch.default_generator.manual_seed(RANDOM_SEED)
 
         self.mmd = mmd
-        self.sample_inputs = sample_inputs
-        self.trace_input_names = list(sample_inputs.keys())
 
-        self.layers = Sharder.shard(mmd, self.trace_input_names)
+        self.layers = Sharder.shard(mmd)
         self.model_name = mmd.name
 
         self.total_num_params = sum(

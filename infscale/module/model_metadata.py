@@ -55,6 +55,7 @@ class BaseModelMetaData:
 
         self.model: AutoModelType = None
         self.split_points: List[str] = None
+        self._trace_inputs: list[str] = None
 
     def _init_model(self, auto_model_type: AutoModelType):
         with init_empty_weights():
@@ -74,6 +75,16 @@ class BaseModelMetaData:
         )
 
         return loaded_model
+
+    @property
+    def trace_inputs(self) -> list[str]:
+        """Get input names to trace."""
+        return self._trace_inputs
+
+    @trace_inputs.setter
+    def trace_inputs(self, names: list[str]) -> None:
+        """Set input names to trace."""
+        self._trace_inputs = names
 
     @abstractmethod
     def get_model(self) -> PreTrainedModel:

@@ -76,4 +76,4 @@ class Worker:
         self.dataset = HuggingFaceDataset(mmd, path, name, split)
 
         # load model intermediate representation
-        self.ir = ModelIR(mmd, self.dataset.sample)
+        self.ir = ModelIR(mmd)

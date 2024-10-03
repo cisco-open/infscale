@@ -87,10 +87,11 @@ class HuggingFaceDataset:
 
         assert (
             self.dataset
-        ), f"Dataset it not initialized because given model {mmd.name} is not supported yet."
+        ), f"Dataset uninitialized due to unsupported model {mmd.name}."
 
-        trace_input = next(iter(self.dataset))
-        self.sample = self.data_collator([trace_input])
+        sample = self.data_collator([next(iter(self.dataset))])
+        trace_inputs = list(sample.keys())
+        mmd.trace_inputs = trace_inputs
 
         self.data_iter = None
         self.model_group = mmd.model_group
