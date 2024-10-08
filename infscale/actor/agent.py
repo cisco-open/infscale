@@ -21,16 +21,19 @@ import asyncio
 import grpc
 import torch
 import torch.multiprocessing as mp
+from multiprocess.connection import Pipe
+
 from infscale import get_logger
+from infscale.actor.config_diff import get_config_diff_ids
 from infscale.actor.job_manager import JobManager, WorkerMetaData
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker import Worker
+from infscale.config import JobConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.controller.controller import Controller
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
-from multiprocess.connection import Pipe
 
 logger = get_logger()
 
@@ -54,7 +57,9 @@ class Agent:
         self.controller = controller
         self.job_manager = JobManager()
         self.cfg_event = asyncio.Event()
+        self.controller = controller
 
+        self._workers: dict[int, WorkerMetaData] = {}
         self.n_workers = torch.cuda.device_count()
 
         self.channel = grpc.aio.insecure_channel(
@@ -107,18 +112,40 @@ class Agent:
 
     async def handle_config(self) -> None:
         while True:
-            config = await self.controller.config_q.get()
-            print(f"got new config: {config}")
-
-            if config is None:
+            new_config = await self.controller.config_q.get()
+            print(f"got new config: {new_config}")
+            if new_config is None:
                 continue
 
+            if self.job_config:
+                terminate_ids, start_ids, updated_ids = get_config_diff_ids(
+                    self.job_config, new_config
+                )
+                self.kill_workers(terminate_ids)
+                self.reconfigure_job(new_config, start_ids, updated_ids)
+                self.job_config = new_config
+
             if self.job_config is None:
-                self.job_config = config
+                self.job_config = new_config
 
             self.cfg_event.set()
 
-            # TODO: TBD - send new config to Workers using Pipe
+    def kill_workers(self, workers) -> None:
+        """Terminate workers whose IDs are in extra_in_a_ids."""
+        for worker in self._workers.values():
+            if worker.id in workers:
+                print(f"Terminating worker with ID: {worker.id}")
+
+    def reconfigure_job(
+        self, job_config: JobConfig, start_ids: list[int], update_ids: list[int]
+    ) -> None:
+        """Reconfigure workers with new config"""
+        for _, config in enumerate(job_config.get_serve_configs()):
+            if config.stage.id in start_ids:
+                print(f"worker {config.stage.id} needs to be started")
+
+            if config.stage.id in update_ids:
+                print(f"worker {config.stage.id} is updated")
 
     async def heart_beat(self):
         """Send a heart beat message periodically."""
@@ -142,7 +169,8 @@ class Agent:
                 daemon=True,
             )
             process.start()
-            w = WorkerMetaData(pipe, process, WorkerStatus.READY)
+            w = WorkerMetaData(pipe, process, WorkerStatus.READY, config.stage.id)
+            self._workers[w.pipe.fileno()] = w
             self.job_manager.add_worker(w)
             self.job_manager.send_message(w, Message(MessageType.CONFIG, config))
 

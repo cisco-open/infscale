@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from multiprocessing import connection
 
 import torch.multiprocessing as mp
-
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 
@@ -33,6 +32,7 @@ class WorkerMetaData:
     pipe: connection.Connection
     process: mp.Process
     status: WorkerStatus
+    id: str
 
 
 class JobManager:
