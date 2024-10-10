@@ -19,11 +19,13 @@ import asyncio
 from typing import Any, AsyncIterable
 
 import grpc
+import yaml
 from fastapi import Request
 from grpc.aio import ServicerContext
+
 from infscale import get_logger
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+from infscale.config import JobConfig
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer, ReqType
 from infscale.monitor.gpu import GpuMonitor
@@ -36,13 +38,34 @@ logger = get_logger()
 class Controller:
     """Controller class manages inference services via agents."""
 
-    def __init__(self, port: int = CONTROLLER_PORT, apiport: int = APISERVER_PORT):
+    def __init__(
+        self,
+        file_paths: list[str] = [],
+        port: int = CONTROLLER_PORT,
+        apiport: int = APISERVER_PORT,
+    ):
         """Initialize an instance."""
         self.port = port
 
         self.contexts: dict[str, AgentContext] = dict()
 
         self.apiserver = ApiServer(self, apiport)
+
+        self.config_q = asyncio.Queue()
+
+        self.file_paths = file_paths
+
+    async def start_sending(self):
+        if len(self.file_paths) == 0:
+            return
+        
+        for file in self.file_paths:
+            with open(file) as f:
+                spec = yaml.safe_load(f)
+                job_config = JobConfig(**spec)
+                await self.config_q.put(job_config)
+
+            await asyncio.sleep(20)
 
     async def _start_server(self):
         server_options = [

@@ -24,10 +24,9 @@ import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager, WorkerMetaData
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
-from infscale.actor.mock_controller import MockController
 from infscale.actor.worker import Worker
-from infscale.config import JobConfig, ServeConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
+from infscale.controller.controller import Controller
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -40,7 +39,7 @@ class Agent:
     """Agent class manages workers in a node."""
 
     def __init__(
-        self, id: str, endpoint: str, use_controller: bool, controller: MockController
+        self, id: str, endpoint: str, use_controller: bool, controller: Controller
     ):
         """Initialize the agent instance."""
         # TODO: there can be more than one worker per GPU
