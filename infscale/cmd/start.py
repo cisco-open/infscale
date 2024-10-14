@@ -14,22 +14,21 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""run subcommand."""
 import asyncio
-
 import click
+
 from infscale.actor.agent import Agent
 from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
 from infscale.controller import controller as ctrl
 
 
 @click.group()
-def run():
-    """Run controller or agent."""
+def start():
+    """Start command."""
     pass
 
 
-@run.command()
+@start.command()
 @click.option("--port", default=CONTROLLER_PORT, help="port number")
 @click.option("--apiport", default=APISERVER_PORT, help="port number for api server")
 def controller(port: int, apiport: int):
@@ -38,7 +37,7 @@ def controller(port: int, apiport: int):
     loop.run_until_complete(ctrl.Controller(port=port, apiport=apiport).run())
 
 
-@run.command()
+@start.command()
 @click.option("--host", default=LOCALHOST, help="Controller's IP or hostname")
 @click.option("--port", default=CONTROLLER_PORT, help="Controller's port number")
 @click.option("--controller/--no-controller", default=False, help="Use controller")
@@ -62,3 +61,10 @@ def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
             controller=ctrl_instance,
         ).run()
     )
+
+
+@start.command()
+@click.argument("job_id", required=True)
+def job(job_id):
+    """Start a job with JOB_ID."""
+    click.echo(f"Starting job {job_id}...")

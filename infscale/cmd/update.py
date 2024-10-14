@@ -14,24 +14,18 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""command line tool."""
 import click
-
-from infscale.cmd.start import start
-from infscale.cmd.stop import stop
-from infscale.cmd.update import update
-from infscale.version import VERSION
 
 
 @click.group()
-@click.version_option(version=VERSION)
-def cli():  # noqa: D103
+def update():
+    """Update command."""
     pass
 
 
-cli.add_command(start)
-cli.add_command(stop)
-cli.add_command(update)
-
-if __name__ == "__main__":
-    cli()
+@update.command()
+@click.argument("job_id", required=True)
+@click.argument("config", required=True)
+def job(job_id, config):
+    """Update a job with JOB_ID using a new config."""
+    click.echo(f"Updating job {job_id} with config {config}...")

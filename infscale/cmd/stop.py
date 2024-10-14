@@ -14,24 +14,17 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""command line tool."""
 import click
-
-from infscale.cmd.start import start
-from infscale.cmd.stop import stop
-from infscale.cmd.update import update
-from infscale.version import VERSION
 
 
 @click.group()
-@click.version_option(version=VERSION)
-def cli():  # noqa: D103
+def stop():
+    """Stop command."""
     pass
 
 
-cli.add_command(start)
-cli.add_command(stop)
-cli.add_command(update)
-
-if __name__ == "__main__":
-    cli()
+@stop.command()
+@click.argument("job_id", required=True)
+def job(job_id):
+    """Stop a job with JOB_ID."""
+    click.echo(f"Stopping job {job_id}...")
