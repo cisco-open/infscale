@@ -51,7 +51,7 @@ def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
     # Don't use the following code asyncio.run()
     # see https://github.com/grpc/grpc/issues/32480 for more details
 
-    controller = ctrl.Controller(list(jobconfig))
+    ctrl_instance = ctrl.Controller(list(jobconfig))
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(
@@ -59,6 +59,6 @@ def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
             id=id,
             endpoint=endpoint,
             use_controller=controller,
-            controller=controller,
+            controller=ctrl_instance,
         ).run()
     )
