@@ -133,16 +133,24 @@ class Controller:
 
     async def handle_fastapi_request(self, type: ReqType, req: Request) -> Any:
         """Handle fastapi request."""
-        if type == ReqType.SERVE:
-            logger.debug("got request serve")
-            return await self._handle_fastapi_serve(req)
-        else:
-            logger.debug(f"unknown fastapi rquest type: {type}")
-            return None
+        match type:
+            case ReqType.SERVE:
+                logger.debug("got request serve")
+                return await self._handle_fastapi_serve(req)
+
+            case ReqType.JOB_ACTION:
+                logger.debug("got start job request")
+                return await self._handle_fastapi_job_action(req)
+
+            case _:
+                logger.debug(f"unknown fastapi request type: {type}")
+                return None
+
+    async def _handle_fastapi_job_action(self, req: Request):
+        logger.debug(f"req = {req}")
 
     async def _handle_fastapi_serve(self, req: Request):
         logger.debug(f"req = {req}")
-
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     """Controller Servicer class."""

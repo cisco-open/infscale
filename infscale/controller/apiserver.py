@@ -19,11 +19,12 @@ from __future__ import annotations
 
 import asyncio
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from fastapi import FastAPI
+from infscale.config import Dataset, Stage, WorkerInfo
 from infscale.constants import APISERVER_PORT
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from uvicorn import Config, Server
 
 if TYPE_CHECKING:
@@ -61,15 +62,38 @@ class ReqType(str, Enum):
 
     UNKNOWN = "unknown"
     SERVE = "serve"
+    JOB_ACTION = "job_action"
 
+class JobAction(str, Enum):
+    """Enum class for request type."""
+
+    START = "start"
+    STOP = "stop"
+    UPDATE = "update"
+
+class JobActionModel(BaseModel):
+    job_id: str
+    action: JobAction
+    config: Optional[ServeSpec]= None
+
+    @model_validator(mode='after')
+    def check_config_for_update(self):
+        if self.action == JobAction.UPDATE and self.config is None:
+            raise ValueError('config is required when updating a job')
+        return self
 
 class ServeSpec(BaseModel):
     """ServiceSpec model."""
-
     name: str
     model: str
-    nfaults: int  # # of faults a serve should tolerate
-
+    stage: Stage
+    dataset: Dataset
+    flow_graph: dict[str, list[WorkerInfo]]
+    rank_map: dict[str, int]
+    device: str = "cpu"
+    nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
+    micro_batch_size: int = 8
+    fwd_policy: str = "random"
 
 class Response(BaseModel):
     """Response model."""
@@ -84,3 +108,21 @@ async def serve(spec: ServeSpec):
 
     res = {"message": "started serving"}
     return res
+
+@app.post("/job", response_model=Response)
+async def manage_job(job_action: JobActionModel):
+    """Start or Stop a job."""
+    await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, { "job_id": job_action.job_id, "action": job_action.action })
+
+    res = {"message": "job started" if job_action.action == JobAction.START else "job stopped"}
+    return res
+
+@app.put("/job", response_model=Response)
+async def update_job(job_action: JobActionModel):
+    """Update job with new config."""
+    await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, { "job_id": job_action.job_id, "action": job_action.action, "config": job_action.config })
+
+    res = {"message": "job updated"}
+    return res
+
+
