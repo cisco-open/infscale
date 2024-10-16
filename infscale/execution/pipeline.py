@@ -20,6 +20,8 @@ import asyncio
 import time
 
 import torch
+from multiworld.manager import WorldManager
+
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker_manager import WorkerManager
@@ -31,7 +33,6 @@ from infscale.execution.world import WorldInfo
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
-from multiworld.manager import WorldManager
 
 logger = get_logger()
 
@@ -57,7 +58,13 @@ class Pipeline:
 
         for k, v in self.spec.flow_graph.items():
             for wrk_info in v:
-                if my_id == k:
+                world_created = any(
+                    world.name == wrk_info.name for world in self.world_info_list
+                )
+
+                if world_created:
+                    continue
+                elif my_id == k:
                     my_rank = 0
                 elif my_id in wrk_info.peers:
                     my_rank = wrk_info.peers.index(my_id) + 1
@@ -119,6 +126,12 @@ class Pipeline:
             my_rank = 0
             other_rank = 1
             for wrk_info in v:
+                world_created = any(
+                    world.name == wrk_info.name for world in self.world_info_list
+                )
+
+                if world_created:
+                    continue
                 await _inner(my_rank, other_rank, wrk_info)
 
         # initialize client next
@@ -242,9 +255,28 @@ class Pipeline:
             await router.tx_q.put((outputs, seqno))
             logger.debug("put output into tx_q")
 
+    def get_removed_worlds(self, flow_graph):
+        world_info_names = {world_info.name for world_info in self.world_info_list}
+
+        world_names = set()
+        for worker_list in flow_graph.values():
+            for worker_info in worker_list:
+                world_names.add(worker_info.name)
+
+        removed_worlds = list(world_info_names - world_names)
+        return removed_worlds
+
     async def handle_config(self) -> None:
         while True:
             spec = await self.worker_manager.config_q.get()
+
+            if self.spec:
+                self.spec = spec
+                removed_worlds = self.get_removed_worlds(self.spec.flow_graph)
+                # TODO - decide what to do with worlds that are't present any more in the new config
+                print(f"worlds that are removed: {removed_worlds}")
+                await self._initialize_pipeline()
+                continue
 
             if spec is None:
                 continue

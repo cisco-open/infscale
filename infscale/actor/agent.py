@@ -145,7 +145,12 @@ class Agent:
                 print(f"worker {config.stage.id} needs to be started")
 
             if config.stage.id in update_ids:
-                print(f"worker {config.stage.id} is updated")
+                worker = next(
+                    (w for w in self._workers.values() if w.id == config.stage.id), None
+                )
+                self.job_manager.send_message(
+                    worker, Message(MessageType.CONFIG, config)
+                )
 
     async def heart_beat(self):
         """Send a heart beat message periodically."""

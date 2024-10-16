@@ -15,8 +15,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
-import click
 
+import click
 from infscale.actor.agent import Agent
 from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
 from infscale.controller import controller as ctrl
