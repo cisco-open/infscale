@@ -25,6 +25,7 @@ from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.world import WorldInfo
 from infscale.fwding import random, rr, shortest, static
 from multiworld.manager import WorldManager
+from torch import Tensor
 
 DEFAULT_QUEUE_SIZE = 3
 DEFAULT_SLEEP_TIME = 0.1  # 100ms
@@ -53,7 +54,7 @@ class Router:
 
         # a collection of receivers that receive data from me
         self.receivers: list[WorldInfo] = []
-        self.__tx_qs: list[tuple[WorldInfo, asyncio.Queue]] = []
+        self.__tx_qs: dict[int, list[tuple[WorldInfo, asyncio.Queue]]] = {}
 
         # a collection of senders that send data to me
         self.senders: list[WorldInfo] = []
@@ -65,8 +66,15 @@ class Router:
                 self.senders.append(world_info)
             else:  # I am a sender to other
                 self.receivers.append(world_info)
+
                 tpl = (world_info, asyncio.Queue(DEFAULT_QUEUE_SIZE))
-                self.__tx_qs.append(tpl)
+
+                stage_cfg = spec.workers_stage_info[world_info.other_id]
+
+                if stage_cfg.start not in self.__tx_qs:
+                    self.__tx_qs[stage_cfg.start] = []
+
+                self.__tx_qs[stage_cfg.start].append(tpl)
 
         self._select_forwarding_policy(spec.fwd_policy)
 
@@ -143,6 +151,25 @@ class Router:
 
         logger.warn(f"done with recv task for {world_info.name}")
 
+    def _find_tx_q(self, world_info: WorldInfo) -> asyncio.Queue:
+        for _, v in self.__tx_qs.items():
+            for wi, q in v:
+                if wi != world_info:
+                    continue
+
+                return q
+
+        return None
+
+    def _cleanup_tx_q(self, world_info: WorldInfo) -> None:
+        for _, v in self.__tx_qs.items():
+            for i, (wi, q) in enumerate(v):
+                if wi != world_info:
+                    continue
+
+                del v[i]
+                return
+
     async def _send(self, world_info: WorldInfo) -> None:
         logger.debug(f"start to send tensor to {world_info.other} in {world_info.name}")
         send_dev = torch.device("cpu") if world_info.backend == "gloo" else self.device
@@ -154,19 +181,16 @@ class Router:
             send_dev,
         )
         logger.debug("created tensor sender")
-        tx_q = None
-        for wi, q in self.__tx_qs:
-            if wi != world_info:
-                continue
-            tx_q = q
-            break
 
+        tx_q = self._find_tx_q(world_info)
         assert tx_q is not None, f"no tx queqe found for {world_info}"
         logger.debug("acquired tx q")
 
         while True:
             try:
-                tensors, seqno = await asyncio.wait_for(tx_q.get(), QUEUE_WAIT_PERIOD)
+                seqno, tensors, _ = await asyncio.wait_for(
+                    tx_q.get(), QUEUE_WAIT_PERIOD
+                )
             except asyncio.TimeoutError:
                 if not sender.is_broken():
                     continue
@@ -186,12 +210,7 @@ class Router:
             logger.debug(f"sent tensors of seqno {seqno}")
 
         # remove tx queue for the world
-        for i, (wi, q) in enumerate(self.__tx_qs):
-            if wi != world_info:
-                continue
-
-            del self.__tx_qs[i]
-            break
+        self._cleanup_tx_q(world_info)
 
         await self._handle_orphan_data(tx_q)
 
@@ -226,23 +245,33 @@ class Router:
         logger.debug("start send_arbiter")
         while True:
             try:
-                tensor, seqno = self.orphan_dq.popleft()
+                seqno, tensor, next_layer = self.orphan_dq.popleft()
                 logger.debug(f"fetched tensor {seqno} from orhpan_dq")
             except IndexError:
                 # In case of this error, we know that there is no orphan
                 # data, so we can proceed to fetch data from _tx_q
-                tensor, seqno = await self._tx_q.get()
+                seqno, tensor, next_layer = await self._tx_q.get()
                 logger.debug(f"fetched tensor {seqno} from _tx_q")
 
-            while len(self.__tx_qs) == 0:
+            while len(self.__tx_qs[next_layer]) == 0:
                 logger.warn("no worker to send data")
                 await asyncio.sleep(DEFAULT_SLEEP_TIME)
 
-            world_info, tx_q = self._select(self.__tx_qs)
+            tx_qs = self.__tx_qs[next_layer]
+            world_info, tx_q = self._select(tx_qs)
+
             logger.debug(f"world name: {world_info.name}")
             logger.debug(f"receiver rank: {world_info.other}")
 
-            await tx_q.put((tensor, seqno))
+            await tx_q.put((seqno, tensor, next_layer))
             logger.debug(
                 f"put tensor {seqno} to __tx_q for {world_info.other} in {world_info.name}"
             )
+
+    async def send(self, seqno: int, data: dict[str, Tensor], next_layer: int) -> None:
+        """Send outputs to an appropriate destination."""
+        await self._tx_q.put((seqno, data, next_layer))
+
+    async def recv(self) -> tuple[dict[str, Tensor], int]:
+        """Receive a dictionary of tensors and sequence number."""
+        return await self._rx_q.get()

@@ -1,0 +1,52 @@
+diff --git a/src/transformers/models/llama/modeling_llama.py b/src/transformers/models/llama/modeling_llama.py
+index 73b6bcd8b..18d8e4caa 100644
+--- a/src/transformers/models/llama/modeling_llama.py
++++ b/src/transformers/models/llama/modeling_llama.py
+@@ -45,6 +45,7 @@ from ...utils import (
+     add_start_docstrings,
+     add_start_docstrings_to_model_forward,
+     is_flash_attn_greater_or_equal_2_10,
++    fx,
+     is_torchdynamo_compiling,
+     logging,
+     replace_return_docstrings,
+@@ -947,7 +948,7 @@ class LlamaModel(LlamaPreTrainedModel):
+ 
+         # kept for BC (non `Cache` `past_key_values` inputs)
+         return_legacy_cache = False
+-        if use_cache and not isinstance(past_key_values, Cache):
++        if use_cache and not isinstance(past_key_values, (Cache, fx.HFProxy)):
+             return_legacy_cache = True
+             if past_key_values is None:
+                 past_key_values = DynamicCache()
+diff --git a/src/transformers/utils/fx.py b/src/transformers/utils/fx.py
+index c78b4c34c..bb674a3ae 100755
+--- a/src/transformers/utils/fx.py
++++ b/src/transformers/utils/fx.py
+@@ -1049,23 +1049,14 @@ class HFTracer(Tracer):
+             inputs_dict[input_name] = torch.zeros(mask_shape, dtype=torch.long, device=device)
+         elif "ids" in input_name:
+             inputs_dict[input_name] = torch.zeros(shape, dtype=torch.long, device=device)
++        elif "use_cache" in input_name:
++            inputs_dict[input_name] = True
+         elif "past_key_values" in input_name:
+             if model.config.model_type not in _FX_SUPPORTED_MODELS_WITH_KV_CACHE:
+                 raise NotImplementedError(
+                     f"Symbolic trace with past_key_values input is not supported yet for the model {model.config.model_type}. Please open an issue or a PR in Transformers repository if you would like to see the support added."
+                 )
+-            num_heads = model.config.num_attention_heads
+-            head_dim = model.config.hidden_size // model.config.num_attention_heads
+-
+-            cache_shape = (shape[0], num_heads, kv_cache_length, head_dim)
+-            pkv = tuple(
+-                (
+-                    torch.rand(cache_shape, dtype=torch.float, device=device),
+-                    torch.rand(cache_shape, dtype=torch.float, device=device),
+-                )
+-                for i in range(model.config.num_hidden_layers)
+-            )
+-            inputs_dict[input_name] = pkv
++            inputs_dict[input_name] = DynamicCache()
+         else:
+             shape_with_hidden_size = shape + [model.config.hidden_size]
+             inputs_dict[input_name] = torch.zeros(shape_with_hidden_size, dtype=torch.float, device=device)

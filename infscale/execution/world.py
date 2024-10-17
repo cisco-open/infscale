@@ -29,7 +29,12 @@ class WorldInfo:
     """
 
     name: str  # world's name
+
+    my_id: str  # my id
     me: int  # my rank
+
+    other_id: str  # other id
     other: int  # other peer's rank
+
     backend: str  # backend
     channel: Channel  # control channel

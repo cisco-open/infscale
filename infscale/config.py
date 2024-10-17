@@ -169,7 +169,7 @@ TODO: The following is temporary serving config dataclasses.
 
 
 @dataclass
-class Stage:
+class StageConfig:
     """Class for keeping stage information for worker."""
 
     start: int  # start layer number
@@ -208,13 +208,15 @@ class ServeConfig:
     name: str
     model: str
 
-    stage: Stage
+    stage: StageConfig
 
     dataset: Dataset
 
     flow_graph: dict[str, list[WorkerInfo]]
 
     rank_map: dict[str, int]
+
+    workers_stage_info: dict[str, StageConfig]
 
     device: str = "cpu"
 
@@ -232,7 +234,14 @@ class ServeConfig:
             if isinstance(self.dataset, Dataset)
             else Dataset(**self.dataset)
         )
-        self.stage = Stage(**self.stage)
+        self.stage = StageConfig(**self.stage)
+
+        for k in list(self.workers_stage_info.keys()):
+            stage = self.workers_stage_info[k]
+            self.workers_stage_info[k] = (
+                stage if isinstance(stage, StageConfig) else StageConfig(**stage)
+            )
+
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
                 worker_info = (
@@ -262,6 +271,12 @@ class JobConfig:
         """Convert job config into a list of serve config dict."""
         serve_configs = []
 
+        workers_stage_info = {}
+        for worker in self.workers:
+            wid = worker["id"]
+            stage = worker["stage"]
+            workers_stage_info[wid] = {**stage, "id": wid}
+
         for item in self.workers:
             config = {
                 "name": self.name,
@@ -274,6 +289,7 @@ class JobConfig:
                 "micro_batch_size": self.micro_batch_size,
                 "fwd_policy": self.fwd_policy,
                 "device": item["device"],
+                "workers_stage_info": workers_stage_info,
             }
             serve_configs.append(ServeConfig(**config))
 

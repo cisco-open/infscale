@@ -98,6 +98,166 @@ class BaseModelMetaData:
         """Abstract method to return function to predict."""
 
 
+class Llama3ModelMetaData(BaseModelMetaData):
+    """Llama3 model meta data class."""
+
+    def __init__(self, name: str, config: PretrainedConfig):
+        """Initialize class."""
+        super().__init__(name, config)
+
+        self.model_group = ModelGroup.LANG
+
+        self.tokenizer = AutoTokenizer.from_pretrained(self.name, config=self.config)
+        self.generated_tokens: list[Tensor] = []
+        self._init_gen_config()
+
+    def _init_gen_config(self):
+        self.bos_token_id = 128000
+        if hasattr(self.config, "bos_token_id"):
+            self.bos_token_id = self.config.bos_token_id
+        logger.info(f"bos_token_id = {self.bos_token_id}")
+
+        self.do_sample = True
+        if hasattr(self.config, "do_sample"):
+            self.do_sample = self.config.do_sample
+        logger.info(f"do_sample = {self.do_sample}")
+
+        self.eos_token_id = 128001
+        if hasattr(self.config, "eos_token_id"):
+            self.eos_token_id = self.config.eos_token_id
+        logger.info(f"eos_token_id = {self.eos_token_id}")
+
+        self.temperature = 0.6
+        if hasattr(self.config, "temperature"):
+            self.temperature = self.config.temperature
+        logger.info(f"temperature = {self.temperature}")
+
+        self.top_p = 1.0
+        if hasattr(self.config, "top_p"):
+            self.top_p = self.config.top_p
+        logger.info(f"top_p = {self.top_p}")
+
+        self.max_new_tokens = 64
+
+    @property
+    def trace_inputs(self) -> list[str]:
+        """Get input names to trace."""
+        return self._trace_inputs
+
+    @trace_inputs.setter
+    def trace_inputs(self, names: list[str]) -> None:
+        """Set input argument names to trace."""
+        self._trace_inputs = names + [
+            "use_cache",
+            "past_key_values",
+        ]
+        # self._trace_inputs = names + [
+        #     "past_key_values",
+        # ]
+        print(f"llama3 trace inputs: {self._trace_inputs}")
+
+    def get_model(self) -> AutoModelType:
+        """Get model."""
+        if self.model:
+            return self.model
+
+        self.model = self._init_model(AutoModelForCausalLM)
+
+        assert self.model, f"Given model {self.name} is not supported yet."
+
+        return self.model
+
+    def get_split_points(self) -> List[str]:
+        """Get split points."""
+        if self.split_points:
+            return self.split_points
+
+        self.split_points: List[str] = []
+
+        # self.split_points.append("model.embed_tokens")
+        for i in range(self.config.num_hidden_layers):
+            self.split_points.append(f"model.layers.{i}")
+        self.split_points.append("model.norm")
+        self.split_points.append("lm_head")
+
+        logger.info(f"#hidden_layers = {self.config.num_hidden_layers}")
+
+        return self.split_points
+
+    def get_output_parser(self) -> Union[Callable, None]:
+        """Return function to parse output."""
+
+        def inner(outputs, attention_mask) -> dict[str, Union[Tensor, bool]]:
+            next_token_logits = outputs["logits"][:, -1, :]
+            device = next_token_logits.device
+
+            if self.do_sample:
+                # Apply temperature
+                next_token_logits = next_token_logits / self.temperature
+
+                # Apply top_p (nucleus) sampling
+                sorted_logits, sorted_indices = torch.sort(
+                    next_token_logits, descending=True
+                )
+                cumulative_probs = torch.cumsum(
+                    torch.nn.functional.softmax(sorted_logits, dim=-1), dim=-1
+                )
+
+                sorted_indices_to_remove = cumulative_probs > self.top_p
+                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
+                    ..., :-1
+                ].clone()
+                sorted_indices_to_remove[..., 0] = 0
+                indices_to_remove = sorted_indices[sorted_indices_to_remove]
+                next_token_logits[:, indices_to_remove] = float("-inf")
+
+                # Sample from the filtered distribution
+                next_token_probs = torch.nn.functional.softmax(
+                    next_token_logits, dim=-1
+                )
+                next_token = torch.multinomial(next_token_probs, num_samples=1)
+            else:
+                # Greedy decoding
+                next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
+
+            self.generated_tokens.append(next_token.item())
+
+            # Check for EOS token or if max number of tokens are generated
+            if (
+                self.max_new_tokens == len(self.generated_tokens)
+                or next_token.item() == self.eos_token_id
+            ):
+                tensor = torch.tensor(
+                    self.generated_tokens, dtype=torch.int64, device=device
+                )
+                self.generated_tokens = []
+                return {"tokens": tensor}
+
+            # Update input_ids for the next iteration
+            input_ids = next_token
+            attention_mask = torch.cat(
+                [attention_mask, torch.ones_like(next_token)], dim=-1
+            )
+
+            return {"input_ids": input_ids, "attention_mask": attention_mask}
+
+        return inner
+
+    def get_predict_fn(self) -> Union[Callable, None]:
+        """Return function to predict."""
+
+        def inner(tensors: dict[str, Tensor]) -> list[str]:
+            results = []
+            tokens = tensors["tokens"]
+            results.append(self.tokenizer.decode(tokens))
+
+            print(f">>> results: {results}")
+
+            return results
+
+        return inner
+
+
 class Gpt2ModelMetaData(BaseModelMetaData):
     """Gpt2 model meta data class."""
 

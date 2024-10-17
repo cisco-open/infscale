@@ -19,6 +19,7 @@
 from infscale.module.model_metadata import (BaseModelMetaData,
                                             BertModelMetaData,
                                             Gpt2ModelMetaData,
+                                            Llama3ModelMetaData,
                                             ResnetModelMetaData,
                                             T5ModelMetaData, VitModelMetaData)
 from transformers import AutoConfig
@@ -28,6 +29,7 @@ class Zoo:
     """Collection of models supported in InfScale."""
 
     model_metadata_dict = {
+        "llama": Llama3ModelMetaData,
         "openai-gpt": Gpt2ModelMetaData,
         "gpt2": Gpt2ModelMetaData,
         "bert": BertModelMetaData,

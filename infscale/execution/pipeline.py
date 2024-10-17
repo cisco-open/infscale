@@ -47,7 +47,7 @@ class Pipeline:
         self.stage: Stage = None
         self.world_manager = WorldManager()
         self.worker_manager = worker_manager
-        self.spec = None
+        self.spec: ServeConfig = None
         self.device = None
         self.world_info_list: list[WorldInfo] = list()
         self.cfg_event = asyncio.Event()
@@ -57,6 +57,8 @@ class Pipeline:
 
         for k, v in self.spec.flow_graph.items():
             for wrk_info in v:
+                assert len(wrk_info.peers) == 1
+
                 if my_id == k:
                     my_rank = 0
                 elif my_id in wrk_info.peers:
@@ -85,7 +87,13 @@ class Pipeline:
                 logger.debug(f"done initializing multiworld {name}")
 
     async def _initialize_control_channel(self):
-        async def _inner(my_rank: int, other_rank: int, wrk_info: WorkerInfo):
+        async def _inner(
+            my_id: str,
+            my_rank: int,
+            other_id: str,
+            other_rank: int,
+            wrk_info: WorkerInfo,
+        ):
             name, backend, addr, port = (
                 wrk_info.name,
                 wrk_info.backend,
@@ -100,7 +108,9 @@ class Pipeline:
             await ctrl_ch.setup()
             data = {
                 "name": name,
+                "my_id": my_id,
                 "me": my_rank,
+                "other_id": other_id,
                 "other": other_rank,
                 "backend": backend,
                 "channel": ctrl_ch,
@@ -119,18 +129,21 @@ class Pipeline:
             my_rank = 0
             other_rank = 1
             for wrk_info in v:
-                await _inner(my_rank, other_rank, wrk_info)
+                assert len(wrk_info.peers) == 1
+                other_id = wrk_info.peers[0]
+                await _inner(my_id, my_rank, other_id, other_rank, wrk_info)
 
         # initialize client next
         for k, v in self.spec.flow_graph.items():
             for wrk_info in v:
+                assert len(wrk_info.peers) == 1
                 if my_id not in wrk_info.peers:
                     continue
 
                 my_rank = wrk_info.peers.index(my_id) + 1
                 other_rank = 0
-
-                await _inner(my_rank, other_rank, wrk_info)
+                other_id = k
+                await _inner(my_id, my_rank, other_id, other_rank, wrk_info)
 
         for world_info in self.world_info_list:
             await world_info.channel.wait_readiness()
@@ -159,7 +172,7 @@ class Pipeline:
 
             logger.debug(f"sending batch {seqno}")
             # send batch to the first stage
-            await router.tx_q.put((batch, seqno))
+            await router.send(seqno, batch, 0)
             seqno += 1
         logger.info("_server_send task done")
 
@@ -182,7 +195,7 @@ class Pipeline:
         )
         while max_count == -1 or max_count > idx:
             logger.debug("waiting for response")
-            outputs, seqno = await router.rx_q.get()
+            outputs, seqno = await router.recv()
             results = self._predict_fn(outputs)
             logger.info(f"response for {seqno}: {results}")
             if idx % 100 == 0:
@@ -229,15 +242,15 @@ class Pipeline:
         )
         router.prepare()
         while True:
-            inputs, seqno = await router.rx_q.get()
-            logger.debug(f"received input {seqno} from rx_q")
+            inputs, seqno = await router.recv()
+            logger.debug(f"received input {seqno} from router")
 
             with torch.inference_mode():
-                outputs = self.stage(**inputs)
+                outputs, next_layer = self.stage.predict(**inputs)
 
-            logger.debug("got output from stage and put output into tx_q")
-            await router.tx_q.put((outputs, seqno))
-            logger.debug("put output into tx_q")
+            logger.debug("got output from stage and put output into router")
+            await router.send(seqno, outputs, next_layer)
+            logger.debug("put output into router")
 
     async def handle_config(self) -> None:
         while True:

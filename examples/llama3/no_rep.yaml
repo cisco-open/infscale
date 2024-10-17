@@ -1,0 +1,45 @@
+---
+name: llama3_example
+model: meta-llama/Meta-Llama-3.1-8B
+nfaults: 1
+# the following entries are for local development only
+# after development is done, they need to be revised accordingly
+# to automate building flow_graph, etc.
+micro_batch_size: 1
+fwd_policy: "static"
+
+flow_graph:
+  s-0:
+    - name: w0
+      addr: "127.0.0.1"
+      port: 29500
+      peers: [0-0]
+      backend: gloo
+  0-0:
+    - name: w1
+      addr: "127.0.0.1"
+      port: 30500
+      peers: [s-0]
+      backend: gloo
+
+rank_map: # run worker in this rank order
+  s-0: 0
+  0-0: 1
+
+dataset: # huggingface dataset
+  path: fka/awesome-chatgpt-prompts
+  name: ""
+  split: train
+
+workers:
+  - id: s-0
+    device: cpu
+    stage:
+      start: -1
+      end: -1
+      is_server: True
+  - id: 0-0
+    device: cpu
+    stage:
+      start: 0
+      end: 34

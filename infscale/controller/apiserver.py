@@ -23,11 +23,10 @@ from typing import TYPE_CHECKING, Optional
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
+from infscale.config import Dataset, JobConfig, StageConfig, WorkerInfo
+from infscale.constants import APISERVER_PORT
 from pydantic import BaseModel, model_validator
 from uvicorn import Config, Server
-
-from infscale.config import Dataset, JobConfig, Stage, WorkerInfo
-from infscale.constants import APISERVER_PORT
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
@@ -92,7 +91,7 @@ class ServeSpec(BaseModel):
 
     name: str
     model: str
-    stage: Stage
+    stage: StageConfig
     dataset: Dataset
     flow_graph: dict[str, list[WorkerInfo]]
     rank_map: dict[str, int]

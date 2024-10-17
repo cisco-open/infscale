@@ -25,8 +25,10 @@ import torch
 import torch.nn as nn
 from accelerate.utils.modeling import set_module_tensor_to_device
 from infscale import get_logger
+from infscale.module.model_metadata import Llama3ModelMetaData
 from infscale.module.modelir import ModelIR
 from torch.nn import Parameter
+from transformers import DynamicCache
 
 if TYPE_CHECKING:
     import torch.fx as fx
@@ -54,15 +56,23 @@ class Stage(nn.Module):
 
         self.modelir = modelir
 
+        self.start = start
+        self.end = end
+
+        self.device = device
+
+        # decide if this stage contains the first layer of a model
+        self.is_first = start == 0
         # decide if this stage contains the last layer of a model
-        is_last = end + 1 == len(modelir.layers)
+        self.is_last = end + 1 == len(modelir.layers)
+        # decide if a full model is loaded
+        # end + 1 - start == len(modelir.layers)
+        self.is_full_model = self.is_first and self.is_last
 
         # resize the model layers so that other unused layers can be
         # garbage collected; not sure when/whether it happens though
         modelir.layers = modelir.layers[start : end + 1]
         self.layers = modelir.layers
-
-        self.device = device
 
         # An output parser is only useful for the last stage.
         # The outputs from the last stage need to be sent back to the inference
@@ -71,7 +81,7 @@ class Stage(nn.Module):
         # error. Also, in the inference, other values such as loss may not be
         # important. So, a way to manipulate the outputs is provided.
         self._output_parser: Union[Callable, None] = (
-            modelir.output_parser if is_last else None
+            modelir.output_parser if self.is_last else None
         )
 
         try:
@@ -80,14 +90,145 @@ class Stage(nn.Module):
             traceback.print_exc()
             raise e
 
+        self._init_llm_config()
+
+    def _init_llm_config(self):
+        if not isinstance(self.modelir.mmd, Llama3ModelMetaData):
+            return
+
+        # further ste up LLM causal LM parameters
+        self.cache: DynamicCache = DynamicCache()
+
+        if self.is_full_model:
+            self._run_llm = self._run_llm_full_model
+            return
+
+        if self.is_first:
+            self._run_llm = self._run_llm_first_stage
+        elif self.is_last:
+            self._run_llm = self._run_llm_last_stage
+        else:
+            self._run_llm = self._run_llm_middle_stage
+
+    def _run_llm_full_model(self, **inputs):
+        outputs = inputs
+
+        while True:
+            input_ids = outputs["input_ids"]
+            attention_mask = outputs["attention_mask"]
+            logger.debug(
+                f"input_ids's size: {input_ids.size()} ",
+                f"attention_mask's size: {attention_mask.size()}",
+            )
+
+            outputs = self.forward(
+                **outputs,
+                use_cache=True,
+                past_key_values=self.cache,
+            )
+
+            outputs = self._output_parser(outputs, attention_mask)
+
+            if "tokens" in outputs:
+                # generating tokens is done
+                break
+
+        return outputs
+
+    def _run_llm_first_stage(self, **inputs) -> dict[str, Tensor]:
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
+        logger.debug("run llm first stage")
+        logger.debug(
+            f"input_ids's size: {input_ids.size()} ",
+            f"attention_mask's size: {attention_mask.size()}",
+        )
+
+        outputs = self.forward(**inputs, use_cache=True, past_key_values=self.cache)
+
+        # add attention mask to outputs to pass it to next stage
+        outputs["attention_mask"] = attention_mask
+
+        return outputs
+
+    def _run_llm_middle_stage(self, **inputs) -> dict[str, Tensor]:
+        logger.debug("run llm middle stage")
+        # attention mask passed from the upstream stage shouldn't be used
+        # during inference. we save it to pass it to the next stage
+        attention_mask = inputs["attention_mask"]
+        del inputs["attention_mask"]
+
+        outputs = self.forward(**inputs, past_key_values=self.cache)
+
+        # add attention mask to outputs to pass it to next stage
+        outputs["attention_mask"] = attention_mask
+
+        return outputs
+
+    def _run_llm_last_stage(self, **inputs) -> dict[str, Tensor]:
+        logger.debug("run llm last stage")
+        # attention mask passed from the upstream stage shouldn't be used
+        # during inference. we save it to use during output parsing
+        attention_mask = inputs["attention_mask"]
+        del inputs["attention_mask"]
+
+        outputs = self.forward(**inputs, past_key_values=self.cache)
+
+        outputs = self._output_parser(outputs, attention_mask)
+
+        return outputs
+
+    def _llm_generate(self, **inputs) -> tuple[dict[str, Tensor], int]:
+        """Return generated intermediate results or all the tokens.
+
+        Returns
+        -------
+        1st value: contains a dictionary of tensors
+        2nd value: contains an index of layer that the results need to go back.
+                   -1 means that the results goes back to the serving server.
+        """
+        outputs = self._run_llm(**inputs)
+        # If DynamicCache is returned in outputs, it can't be forwarded
+        # to other workers since it is not a tensor; so, we remove it
+        # from outputs; this is a HACK; need to think about if there is
+        # a better way to handle this
+        outputs.pop("past_key_values", None)
+
+        if self.is_last:
+            # if tokens are in the outputs, token generation is done.
+            # so, we can go back to the serving server
+            # otherwise, outputs need to be fed into layer 0
+            # due to auto-regressive nature of LLM's token generation
+            next_layer = -1 if "tokens" in outputs else 0
+        else:
+            # if it's not the last layer or stage, we have to send outputs to
+            # worker (or staage) that has the next layer
+            next_layer = self.end + 1
+
+        return outputs, next_layer
+
+    def predict(self, **inputs) -> tuple[dict[str, Tensor], int]:
+        """Coduct inference."""
+        if isinstance(self.modelir.mmd, Llama3ModelMetaData):
+            # do generation; needs multiple passes of the layers in a stateful manner
+            # we have to maintain the state
+            outputs, next_layer = self._llm_generate(**inputs)
+        else:
+            # run the layers once
+            outputs = self.forward(**inputs)
+            outputs = self._output_parser(outputs) if self._output_parser else outputs
+            # other models like resnet don't have auto-regressive nature.
+            # so, we can go back to the serving server
+            next_layer = -1 if self.is_last else self.end + 1
+
+        return outputs, next_layer
+
     def forward(self, **inputs) -> dict[str, Tensor]:
         """Run layers in the stage."""
         for layer in self.layers:
             inputs = layer(**inputs)
 
-        outputs = self._output_parser(inputs) if self._output_parser else inputs
-
-        return outputs
+        return inputs
 
     def _init_layers(self):
         """Initialize meta layers and move them to a device."""
