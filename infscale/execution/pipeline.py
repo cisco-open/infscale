@@ -141,15 +141,12 @@ class Pipeline:
         await self._initialize_control_channel()
 
     def _initialize_worker(self, modelir: ModelIR):
-        output_parser = modelir.output_parser if self.spec.stage.is_last else None
-        layers = modelir.layers[self.spec.stage.start : self.spec.stage.end + 1]
-
         self.stage = Stage(
             self.spec.stage.id,
-            layers,
-            device=self.device,
-            output_parser=output_parser,
             modelir=modelir,
+            start=self.spec.stage.start,
+            end=self.spec.stage.end,
+            device=self.device,
         )
 
     async def _server_send(self, router: Router):

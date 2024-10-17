@@ -19,13 +19,13 @@
 from __future__ import annotations
 
 import traceback
-from copy import deepcopy
 from typing import TYPE_CHECKING, Callable, Union
 
 import torch
 import torch.nn as nn
 from accelerate.utils.modeling import set_module_tensor_to_device
 from infscale import get_logger
+from infscale.module.modelir import ModelIR
 from torch.nn import Parameter
 
 if TYPE_CHECKING:
@@ -42,25 +42,27 @@ class Stage(nn.Module):
     def __init__(
         self,
         stage_id: str,
-        layers: list[fx.GraphModule],
+        modelir: ModelIR,
+        start: int,
+        end: int,
         device: torch.device = torch.device("cpu"),
-        output_parser: Callable = None,
-        modelir=None,
     ):
         """Initialize stage class instance."""
         super().__init__()
 
         self.id = stage_id
-        self.layers = deepcopy(layers)
-        self.device = device
 
         self.modelir = modelir
 
-        try:
-            self._init_layers()
-        except Exception as e:
-            traceback.print_exc()
-            raise e
+        # decide if this stage contains the last layer of a model
+        is_last = end + 1 == len(modelir.layers)
+
+        # resize the model layers so that other unused layers can be
+        # garbage collected; not sure when/whether it happens though
+        modelir.layers = modelir.layers[start : end + 1]
+        self.layers = modelir.layers
+
+        self.device = device
 
         # An output parser is only useful for the last stage.
         # The outputs from the last stage need to be sent back to the inference
@@ -68,7 +70,15 @@ class Stage(nn.Module):
         # But if the output is a dictionary of tensors. This leads to comm
         # error. Also, in the inference, other values such as loss may not be
         # important. So, a way to manipulate the outputs is provided.
-        self._output_parser: Union[Callable, None] = output_parser
+        self._output_parser: Union[Callable, None] = (
+            modelir.output_parser if is_last else None
+        )
+
+        try:
+            self._init_layers()
+        except Exception as e:
+            traceback.print_exc()
+            raise e
 
     def forward(self, **inputs) -> dict[str, Tensor]:
         """Run layers in the stage."""
@@ -110,7 +120,7 @@ class Stage(nn.Module):
 
     def _init_tensors(
         self,
-        layer: torch.fx.GraphModule,
+        layer: fx.GraphModule,
         named_parameters: dict[str, Parameter],
         named_buffers: dict[str, Tensor],
     ):

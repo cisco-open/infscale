@@ -22,9 +22,6 @@ from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker_manager import WorkerManager
 from infscale.execution.pipeline import Pipeline
-from infscale.module.dataset import HuggingFaceDataset
-from infscale.module.modelir import ModelIR
-from infscale.module.zoo import Zoo
 
 logger = get_logger()
 

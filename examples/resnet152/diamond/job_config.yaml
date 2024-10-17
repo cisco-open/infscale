@@ -73,4 +73,3 @@ workers:
     stage:
       start: 26
       end: 51
-      is_last: True

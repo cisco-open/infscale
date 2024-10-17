@@ -55,10 +55,8 @@ workers:
     stage:
       start: 0
       end: 51
-      is_last: True
   - id: 1-0
     device: cuda:2
     stage:
       start: 0
       end: 51
-      is_last: True
