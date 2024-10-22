@@ -15,6 +15,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import click
+import requests
+import yaml
+from infscale.constants import APISERVER_ENDPOINT
+from infscale.controller.apiserver import JobAction, JobActionModel
 
 
 @click.group()
@@ -24,8 +28,28 @@ def update():
 
 
 @update.command()
+@click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
 @click.argument("job_id", required=True)
 @click.argument("config", required=True)
-def job(job_id, config):
+def job(endpoint: str, job_id: str, config: str):
     """Update a job with JOB_ID using a new config."""
-    click.echo(f"Updating job {job_id} with config {config}...")
+
+    with open(config) as f:
+        job_config = yaml.safe_load(f)
+
+    payload = JobActionModel(
+        job_id=job_id, action=JobAction.UPDATE, config=job_config
+    ).model_dump_json()
+
+    try:
+        response = requests.put(
+            endpoint, data=payload, headers={"Content-Type": "application/json"}
+        )
+
+        if response.status_code == 200:
+            click.echo("Job updated successfully.")
+        else:
+            click.echo(f"Failed to update job. Status code: {response.status_code}")
+            click.echo(f"Response: {response.text}")
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error making request: {e}")
