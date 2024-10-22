@@ -120,7 +120,12 @@ async def manage_job(job_action: JobActionModel):
 @app.put("/job", response_model=Response)
 async def update_job(job_action: JobActionModel):
     """Update job with new config."""
-    await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, { "job_id": job_action.job_id, "action": job_action.action, "config": job_action.config })
+    await _ctrl.handle_fastapi_request(
+        ReqType.JOB_ACTION,
+        JobActionModel(
+            job_id=job_action.job_id, action=job_action.action, config=job_action.config
+        ),
+    )
 
     res = {"message": "job updated"}
     return res

@@ -16,7 +16,7 @@
 
 """Controller class."""
 import asyncio
-from typing import Any, AsyncIterable
+from typing import Any, AsyncIterable, Union
 
 import grpc
 import yaml
@@ -27,12 +27,14 @@ from infscale import get_logger
 from infscale.config import JobConfig
 from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import ApiServer, ReqType
+from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
 
 logger = get_logger()
+
+CtrlRequest = Union[Request | JobActionModel]
 
 
 class Controller:
@@ -131,7 +133,7 @@ class Controller:
         context.reset()
         del self.contexts[id]
 
-    async def handle_fastapi_request(self, type: ReqType, req: Request) -> Any:
+    async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""
         match type:
             case ReqType.SERVE:
@@ -140,14 +142,16 @@ class Controller:
 
             case ReqType.JOB_ACTION:
                 logger.debug("got start job request")
-                return await self._handle_fastapi_job_action(req)
+                return await self._handle_fastapi_update_job(req)
 
             case _:
                 logger.debug(f"unknown fastapi request type: {type}")
                 return None
 
-    async def _handle_fastapi_job_action(self, req: Request):
-        logger.debug(f"req = {req}")
+    async def _handle_fastapi_update_job(self, req: JobActionModel) -> None:
+        match req.action:
+            case JobAction.UPDATE:
+                await self.config_q.put(req.config)
 
     async def _handle_fastapi_serve(self, req: Request):
         logger.debug(f"req = {req}")
