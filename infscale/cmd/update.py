@@ -43,7 +43,9 @@ def job(endpoint: str, job_id: str, config: str):
 
     try:
         response = requests.put(
-            endpoint, data=payload, headers={"Content-Type": "application/json"}
+            f"{endpoint}/job",
+            data=payload,
+            headers={"Content-Type": "application/json"},
         )
 
         if response.status_code == 200:

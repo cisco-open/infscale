@@ -21,8 +21,6 @@ import asyncio
 import grpc
 import torch
 import torch.multiprocessing as mp
-from multiprocess.connection import Pipe
-
 from infscale import get_logger
 from infscale.actor.config_diff import get_config_diff_ids
 from infscale.actor.job_manager import JobManager, WorkerMetaData
@@ -34,6 +32,7 @@ from infscale.controller.controller import Controller
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
+from multiprocess.connection import Pipe
 
 logger = get_logger()
 
@@ -77,8 +76,8 @@ class Agent:
     async def run(self):
         """Start the agent."""
         logger.info("run agent")
-        _ = asyncio.create_task(self.controller.start_sending())
         _ = asyncio.create_task(self.handle_config())
+        _ = asyncio.create_task(self.controller.run())
 
         await self.cfg_event.wait()
 

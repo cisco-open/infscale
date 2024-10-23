@@ -22,12 +22,13 @@ import grpc
 import yaml
 from fastapi import Request
 from grpc.aio import ServicerContext
-
 from infscale import get_logger
 from infscale.config import JobConfig
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
+from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
+                                GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
+from infscale.controller.apiserver import (ApiServer, JobAction,
+                                           JobActionModel, ReqType)
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -60,7 +61,7 @@ class Controller:
     async def start_sending(self):
         if len(self.file_paths) == 0:
             return
-        
+
         for file in self.file_paths:
             with open(file) as f:
                 spec = yaml.safe_load(f)
@@ -88,6 +89,7 @@ class Controller:
         """Run controller."""
         logger.info("starting controller")
         _ = asyncio.create_task(self._start_server())
+        _ = asyncio.create_task(self.start_sending())
 
         await self.apiserver.run()
 
@@ -155,6 +157,7 @@ class Controller:
 
     async def _handle_fastapi_serve(self, req: Request):
         logger.debug(f"req = {req}")
+
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     """Controller Servicer class."""

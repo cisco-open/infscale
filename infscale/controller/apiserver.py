@@ -22,7 +22,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 from fastapi import FastAPI
-from infscale.config import Dataset, Stage, WorkerInfo
+from infscale.config import Dataset, JobConfig, Stage, WorkerInfo
 from infscale.constants import APISERVER_PORT
 from pydantic import BaseModel, model_validator
 from uvicorn import Config, Server
@@ -64,6 +64,7 @@ class ReqType(str, Enum):
     SERVE = "serve"
     JOB_ACTION = "job_action"
 
+
 class JobAction(str, Enum):
     """Enum class for request type."""
 
@@ -71,19 +72,22 @@ class JobAction(str, Enum):
     STOP = "stop"
     UPDATE = "update"
 
+
 class JobActionModel(BaseModel):
     job_id: str
     action: JobAction
-    config: Optional[ServeSpec]= None
+    config: Optional[JobConfig] = None
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def check_config_for_update(self):
         if self.action == JobAction.UPDATE and self.config is None:
-            raise ValueError('config is required when updating a job')
+            raise ValueError("config is required when updating a job")
         return self
+
 
 class ServeSpec(BaseModel):
     """ServiceSpec model."""
+
     name: str
     model: str
     stage: Stage
@@ -94,6 +98,7 @@ class ServeSpec(BaseModel):
     nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
     micro_batch_size: int = 8
     fwd_policy: str = "random"
+
 
 class Response(BaseModel):
     """Response model."""
@@ -109,13 +114,21 @@ async def serve(spec: ServeSpec):
     res = {"message": "started serving"}
     return res
 
+
 @app.post("/job", response_model=Response)
 async def manage_job(job_action: JobActionModel):
     """Start or Stop a job."""
-    await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, { "job_id": job_action.job_id, "action": job_action.action })
+    await _ctrl.handle_fastapi_request(
+        ReqType.JOB_ACTION, {"job_id": job_action.job_id, "action": job_action.action}
+    )
 
-    res = {"message": "job started" if job_action.action == JobAction.START else "job stopped"}
+    res = {
+        "message": "job started"
+        if job_action.action == JobAction.START
+        else "job stopped"
+    }
     return res
+
 
 @app.put("/job", response_model=Response)
 async def update_job(job_action: JobActionModel):
@@ -129,5 +142,3 @@ async def update_job(job_action: JobActionModel):
 
     res = {"message": "job updated"}
     return res
-
-

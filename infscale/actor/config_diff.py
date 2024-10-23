@@ -16,7 +16,7 @@
 
 from typing import List, Tuple
 
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerInfo
 
 
 def get_config_diff_ids(
@@ -40,7 +40,12 @@ def get_config_diff_ids(
             continue
 
         for old_worker, new_worker in zip(old_value, new_value):
-            if old_worker.peers != new_worker["peers"]:
+            # TODO - remove isinstance check when the config file is being sent through the api call
+            if old_worker.peers != (
+                new_worker.peers
+                if isinstance(new_worker, WorkerInfo)
+                else new_worker["peers"]
+            ):
                 updated_ids.append(key)
                 break
 

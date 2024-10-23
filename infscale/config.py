@@ -226,7 +226,12 @@ class ServeConfig:
 
     def __post_init__(self):
         """Convert stage dict into stage object."""
-        self.dataset = Dataset(**self.dataset)
+        # TODO - remove isinstance check when the config file is being sent through the api call
+        self.dataset = (
+            self.dataset
+            if isinstance(self.dataset, Dataset)
+            else Dataset(**self.dataset)
+        )
         self.stage = Stage(**self.stage)
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
