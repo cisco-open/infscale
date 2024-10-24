@@ -15,11 +15,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
-import click
+import os
 
+import click
+import daemon
+from infscale import get_logger
 from infscale.actor.agent import Agent
 from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
 from infscale.controller import controller as ctrl
+
+logger = get_logger()
+
+home_directory = os.path.expanduser("~")
+stdout_log_path = os.path.join(home_directory, "infscale", "agent_stdout.log")
+stderr_log_path = os.path.join(home_directory, "infscale", "agent_stderr.log")
 
 
 @click.group()
@@ -52,15 +61,24 @@ def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
 
     ctrl_instance = ctrl.Controller(list(jobconfig))
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(
-        Agent(
-            id=id,
-            endpoint=endpoint,
-            use_controller=controller,
-            controller=ctrl_instance,
-        ).run()
-    )
+    with daemon.DaemonContext(
+        stdout=open(stdout_log_path, "a+"), stderr=open(stderr_log_path, "a+")
+    ):
+        logger.info("daemon context started for agent ID: %s", id)
+
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(
+                Agent(
+                    id=id,
+                    endpoint=endpoint,
+                    use_controller=controller,
+                    controller=ctrl_instance,
+                ).run()
+            )
+            logger.info("agent %s successfully started.", id)
+        except Exception as e:
+            logger.info("error running agent %s: %s", id, str(e))
 
 
 @start.command()
