@@ -144,15 +144,16 @@ class Controller:
 
             case ReqType.JOB_ACTION:
                 logger.debug("got start job request")
-                return await self._handle_fastapi_update_job(req)
+                return await self._handle_fastapi_job_action(req)
 
             case _:
                 logger.debug(f"unknown fastapi request type: {type}")
                 return None
 
-    async def _handle_fastapi_update_job(self, req: JobActionModel) -> None:
+    async def _handle_fastapi_job_action(self, req: JobActionModel) -> None:
+        """Handle fastapi job action request."""
         match req.action:
-            case JobAction.UPDATE:
+            case JobAction.UPDATE | JobAction.START:
                 await self.config_q.put(req.config)
 
     async def _handle_fastapi_serve(self, req: Request):

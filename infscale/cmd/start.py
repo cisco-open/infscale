@@ -16,10 +16,12 @@
 
 import asyncio
 import click
-
+import requests
+import yaml
 from infscale.actor.agent import Agent
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
+from infscale.constants import APISERVER_ENDPOINT, APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
 from infscale.controller import controller as ctrl
+from infscale.controller.apiserver import JobAction, JobActionModel
 
 
 @click.group()
@@ -64,7 +66,29 @@ def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
 
 
 @start.command()
-@click.argument("job_id", required=True)
-def job(job_id):
+@click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
+@click.argument("config", required=True)
+@click.argument("job_id")
+def job(endpoint: str, job_id: str, config: str) -> None:
     """Start a job with JOB_ID."""
-    click.echo(f"Starting job {job_id}...")
+    with open(config) as f:
+        job_config = yaml.safe_load(f)
+
+    payload = JobActionModel(
+        job_id=job_id, action=JobAction.START, config=job_config
+    ).model_dump_json()
+
+    try:
+        response = requests.post(
+            f"{endpoint}/job",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+
+        if response.status_code == 200:
+            click.echo("Job started successfully.")
+        else:
+            click.echo(f"Failed to start job. Status code: {response.status_code}")
+            click.echo(f"Response: {response.text}")
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error making request: {e}")

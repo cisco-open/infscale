@@ -80,7 +80,7 @@ class JobActionModel(BaseModel):
 
     @model_validator(mode="after")
     def check_config_for_update(self):
-        if self.action == JobAction.UPDATE and self.config is None:
+        if self.action in [JobAction.UPDATE, JobAction.START] and self.config is None:
             raise ValueError("config is required when updating a job")
         return self
 
@@ -119,7 +119,8 @@ async def serve(spec: ServeSpec):
 async def manage_job(job_action: JobActionModel):
     """Start or Stop a job."""
     await _ctrl.handle_fastapi_request(
-        ReqType.JOB_ACTION, {"job_id": job_action.job_id, "action": job_action.action}
+        ReqType.JOB_ACTION,
+        job_action,
     )
 
     res = {
