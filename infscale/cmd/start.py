@@ -42,15 +42,14 @@ def controller(port: int, apiport: int):
 @click.option("--port", default=CONTROLLER_PORT, help="Controller's port number")
 @click.option("--controller/--no-controller", default=False, help="Use controller")
 @click.argument("id")
-@click.argument("jobconfig", nargs=-1)
-def agent(host: str, port: int, controller: bool, id: str, jobconfig: str):
+def agent(host: str, port: int, controller: bool, id: str):
     """Run agent."""
     endpoint = f"{host}:{port}"
 
     # Don't use the following code asyncio.run()
     # see https://github.com/grpc/grpc/issues/32480 for more details
 
-    ctrl_instance = ctrl.Controller(list(jobconfig))
+    ctrl_instance = ctrl.Controller()
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(

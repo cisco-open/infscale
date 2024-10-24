@@ -43,7 +43,6 @@ class Controller:
 
     def __init__(
         self,
-        file_paths: list[str] = [],
         port: int = CONTROLLER_PORT,
         apiport: int = APISERVER_PORT,
     ):
@@ -55,20 +54,6 @@ class Controller:
         self.apiserver = ApiServer(self, apiport)
 
         self.config_q = asyncio.Queue()
-
-        self.file_paths = file_paths
-
-    async def start_sending(self):
-        if len(self.file_paths) == 0:
-            return
-
-        for file in self.file_paths:
-            with open(file) as f:
-                spec = yaml.safe_load(f)
-                job_config = JobConfig(**spec)
-                await self.config_q.put(job_config)
-
-            await asyncio.sleep(20)
 
     async def _start_server(self):
         server_options = [
@@ -89,7 +74,6 @@ class Controller:
         """Run controller."""
         logger.info("starting controller")
         _ = asyncio.create_task(self._start_server())
-        _ = asyncio.create_task(self.start_sending())
 
         await self.apiserver.run()
 
