@@ -24,11 +24,9 @@ from fastapi import Request
 from grpc.aio import ServicerContext
 from infscale import get_logger
 from infscale.config import JobConfig
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import (ApiServer, JobAction,
-                                           JobActionModel, ReqType)
+from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -154,6 +152,10 @@ class Controller:
         match req.action:
             case JobAction.UPDATE:
                 await self.config_q.put(req.config)
+
+            case JobAction.STOP:
+                # TODO: notify agent to stop the job
+                print("stopping job")
 
     async def _handle_fastapi_serve(self, req: Request):
         logger.debug(f"req = {req}")

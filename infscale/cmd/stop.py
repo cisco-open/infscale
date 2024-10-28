@@ -15,6 +15,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import click
+import requests
+
+from infscale.constants import APISERVER_ENDPOINT
+from infscale.controller.apiserver import JobAction, JobActionModel
 
 
 @click.group()
@@ -24,7 +28,26 @@ def stop():
 
 
 @stop.command()
-@click.argument("job_id", required=True)
-def job(job_id):
+@click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
+@click.argument("job_id")
+def job(endpoint: str, job_id: str):
     """Stop a job with JOB_ID."""
-    click.echo(f"Stopping job {job_id}...")
+
+    payload = JobActionModel(
+        job_id=job_id, action=JobAction.STOP,
+    ).model_dump_json()
+
+    try:
+        response = requests.post(
+            f"{endpoint}/job",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+
+        if response.status_code == 200:
+            click.echo("Job stopped successfully.")
+        else:
+            click.echo(f"Failed to stop job. Status code: {response.status_code}")
+            click.echo(f"Response: {response.text}")
+    except requests.exceptions.RequestException as e:
+        click.echo(f"Error making request: {e}")
