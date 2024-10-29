@@ -29,12 +29,11 @@ def stop():
 
 @stop.command()
 @click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
-@click.argument("job_id")
-def job(endpoint: str, job_id: str):
-    """Stop a job with JOB_ID."""
+def job(endpoint: str):
+    """Stop a job with."""
 
     payload = JobActionModel(
-        job_id=job_id, action=JobAction.STOP,
+        action=JobAction.STOP,
     ).model_dump_json()
 
     try:

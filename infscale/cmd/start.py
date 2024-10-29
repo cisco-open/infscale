@@ -67,14 +67,13 @@ def agent(host: str, port: int, controller: bool, id: str):
 @start.command()
 @click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
 @click.argument("config", required=True)
-@click.argument("job_id")
-def job(endpoint: str, job_id: str, config: str) -> None:
-    """Start a job with JOB_ID."""
+def job(endpoint: str, config: str) -> None:
+    """Start a job with config."""
     with open(config) as f:
         job_config = yaml.safe_load(f)
 
     payload = JobActionModel(
-        job_id=job_id, action=JobAction.START, config=job_config
+        action=JobAction.START, config=job_config
     ).model_dump_json()
 
     try:

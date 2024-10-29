@@ -74,7 +74,6 @@ class JobAction(str, Enum):
 
 
 class JobActionModel(BaseModel):
-    job_id: str
     action: JobAction
     config: Optional[JobConfig] = None
 
@@ -136,9 +135,7 @@ async def update_job(job_action: JobActionModel):
     """Update job with new config."""
     await _ctrl.handle_fastapi_request(
         ReqType.JOB_ACTION,
-        JobActionModel(
-            job_id=job_action.job_id, action=job_action.action, config=job_action.config
-        ),
+        job_action
     )
 
     res = {"message": "job updated"}
