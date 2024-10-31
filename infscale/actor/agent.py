@@ -22,6 +22,8 @@ import json
 import grpc
 import torch
 import torch.multiprocessing as mp
+from multiprocess.connection import Pipe
+
 from infscale import get_logger
 from infscale.actor.config_diff import get_config_diff_ids
 from infscale.actor.job_manager import JobManager, WorkerMetaData
@@ -33,7 +35,6 @@ from infscale.controller.controller import Controller
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
-from multiprocess.connection import Pipe
 
 logger = get_logger()
 
@@ -80,7 +81,6 @@ class Agent:
         self.controller = controller
         self.job_manager = JobManager()
         self.cfg_event = asyncio.Event()
-        self.controller = controller
 
         self._workers: dict[int, WorkerMetaData] = {}
         self.n_workers = torch.cuda.device_count()
@@ -119,7 +119,27 @@ class Agent:
         # create a task to send status in an event-driven fashion
         _ = asyncio.create_task(self.report())
 
+        # create a task to wait for config
+        _ = asyncio.create_task(self.fetch_config())
+
         return True
+
+    async def fetch_config(self) -> None:
+        """Connect to the server and start the listening task."""
+        while True:
+            try:
+                await self._fetch_config()
+            except Exception as e:
+                logger.error(f"Error in connection: {e}")
+
+    async def _fetch_config(self) -> None:
+        """Listen for configuration pushes (manifest) from the ManagementRoute."""
+        request = pb2.AgentID(id=self.id)
+
+        async for manifest in self.stub.fetch(request):
+            if manifest:
+                job_config = JobConfig(**json.loads(manifest.payload.decode("utf-8")))
+                self.handle_config(job_config)
 
     async def run(self):
         """Start the agent."""
@@ -131,7 +151,6 @@ class Agent:
 
         self.monitor()
 
-        _ = asyncio.create_task(self.handle_config())
         await self.cfg_event.wait()
         # TODO: revisit launch later
         #       launch may need to be executed whenever manifest is fetched
@@ -140,26 +159,22 @@ class Agent:
         # wait forever
         await asyncio.Event().wait()
 
-    async def handle_config(self) -> None:
+    def handle_config(self, config: JobConfig) -> None:
         """Handle configuration file received from controller."""
-        while True:
-            new_config = await self.controller.config_q.get()
-            print(f"got new config: {new_config}")
-            if new_config is None:
-                continue
+        logger.debug(f"got new config: {config}")
 
-            if self.job_config:
-                terminate_ids, start_ids, updated_ids = get_config_diff_ids(
-                    self.job_config, new_config
-                )
-                self.kill_workers(terminate_ids)
-                self.reconfigure_job(new_config, start_ids, updated_ids)
-                self.job_config = new_config
+        if self.job_config:
+            terminate_ids, start_ids, updated_ids = get_config_diff_ids(
+                self.job_config, config
+            )
+            self.kill_workers(terminate_ids)
+            self.reconfigure_job(config, start_ids, updated_ids)
+            self.job_config = config
 
-            if self.job_config is None:
-                self.job_config = new_config
+        if self.job_config is None:
+            self.job_config = config
 
-            self.cfg_event.set()
+        self.cfg_event.set()
 
     def kill_workers(self, workers) -> None:
         """Terminate workers whose IDs are in extra_in_a_ids."""

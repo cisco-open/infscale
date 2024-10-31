@@ -16,12 +16,15 @@
 
 """Controller class."""
 import asyncio
+import json
+from dataclasses import asdict
 from typing import Any, AsyncIterable, Union
 
 import grpc
 from fastapi import Request
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
+
 from infscale import get_logger
 from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
                                 GRPC_MAX_MESSAGE_LENGTH)
@@ -191,5 +194,11 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         agent_context.set_grpc_ctx(context)
         event = agent_context.get_grpc_ctx_event()
 
-        # blocked until event is set until set_grpc_ctx_event() is called
-        await event
+        while True:
+            config = await self.ctrl.config_q.get()
+
+            if config:
+                manifest = pb2.Manifest(
+                    payload=json.dumps(asdict(config)).encode("utf-8")
+                )
+                yield manifest
