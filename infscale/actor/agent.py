@@ -17,6 +17,7 @@
 """Agent class."""
 
 import asyncio
+import json
 
 import grpc
 import torch
@@ -35,6 +36,29 @@ from infscale.proto import management_pb2_grpc as pb2_grpc
 from multiprocess.connection import Pipe
 
 logger = get_logger()
+
+service_config_json = json.dumps(
+    {
+        "methodConfig": [
+            {
+                # To apply retry to all methods, put [{}] in the "name" field
+                "name": [
+                    {
+                        "service": "management.ManagementRoute",
+                        "method": "register",
+                    }
+                ],
+                "retryPolicy": {
+                    "maxAttempts": 3,
+                    "initialBackoff": "1s",
+                    "maxBackoff": "10s",
+                    "backoffMultiplier": 2,
+                    "retryableStatusCodes": ["UNAVAILABLE"],
+                },
+            }
+        ]
+    }
+)
 
 
 class Agent:
@@ -66,6 +90,7 @@ class Agent:
             options=[
                 ("grpc.max_send_message_length", GRPC_MAX_MESSAGE_LENGTH),
                 ("grpc.max_receive_message_length", GRPC_MAX_MESSAGE_LENGTH),
+                ("grpc.service_config", service_config_json),
             ],
         )
 
@@ -73,35 +98,41 @@ class Agent:
 
         self.gpu_monitor = GpuMonitor()
 
+    async def _init_controller_session(self) -> bool:
+        if not self.use_controller:
+            return True
+
+        try:
+            reg_req = pb2.RegReq(id=self.id)  # register agent
+            reg_res = await self.stub.register(reg_req)
+        except grpc.aio.AioRpcError as e:
+            logger.debug(f"can't register: {e}")
+            return False
+
+        if not reg_res.status:
+            logger.error(f"registration failed: {reg_res.reason}")
+            return False
+
+        # create a task to send heart beat periodically
+        _ = asyncio.create_task(self.heart_beat())
+
+        # create a task to send status in an event-driven fashion
+        _ = asyncio.create_task(self.report())
+
+        return True
+
     async def run(self):
         """Start the agent."""
         logger.info("run agent")
-        _ = asyncio.create_task(self.handle_config())
         _ = asyncio.create_task(self.controller.run())
 
-        await self.cfg_event.wait()
-
-        if self.use_controller:
-            reg_req = pb2.RegReq(id=self.id)  # register agent
-
-            try:
-                reg_res = await self.stub.register(reg_req)
-            except grpc.aio.AioRpcError:
-                logger.debug("can't proceed: no grpc channel available")
-                return
-
-            if not reg_res.status:
-                logger.error(f"registration failed: {reg_res.reason}")
-                return
-
-            # create a task to send heart beat periodically
-            _ = asyncio.create_task(self.heart_beat())
-
-            # create a task to send status in an event-driven fashion
-            _ = asyncio.create_task(self.report())
+        if not await self._init_controller_session():
+            return
 
         self.monitor()
 
+        _ = asyncio.create_task(self.handle_config())
+        await self.cfg_event.wait()
         # TODO: revisit launch later
         #       launch may need to be executed whenever manifest is fetched
         self.launch()
@@ -110,6 +141,7 @@ class Agent:
         await asyncio.Event().wait()
 
     async def handle_config(self) -> None:
+        """Handle configuration file received from controller."""
         while True:
             new_config = await self.controller.config_q.get()
             print(f"got new config: {new_config}")
@@ -138,7 +170,7 @@ class Agent:
     def reconfigure_job(
         self, job_config: JobConfig, start_ids: list[int], update_ids: list[int]
     ) -> None:
-        """Reconfigure workers with new config"""
+        """Reconfigure workers with new config."""
         for _, config in enumerate(job_config.get_serve_configs()):
             if config.stage.id in start_ids:
                 print(f"worker {config.stage.id} needs to be started")

@@ -19,14 +19,15 @@ import asyncio
 from typing import Any, AsyncIterable, Union
 
 import grpc
-import yaml
 from fastapi import Request
+from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
-from infscale.config import JobConfig
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
+from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
+                                GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
+from infscale.controller.apiserver import (ApiServer, JobAction,
+                                           JobActionModel, ReqType)
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -166,11 +167,15 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         """Handle heart beat message from agent."""
         await self.ctrl.handle_heartbeat(request.id)
 
+        return empty_pb2.Empty()
+
     async def update(
         self, request: pb2.Status, unused_context: ServicerContext
     ) -> None:
         """Handle update message for worker status."""
         await self.ctrl.handle_status(request)
+
+        return empty_pb2.Empty()
 
     async def fetch(
         self, request: pb2.AgentID, context: ServicerContext

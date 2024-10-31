@@ -188,7 +188,7 @@ class GpuMonitor:
 
         stats = list()
         for msg in proto:
-            json_str = MessageToJson(msg, including_default_value_fields=True)
+            json_str = MessageToJson(msg, always_print_fields_with_no_presence=True)
             json_obj = json.loads(json_str)
             inst = target(**json_obj)
             stats.append(inst)
