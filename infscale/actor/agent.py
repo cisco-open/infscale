@@ -22,7 +22,6 @@ import json
 import grpc
 import torch
 import torch.multiprocessing as mp
-from multiprocess.connection import Pipe
 
 from infscale import get_logger
 from infscale.actor.config_diff import get_config_diff_ids
@@ -31,10 +30,10 @@ from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker import Worker
 from infscale.config import JobConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
-from infscale.controller.controller import Controller
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
+from multiprocess.connection import Pipe
 
 logger = get_logger()
 
@@ -66,7 +65,9 @@ class Agent:
     """Agent class manages workers in a node."""
 
     def __init__(
-        self, id: str, endpoint: str, use_controller: bool, controller: Controller
+        self,
+        id: str,
+        endpoint: str,
     ):
         """Initialize the agent instance."""
         # TODO: there can be more than one worker per GPU
@@ -77,8 +78,6 @@ class Agent:
         self.id = id
         self.endpoint = endpoint
         self.job_config = None
-        self.use_controller = use_controller
-        self.controller = controller
         self.job_manager = JobManager()
         self.cfg_event = asyncio.Event()
 
@@ -99,9 +98,6 @@ class Agent:
         self.gpu_monitor = GpuMonitor()
 
     async def _init_controller_session(self) -> bool:
-        if not self.use_controller:
-            return True
-
         try:
             reg_req = pb2.RegReq(id=self.id)  # register agent
             reg_res = await self.stub.register(reg_req)
@@ -144,7 +140,6 @@ class Agent:
     async def run(self):
         """Start the agent."""
         logger.info("run agent")
-        _ = asyncio.create_task(self.controller.run())
 
         if not await self._init_controller_session():
             return
