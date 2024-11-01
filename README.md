@@ -50,8 +50,9 @@ Options:
   --help     Show this message and exit.
 
 Commands:
-  agent       Run agent.
-  controller  Run controller.
+  start       Start agent / controller / job.
+  stop        Stop job.
+  update      Update job.
 ```
 
 ## Quickstart
@@ -60,12 +61,19 @@ For minimal execution of InfScale, one controller and one agent are needed.
 Run controller first and then agent, each on a separate terminal.
 
 ```bash
-python -m infscale controller
+python -m infscale start controller
 ```
 
 ```bash
-python -m infscale agent id123
+python -m infscale start agent id123
 ```
+
+After the agent and controller started successfully, a job can be started by running the following command:
+
+```bash
+python -m infscale start job examples/resnet152/single/job_config_rep.yaml
+```
+Note that `examples/resnet152/single/job_config_rep.yaml` is a job specification file.
 
 To see some log messages, add `INFSCALE_LOG_LEVEL=DEBUG` before each of the above command.
 
