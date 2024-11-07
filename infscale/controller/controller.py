@@ -21,16 +21,15 @@ from dataclasses import asdict
 from typing import Any, AsyncIterable, Union
 
 import grpc
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 
 from infscale import get_logger
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import (ApiServer, JobAction,
-                                           JobActionModel, ReqType)
+from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
+from infscale.controller.job_state import JobState
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -56,6 +55,8 @@ class Controller:
         self.apiserver = ApiServer(self, apiport)
 
         self.config_q = asyncio.Queue()
+
+        self.jobs_state = JobState()
 
     async def _start_server(self):
         server_options = [
@@ -88,6 +89,7 @@ class Controller:
         self.contexts[id] = AgentContext(self, id)
         # since registration is done, let's keep agent context alive
         self.contexts[id].keep_alive()
+        self.jobs_state.set_agent(id)
 
         logger.debug(f"successfully registered {id}")
 
@@ -138,6 +140,12 @@ class Controller:
 
     async def _handle_fastapi_job_action(self, req: JobActionModel) -> None:
         """Handle fastapi job action request."""
+        if not self.jobs_state.can_update_job_state(req.job_id, req.action):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Action '{req.action}' on job is not allowed '{req.job_id}'",
+            )
+
         match req.action:
             case JobAction.UPDATE | JobAction.START:
                 await self.config_q.put(req.config)

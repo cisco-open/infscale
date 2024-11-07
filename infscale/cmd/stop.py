@@ -29,12 +29,11 @@ def stop():
 
 @stop.command()
 @click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
-def job(endpoint: str):
+@click.argument("job_id", required=True)
+def job(endpoint: str, job_id: str):
     """Stop a job with."""
 
-    payload = JobActionModel(
-        action=JobAction.STOP,
-    ).model_dump_json()
+    payload = JobActionModel(action=JobAction.STOP, job_id=job_id).model_dump_json()
 
     try:
         response = requests.post(
@@ -47,6 +46,6 @@ def job(endpoint: str):
             click.echo("Job stopped successfully.")
         else:
             click.echo(f"Failed to stop job. Status code: {response.status_code}")
-            click.echo(f"Response: {response.text}")
+            click.echo(f"Response: {response.content}")
     except requests.exceptions.RequestException as e:
         click.echo(f"Error making request: {e}")

@@ -15,11 +15,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+
 import click
 import requests
 import yaml
+
 from infscale.actor.agent import Agent
-from infscale.constants import APISERVER_ENDPOINT, APISERVER_PORT, CONTROLLER_PORT, LOCALHOST
+from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
+                                CONTROLLER_PORT, LOCALHOST)
 from infscale.controller import controller as ctrl
 from infscale.controller.apiserver import JobAction, JobActionModel
 
@@ -61,14 +64,17 @@ def agent(host: str, port: int, id: str):
 
 @start.command()
 @click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
+@click.argument("job_id", required=True)
 @click.argument("config", required=True)
-def job(endpoint: str, config: str) -> None:
+def job(endpoint: str, job_id: str, config: str) -> None:
     """Start a job with config."""
     with open(config) as f:
         job_config = yaml.safe_load(f)
 
     payload = JobActionModel(
-        action=JobAction.START, config=job_config
+        action=JobAction.START,
+        job_id=job_id,
+        config=job_config,
     ).model_dump_json()
 
     try:
@@ -79,9 +85,9 @@ def job(endpoint: str, config: str) -> None:
         )
 
         if response.status_code == 200:
-            click.echo("Job started successfully.")
+            click.echo(f"{response.content}. Status code: {response.status_code}")
         else:
             click.echo(f"Failed to start job. Status code: {response.status_code}")
-            click.echo(f"Response: {response.text}")
+            click.echo(f"Response: {response.content}")
     except requests.exceptions.RequestException as e:
         click.echo(f"Error making request: {e}")

@@ -21,11 +21,13 @@ import asyncio
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
-from fastapi import FastAPI
-from infscale.config import Dataset, JobConfig, Stage, WorkerInfo
-from infscale.constants import APISERVER_PORT
+from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, model_validator
 from uvicorn import Config, Server
+
+from infscale.config import Dataset, JobConfig, Stage, WorkerInfo
+from infscale.constants import APISERVER_PORT
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
@@ -75,6 +77,7 @@ class JobAction(str, Enum):
 
 class JobActionModel(BaseModel):
     action: JobAction
+    job_id: str
     config: Optional[JobConfig] = None
 
     @model_validator(mode="after")
@@ -117,26 +120,27 @@ async def serve(spec: ServeSpec):
 @app.post("/job", response_model=Response)
 async def manage_job(job_action: JobActionModel):
     """Start or Stop a job."""
-    await _ctrl.handle_fastapi_request(
-        ReqType.JOB_ACTION,
-        job_action,
-    )
+    try:
+        await _ctrl.handle_fastapi_request(
+            ReqType.JOB_ACTION,
+            job_action,
+        )
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content=e.detail)
 
-    res = {
-        "message": "job started"
-        if job_action.action == JobAction.START
-        else "job stopped"
-    }
-    return res
+    res = "job started" if job_action.action == JobAction.START else "job stopped"
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content=res)
 
 
 @app.put("/job", response_model=Response)
 async def update_job(job_action: JobActionModel):
     """Update job with new config."""
-    await _ctrl.handle_fastapi_request(
-        ReqType.JOB_ACTION,
-        job_action
-    )
+    try:
+        await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, job_action)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={e.detail})
 
-    res = {"message": "job updated"}
-    return res
+    res = "job updated"
+
+    return JSONResponse(status_code=status.HTTP_200_OK, content=res)

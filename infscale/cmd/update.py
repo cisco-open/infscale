@@ -17,6 +17,7 @@
 import click
 import requests
 import yaml
+
 from infscale.constants import APISERVER_ENDPOINT
 from infscale.controller.apiserver import JobAction, JobActionModel
 
@@ -29,15 +30,16 @@ def update():
 
 @update.command()
 @click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
+@click.argument("job_id", required=True)
 @click.argument("config", required=True)
-def job(endpoint: str, config: str):
+def job(endpoint: str, job_id: str, config: str):
     """Update a job with new config."""
 
     with open(config) as f:
         job_config = yaml.safe_load(f)
 
     payload = JobActionModel(
-        action=JobAction.UPDATE, config=job_config
+        action=JobAction.UPDATE, job_id=job_id, config=job_config
     ).model_dump_json()
 
     try:
@@ -51,6 +53,6 @@ def job(endpoint: str, config: str):
             click.echo("Job updated successfully.")
         else:
             click.echo(f"Failed to update job. Status code: {response.status_code}")
-            click.echo(f"Response: {response.text}")
+            click.echo(f"Response: {response.content}")
     except requests.exceptions.RequestException as e:
         click.echo(f"Error making request: {e}")
