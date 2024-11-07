@@ -71,9 +71,11 @@ python -m infscale start agent id123
 After the agent and controller started successfully, a job can be started by running the following command:
 
 ```bash
-python -m infscale start job examples/resnet152/single/job_config_rep.yaml
+python -m infscale start job job1 examples/resnet152/single/job_config_rep.yaml
 ```
-Note that `examples/resnet152/single/job_config_rep.yaml` is a job specification file.
+Note that:
+2. `job1` is the unique job ID - it can be any value and it has to be unique, it will be used to change the state of a job (stop, update)
+3.  `examples/resnet152/single/job_config_rep.yaml` is a job specification file.
 
 To see some log messages, add `INFSCALE_LOG_LEVEL=DEBUG` before each of the above command.
 
