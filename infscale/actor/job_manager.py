@@ -44,7 +44,7 @@ class JobManager:
     def add_worker(self, worker: WorkerMetaData) -> None:
         self._workers[worker.pipe.fileno()] = worker
 
-    def send_message(self, worker: WorkerMetaData, message: Message) -> None:
+    def send_message_to_worker(self, worker: WorkerMetaData, message: Message) -> None:
         """Send message to worker."""
         worker.pipe.send(message)
 
@@ -119,7 +119,7 @@ class JobManager:
         for worker_data in self._workers.values():
             # TODO: update logic to terminate workers belonging to a terminated server only
             worker_data.status = WorkerStatus.TERMINATED
-            worker_data.process.terminate()
+            self.send_message_to_worker(worker_data, Message(MessageType.TERMINATE, ""))
 
     def _print_message(self, content: str, process_id: int) -> None:
         """Print received messages."""

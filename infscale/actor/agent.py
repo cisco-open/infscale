@@ -213,7 +213,7 @@ class Agent:
             w = WorkerMetaData(pipe, process, WorkerStatus.READY, config.stage.id)
             self._workers[w.pipe.fileno()] = w
             self.job_manager.add_worker(w)
-            self.job_manager.send_message(w, Message(MessageType.CONFIG, config))
+            self.job_manager.send_message_to_worker(w, Message(MessageType.CONFIG, config))
 
             print(f"Process ID: {process.pid} - Worker: {config.stage.id}")
 

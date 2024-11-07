@@ -17,6 +17,7 @@
 """Worker class."""
 
 import asyncio
+import sys
 from multiprocessing import connection
 
 from infscale import get_logger
@@ -63,3 +64,8 @@ class WorkerManager:
         match message.type:
             case MessageType.CONFIG:
                 _ = asyncio.create_task(self.config_q.put(message.content))
+
+            case MessageType.TERMINATE:
+                # TODO: do the clean-up / caching before termination
+                logger.info("worker is terminated")
+                sys.exit()
