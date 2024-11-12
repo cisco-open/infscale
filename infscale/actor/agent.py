@@ -30,6 +30,7 @@ from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker import Worker
 from infscale.config import JobConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
+from infscale.controller.apiserver import JobAction
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -118,6 +119,9 @@ class Agent:
         # create a task to wait for config
         _ = asyncio.create_task(self.fetch_config())
 
+        # create a task to wait for job_action
+        _ = asyncio.create_task(self.get_job_action())
+
         return True
 
     async def fetch_config(self) -> None:
@@ -127,6 +131,7 @@ class Agent:
                 await self._fetch_config()
             except Exception as e:
                 logger.error(f"Error in connection: {e}")
+                break
 
     async def _fetch_config(self) -> None:
         """Listen for configuration pushes (manifest) from the ManagementRoute."""
@@ -136,6 +141,31 @@ class Agent:
             if manifest:
                 job_config = JobConfig(**json.loads(manifest.payload.decode("utf-8")))
                 self.handle_config(job_config)
+
+    async def get_job_action(self) -> None:
+        """Connect to the server and start the listening task."""
+        while True:
+            try:
+                await self._get_job_action()
+            except Exception as e:
+                logger.error(f"Error in connection: {e}")
+                break
+
+    async def _get_job_action(self) -> None:
+        """Listen for job action pushes from the ManagementRoute."""
+        request = pb2.AgentID(id=self.id)
+
+        async for job_action in self.stub.get_job_action(request):
+            if job_action:
+                action = job_action
+                self._handle_job_action(action.type)
+
+    def _handle_job_action(self, action: JobAction) -> None:
+        """Handles job action"""
+        match action:
+            case JobAction.STOP:
+                # TODO add support for terminate job specific workers
+                self.job_manager._terminate_workers()
 
     async def run(self):
         """Start the agent."""
@@ -213,7 +243,9 @@ class Agent:
             w = WorkerMetaData(pipe, process, WorkerStatus.READY, config.stage.id)
             self._workers[w.pipe.fileno()] = w
             self.job_manager.add_worker(w)
-            self.job_manager.send_message_to_worker(w, Message(MessageType.CONFIG, config))
+            self.job_manager.send_message_to_worker(
+                w, Message(MessageType.CONFIG, config)
+            )
 
             print(f"Process ID: {process.pid} - Worker: {config.stage.id}")
 

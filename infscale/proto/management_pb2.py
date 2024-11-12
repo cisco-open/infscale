@@ -41,7 +41,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10management.proto\x12\nmanagement\x1a\x1bgoogle/protobuf/empty.proto\"\x15\n\x07\x41gentID\x12\n\n\x02id\x18\x01 \x01(\t\"\x14\n\x06RegReq\x12\n\n\x02id\x18\x01 \x01(\t\"(\n\x06RegRes\x12\x0e\n\x06status\x18\x01 \x01(\x08\x12\x0e\n\x06reason\x18\x02 \x01(\t\"\xe8\x01\n\x06Status\x12\n\n\x02id\x18\x01 \x01(\t\x12&\n\tgpu_stats\x18\x02 \x03(\x0b\x32\x13.management.GpuStat\x12(\n\nvram_stats\x18\x03 \x03(\x0b\x32\x14.management.VramStat\x12&\n\tcpu_stats\x18\x04 \x03(\x0b\x32\x13.management.CpuStat\x12%\n\x08ram_stat\x18\x05 \x01(\x0b\x32\x13.management.RamStat\x12\x31\n\x0fworker_statuses\x18\x06 \x03(\x0b\x32\x18.management.WorkerStatus\"?\n\x07GpuStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0c\n\x04used\x18\x03 \x01(\x08\x12\x0c\n\x04util\x18\x04 \x01(\x05\"3\n\x08VramStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04used\x18\x02 \x01(\x03\x12\r\n\x05total\x18\x03 \x01(\x03\"1\n\x07\x43puStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04used\x18\x02 \x01(\x08\x12\x0c\n\x04util\x18\x03 \x01(\x05\"&\n\x07RamStat\x12\x0c\n\x04used\x18\x01 \x01(\x03\x12\r\n\x05total\x18\x02 \x01(\x03\"\x9b\x01\n\x0cWorkerStatus\x12\x11\n\tdeploy_id\x18\x01 \x01(\x05\x12\x11\n\tworker_id\x18\x02 \x01(\x05\x12\x0f\n\x07healthy\x18\x03 \x01(\x08\x12\x0e\n\x06on_gpu\x18\x04 \x01(\x08\x12\x0b\n\x03\x63id\x18\x05 \x01(\x05\x12\x0b\n\x03mid\x18\x06 \x01(\x05\x12*\n\nstatistics\x18\x07 \x01(\x0b\x32\x16.management.Statistics\"4\n\nStatistics\x12\x12\n\nthroughput\x18\x01 \x01(\x05\x12\x12\n\nlatency_ms\x18\x02 \x01(\x05\"\x1b\n\x08Manifest\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\x32\xf3\x01\n\x0fManagementRoute\x12\x34\n\x08register\x12\x12.management.RegReq\x1a\x12.management.RegRes\"\x00\x12:\n\theartbeat\x12\x13.management.AgentID\x1a\x16.google.protobuf.Empty\"\x00\x12\x36\n\x06update\x12\x12.management.Status\x1a\x16.google.protobuf.Empty\"\x00\x12\x36\n\x05\x66\x65tch\x12\x13.management.AgentID\x1a\x14.management.Manifest\"\x00\x30\x01\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10management.proto\x12\nmanagement\x1a\x1bgoogle/protobuf/empty.proto\"\x15\n\x07\x41gentID\x12\n\n\x02id\x18\x01 \x01(\t\")\n\tJobAction\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x0e\n\x06job_id\x18\x02 \x01(\t\"\x14\n\x06RegReq\x12\n\n\x02id\x18\x01 \x01(\t\"(\n\x06RegRes\x12\x0e\n\x06status\x18\x01 \x01(\x08\x12\x0e\n\x06reason\x18\x02 \x01(\t\"\xe8\x01\n\x06Status\x12\n\n\x02id\x18\x01 \x01(\t\x12&\n\tgpu_stats\x18\x02 \x03(\x0b\x32\x13.management.GpuStat\x12(\n\nvram_stats\x18\x03 \x03(\x0b\x32\x14.management.VramStat\x12&\n\tcpu_stats\x18\x04 \x03(\x0b\x32\x13.management.CpuStat\x12%\n\x08ram_stat\x18\x05 \x01(\x0b\x32\x13.management.RamStat\x12\x31\n\x0fworker_statuses\x18\x06 \x03(\x0b\x32\x18.management.WorkerStatus\"?\n\x07GpuStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x0c\n\x04used\x18\x03 \x01(\x08\x12\x0c\n\x04util\x18\x04 \x01(\x05\"3\n\x08VramStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04used\x18\x02 \x01(\x03\x12\r\n\x05total\x18\x03 \x01(\x03\"1\n\x07\x43puStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04used\x18\x02 \x01(\x08\x12\x0c\n\x04util\x18\x03 \x01(\x05\"&\n\x07RamStat\x12\x0c\n\x04used\x18\x01 \x01(\x03\x12\r\n\x05total\x18\x02 \x01(\x03\"\x9b\x01\n\x0cWorkerStatus\x12\x11\n\tdeploy_id\x18\x01 \x01(\x05\x12\x11\n\tworker_id\x18\x02 \x01(\x05\x12\x0f\n\x07healthy\x18\x03 \x01(\x08\x12\x0e\n\x06on_gpu\x18\x04 \x01(\x08\x12\x0b\n\x03\x63id\x18\x05 \x01(\x05\x12\x0b\n\x03mid\x18\x06 \x01(\x05\x12*\n\nstatistics\x18\x07 \x01(\x0b\x32\x16.management.Statistics\"4\n\nStatistics\x12\x12\n\nthroughput\x18\x01 \x01(\x05\x12\x12\n\nlatency_ms\x18\x02 \x01(\x05\"\x1b\n\x08Manifest\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\x32\xb5\x02\n\x0fManagementRoute\x12\x34\n\x08register\x12\x12.management.RegReq\x1a\x12.management.RegRes\"\x00\x12:\n\theartbeat\x12\x13.management.AgentID\x1a\x16.google.protobuf.Empty\"\x00\x12\x36\n\x06update\x12\x12.management.Status\x1a\x16.google.protobuf.Empty\"\x00\x12\x36\n\x05\x66\x65tch\x12\x13.management.AgentID\x1a\x14.management.Manifest\"\x00\x30\x01\x12@\n\x0eget_job_action\x12\x13.management.AgentID\x1a\x15.management.JobAction\"\x00\x30\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -50,26 +50,28 @@ if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
   _globals['_AGENTID']._serialized_start=61
   _globals['_AGENTID']._serialized_end=82
-  _globals['_REGREQ']._serialized_start=84
-  _globals['_REGREQ']._serialized_end=104
-  _globals['_REGRES']._serialized_start=106
-  _globals['_REGRES']._serialized_end=146
-  _globals['_STATUS']._serialized_start=149
-  _globals['_STATUS']._serialized_end=381
-  _globals['_GPUSTAT']._serialized_start=383
-  _globals['_GPUSTAT']._serialized_end=446
-  _globals['_VRAMSTAT']._serialized_start=448
-  _globals['_VRAMSTAT']._serialized_end=499
-  _globals['_CPUSTAT']._serialized_start=501
-  _globals['_CPUSTAT']._serialized_end=550
-  _globals['_RAMSTAT']._serialized_start=552
-  _globals['_RAMSTAT']._serialized_end=590
-  _globals['_WORKERSTATUS']._serialized_start=593
-  _globals['_WORKERSTATUS']._serialized_end=748
-  _globals['_STATISTICS']._serialized_start=750
-  _globals['_STATISTICS']._serialized_end=802
-  _globals['_MANIFEST']._serialized_start=804
-  _globals['_MANIFEST']._serialized_end=831
-  _globals['_MANAGEMENTROUTE']._serialized_start=834
-  _globals['_MANAGEMENTROUTE']._serialized_end=1077
+  _globals['_JOBACTION']._serialized_start=84
+  _globals['_JOBACTION']._serialized_end=125
+  _globals['_REGREQ']._serialized_start=127
+  _globals['_REGREQ']._serialized_end=147
+  _globals['_REGRES']._serialized_start=149
+  _globals['_REGRES']._serialized_end=189
+  _globals['_STATUS']._serialized_start=192
+  _globals['_STATUS']._serialized_end=424
+  _globals['_GPUSTAT']._serialized_start=426
+  _globals['_GPUSTAT']._serialized_end=489
+  _globals['_VRAMSTAT']._serialized_start=491
+  _globals['_VRAMSTAT']._serialized_end=542
+  _globals['_CPUSTAT']._serialized_start=544
+  _globals['_CPUSTAT']._serialized_end=593
+  _globals['_RAMSTAT']._serialized_start=595
+  _globals['_RAMSTAT']._serialized_end=633
+  _globals['_WORKERSTATUS']._serialized_start=636
+  _globals['_WORKERSTATUS']._serialized_end=791
+  _globals['_STATISTICS']._serialized_start=793
+  _globals['_STATISTICS']._serialized_end=845
+  _globals['_MANIFEST']._serialized_start=847
+  _globals['_MANIFEST']._serialized_end=874
+  _globals['_MANAGEMENTROUTE']._serialized_start=877
+  _globals['_MANAGEMENTROUTE']._serialized_end=1186
 # @@protoc_insertion_point(module_scope)

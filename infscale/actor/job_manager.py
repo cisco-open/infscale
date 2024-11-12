@@ -73,7 +73,13 @@ class JobManager:
                 message = worker_data.pipe.recv()  # Receive the message
                 self._handle_message(message, worker_data, descriptor)
             except EOFError:
-                self._handle_worker_failure(loop, worker_data)
+                all_terminated = all(
+                    worker_data.status == WorkerStatus.TERMINATED
+                    for worker_data in self._workers.values()
+                )
+
+                if not all_terminated:
+                    self._handle_worker_failure(loop, worker_data)
 
     def _handle_worker_failure(self, loop, worker_data: WorkerMetaData) -> None:
         loop.remove_reader(worker_data.pipe.fileno())  # Clean up the reader

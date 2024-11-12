@@ -26,9 +26,11 @@ from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 
 from infscale import get_logger
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
+from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
+                                GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
+from infscale.controller.apiserver import (ApiServer, JobAction,
+                                           JobActionModel, ReqType)
 from infscale.controller.job_state import JobState
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
@@ -57,6 +59,8 @@ class Controller:
         self.config_q = asyncio.Queue()
 
         self.jobs_state = JobState()
+
+        self.job_action_q = asyncio.Queue()
 
     async def _start_server(self):
         server_options = [
@@ -146,13 +150,15 @@ class Controller:
                 detail=f"Action '{req.action}' on job is not allowed '{req.job_id}'",
             )
 
+        self.jobs_state.set_job_state(req.job_id, req.action)
+
         match req.action:
             case JobAction.UPDATE | JobAction.START:
                 await self.config_q.put(req.config)
 
             case JobAction.STOP:
-                # TODO: notify agent to stop the job
-                print("stopping job")
+                await self.job_action_q.put(req)
+                self.jobs_state.remove_job(req.job_id)
 
     async def _handle_fastapi_serve(self, req: Request):
         logger.debug(f"req = {req}")
@@ -210,3 +216,23 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
                     payload=json.dumps(asdict(config)).encode("utf-8")
                 )
                 yield manifest
+
+    async def get_job_action(
+        self, request: pb2.AgentID, context: ServicerContext
+    ) -> AsyncIterable[pb2.JobAction]:
+        """Push job action message to agent."""
+
+        if request.id not in self.ctrl.contexts:
+            logger.debug(f"{request.id} is not in controller'context")
+            return
+        agent_context = self.ctrl.contexts[request.id]
+        agent_context.set_grpc_ctx(context)
+        event = agent_context.get_grpc_ctx_event()
+
+        while True:
+            job_action = await self.ctrl.job_action_q.get()
+            if job_action:
+                payload = pb2.JobAction(
+                    type=job_action.action, job_id=job_action.job_id
+                )
+                yield payload
