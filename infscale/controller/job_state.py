@@ -60,6 +60,7 @@ class JobState:
         self.job_status: dict[str, dict[str, JobStateData]] = dict()
 
     def remove_job(self, job_id: str) -> None:
+        """Remove job ID."""
         agent_ids = self._get_job_agent_ids(job_id)
 
         for agent_id in agent_ids:
@@ -67,8 +68,7 @@ class JobState:
             del self.job_status[agent_id][job_id]
 
     def set_agent(self, agent_id: str) -> None:
-        """Sets agent ID in job status dict"""
-
+        """Set agent ID in job status dict."""
         self.job_status[agent_id] = dict()
 
     def _is_new_job(self, job_id: str, job_action: JobAction) -> bool:
@@ -77,8 +77,7 @@ class JobState:
     def set_job_state(
         self, job_id: str, job_action: JobAction, job_state: JobStateEnum = None
     ) -> None:
-        """Updates job state"""
-
+        """Update job state."""
         new_job = self._is_new_job(job_id, job_action)
 
         if new_job:
@@ -98,33 +97,31 @@ class JobState:
             )
 
     def _get_available_agent_id(self) -> str:
-        """Finds agent with less workload"""
-
+        """Find agent with less workload."""
         return min(self.job_status, key=lambda agent_id: len(self.job_status[agent_id]))
 
     def can_update_job_state(self, job_id: str, job_action: JobAction) -> bool:
-        """Checks if an update is possible based on job state"""
-        if self._is_new_job(job_id, job_action):
+        """Check if an update is possible based on job state."""
+        agent_ids = self._get_job_agent_ids(job_id)
+        if agent_ids is None and job_action == JobAction.START:
             return True
 
-        agent_ids = self._get_job_agent_ids(job_id)
-
-        can_update = False
 
         for agent_id in agent_ids:
             if job_action in self.job_status[agent_id][job_id].possible_actions:
-                can_update = True
-    
-        return can_update
+                return True
 
-    def _get_job_agent_ids(self, job_id) -> str | None:
-        """Returns agent_ids for job_id or None"""
+        return False
+
+
+    def _get_job_agent_ids(self, job_id) -> list[str] | None:
+        """Return agent_ids for job_id or None."""
         agent_ids = []
         for agent_id, jobs in self.job_status.items():
             if job_id in jobs:
-                agent_ids.append(agent_id)  # Return agent_id if the job is already present
+                agent_ids.append(agent_id)
 
         if len(agent_ids):
             return agent_ids
 
-        return None  # Return None if the job_id was not found
+        return None
