@@ -7,6 +7,7 @@ nfaults: 1
 # to automate building flow_graph, etc.
 micro_batch_size: 2
 fwd_policy: "static"
+job_id: "job5"
 
 flow_graph:
   s-0:

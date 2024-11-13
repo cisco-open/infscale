@@ -76,13 +76,16 @@ class JobAction(str, Enum):
 
 class JobActionModel(BaseModel):
     action: JobAction
-    job_id: str
+    job_id: Optional[str] = None
     config: Optional[JobConfig] = None
 
     @model_validator(mode="after")
     def check_config_for_update(self):
         if self.action in [JobAction.UPDATE, JobAction.START] and self.config is None:
             raise ValueError("config is required when updating a job")
+        
+        if self.action in [JobAction.UPDATE, JobAction.STOP] and self.job_id is None:
+            raise ValueError("job id is required stopping or updating a job")
         return self
 
 

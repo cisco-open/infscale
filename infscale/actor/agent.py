@@ -240,7 +240,7 @@ class Agent:
                 daemon=True,
             )
             process.start()
-            w = WorkerMetaData(pipe, process, WorkerStatus.READY, config.stage.id)
+            w = WorkerMetaData(pipe, process, WorkerStatus.READY, config.stage.id, config.job_id)
             self._workers[w.pipe.fileno()] = w
             self.job_manager.add_worker(w)
             self.job_manager.send_message_to_worker(
