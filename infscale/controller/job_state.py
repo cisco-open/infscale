@@ -27,7 +27,7 @@ class JobStateEnum(Enum):
     """JobState enum."""
 
     STARTED = "started"
-    STARTING = "stopping"
+    STARTING = "starting"
     STOPPED = "stopped"
     STOPPING = "stopping"
     UPDATING = "updating"
@@ -38,7 +38,7 @@ JOB_ALLOWED_ACTIONS = MappingProxyType(
         JobStateEnum.STARTED: (JobAction.STOP, JobAction.UPDATE),
         JobStateEnum.STARTING: (JobAction.STOP),
         JobStateEnum.STOPPED: (JobAction.START),
-        JobStateEnum.STOPPING: None,
+        JobStateEnum.STOPPING: (),
         JobStateEnum.UPDATING: (JobAction.STOP),
     }
 )
@@ -59,36 +59,72 @@ class JobState:
         """Initialize instance."""
         self.job_status: dict[str, dict[str, JobStateData]] = dict()
 
+    def remove_job(self, job_id: str) -> None:
+        agent_ids = self._get_job_agent_ids(job_id)
+
+        for agent_id in agent_ids:
+            # remove job from agent dict for now
+            del self.job_status[agent_id][job_id]
+
     def set_agent(self, agent_id: str) -> None:
         """Sets agent ID in job status dict"""
 
         self.job_status[agent_id] = dict()
 
-    def set_job_state(self, job_id: str, job_state: JobStateEnum) -> None:
-        """Updates job state by agent ID"""
-        agent_id = self._get_job_agent_id(job_id)
+    def _is_new_job(self, job_id: str, job_action: JobAction) -> bool:
+        return self._get_job_agent_ids(job_id) is None and job_action == JobAction.START
 
-        self.job_status[agent_id][job_id] = JobStateData(
-            job_state, JOB_ALLOWED_ACTIONS[job_state]
-        )
+    def set_job_state(
+        self, job_id: str, job_action: JobAction, job_state: JobStateEnum = None
+    ) -> None:
+        """Updates job state"""
 
-    def get_available_agent_id(self) -> str:
+        new_job = self._is_new_job(job_id, job_action)
+
+        if new_job:
+            agent_id = self._get_available_agent_id()
+            
+            self.job_status[agent_id][job_id] = JobStateData(
+                JobStateEnum.STARTING, JOB_ALLOWED_ACTIONS.get(JobStateEnum.STARTING)
+            )
+
+            return
+        
+        agent_ids = self._get_job_agent_ids(job_id)
+
+        for agent_id in agent_ids:
+            self.job_status[agent_id][job_id] = JobStateData(
+                job_state, JOB_ALLOWED_ACTIONS.get(job_state)
+            )
+
+    def _get_available_agent_id(self) -> str:
         """Finds agent with less workload"""
 
         return min(self.job_status, key=lambda agent_id: len(self.job_status[agent_id]))
 
     def can_update_job_state(self, job_id: str, job_action: JobAction) -> bool:
         """Checks if an update is possible based on job state"""
-        agent_id = self._get_job_agent_id(job_id)
-        if agent_id is None and job_action == JobAction.START:
+        if self._is_new_job(job_id, job_action):
             return True
 
-        return job_action in self.job_status[agent_id][job_id].possible_actions
+        agent_ids = self._get_job_agent_ids(job_id)
 
-    def _get_job_agent_id(self, job_id) -> str | None:
-        """Returns agent_id for job_id or None"""
+        can_update = False
 
+        for agent_id in agent_ids:
+            if job_action in self.job_status[agent_id][job_id].possible_actions:
+                can_update = True
+    
+        return can_update
+
+    def _get_job_agent_ids(self, job_id) -> str | None:
+        """Returns agent_ids for job_id or None"""
+        agent_ids = []
         for agent_id, jobs in self.job_status.items():
             if job_id in jobs:
-                return agent_id  # Return agent_id if the job is already present
+                agent_ids.append(agent_id)  # Return agent_id if the job is already present
+
+        if len(agent_ids):
+            return agent_ids
+
         return None  # Return None if the job_id was not found

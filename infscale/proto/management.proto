@@ -15,10 +15,17 @@ service ManagementRoute {
   rpc update(Status) returns (google.protobuf.Empty) {}
   // agent calls fetch rpc to obtain manifest for inference service
   rpc fetch(AgentID) returns (stream Manifest) {}
+  // agent calls get_job_action rpc to get job action messages
+  rpc get_job_action(AgentID) returns (stream JobAction) {}
 }
 
 message AgentID {
   string id = 1;
+}
+
+message JobAction {
+  string type = 1;
+  string job_id = 2;
 }
 
 message RegReq {
