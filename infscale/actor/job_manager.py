@@ -33,6 +33,7 @@ class WorkerMetaData:
     process: mp.Process
     status: WorkerStatus
     id: str
+    job_id: str
 
 
 class JobManager:

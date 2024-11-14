@@ -206,6 +206,7 @@ class ServeConfig:
     """Class for keeping config values of serve specification."""
 
     name: str
+
     model: str
 
     stage: StageConfig
@@ -217,6 +218,8 @@ class ServeConfig:
     rank_map: dict[str, int]
 
     workers_stage_info: dict[str, StageConfig]
+
+    job_id: str
 
     device: str = "cpu"
 
@@ -263,6 +266,7 @@ class JobConfig:
     flow_graph: dict[str, list[WorkerInfo]]
     rank_map: dict[str, int]
     dataset: Dataset
+    job_id: str
     nfaults: int = 0
     micro_batch_size: int = 8
     fwd_policy: str = "random"
@@ -290,6 +294,7 @@ class JobConfig:
                 "fwd_policy": self.fwd_policy,
                 "device": item["device"],
                 "workers_stage_info": workers_stage_info,
+                "job_id": self.job_id,
             }
             serve_configs.append(ServeConfig(**config))
 

@@ -46,7 +46,7 @@ JOB_ALLOWED_ACTIONS = MappingProxyType(
 
 @dataclass
 class JobStateData:
-    """WorkerMetaData dataclass."""
+    """JobStateData dataclass."""
 
     state: JobStateEnum
     possible_actions: Optional[Tuple[JobAction, ...]]

@@ -8,6 +8,7 @@ nfaults: 1
 micro_batch_size: 8
 # possible options: random, rr (round-robin), shortest, static
 fwd_policy: "rr"
+job_id: "job2"
 
 flow_graph:
   s-0:
