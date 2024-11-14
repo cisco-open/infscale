@@ -117,9 +117,10 @@ class Llama3ModelMetaData(BaseModelMetaData):
             self.bos_token_id = self.config.bos_token_id
         logger.info(f"bos_token_id = {self.bos_token_id}")
 
-        self.do_sample = True
         if hasattr(self.config, "do_sample"):
             self.do_sample = self.config.do_sample
+        # let's keep sampling true
+        self.do_sample = True
         logger.info(f"do_sample = {self.do_sample}")
 
         self.eos_token_id = 128001
@@ -249,9 +250,8 @@ class Llama3ModelMetaData(BaseModelMetaData):
         def inner(tensors: dict[str, Tensor]) -> list[str]:
             results = []
             tokens = tensors["tokens"]
-            results.append(self.tokenizer.decode(tokens))
 
-            print(f">>> results: {results}")
+            results.append(self.tokenizer.decode(tokens))
 
             return results
 

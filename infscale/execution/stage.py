@@ -113,6 +113,13 @@ class Stage(nn.Module):
     def _run_llm_full_model(self, **inputs):
         outputs = inputs
 
+        # TODO: we create a kv cache for each prompt.
+        #       Without doing it, it seems like llm produces garbage outputs
+        #       over time.
+        #       Creating a dynamic cache is done for a case where full model is
+        #       loaded. We need to handle the case where a model is partitioned
+        #       into several stages. This is left as a TODO.
+        self.cache = DynamicCache()
         while True:
             input_ids = outputs["input_ids"]
             attention_mask = outputs["attention_mask"]

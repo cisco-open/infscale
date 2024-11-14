@@ -24,7 +24,6 @@ SOFTWARE.
 # https://github.com/SymbioticLab/Oobleck/blob/3b7a0c2f19bff0991e623ffbeb8a5b365853bf3a/oobleck/execution/dataset.py
 
 import math
-from itertools import chain
 from typing import Optional, Tuple, Type, Union
 
 import torch
@@ -223,38 +222,16 @@ class HuggingFaceDataset:
             max_seq_length = tokenizer.model_max_length
 
         def tokenize_function(examples):
-            return tokenizer(examples[text_column_name])
+            tokenizer.pad_token = tokenizer.eos_token
+            return tokenizer(
+                examples[text_column_name], padding=True, return_tensors="pt"
+            )
 
         tokenized_dataset = dataset.map(
             tokenize_function,
             batched=True,
             remove_columns=column_names,
             load_from_cache_file=True,
-        )
-
-        def group_texts(examples):
-            # Concatenate all texts.
-            concatenated_examples = {
-                k: list(chain(*examples[k])) for k in examples.keys()
-            }
-            total_length = len(concatenated_examples[list(examples.keys())[0]])
-            # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
-            # customize this part to your needs.
-            if total_length >= max_seq_length:
-                total_length = (total_length // max_seq_length) * max_seq_length
-            # Split by chunks of max_len.
-            result = {
-                k: [
-                    t[i : i + max_seq_length]
-                    for i in range(0, total_length, max_seq_length)
-                ]
-                for k, t in concatenated_examples.items()
-            }
-            result["labels"] = result["input_ids"].copy()
-            return result
-
-        tokenized_dataset = tokenized_dataset.map(
-            group_texts, batched=True, load_from_cache_file=True
         )
 
         return tokenizer, tokenized_dataset
