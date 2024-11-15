@@ -108,7 +108,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
         self.model_group = ModelGroup.LANG
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.name, config=self.config)
-        self.generated_tokens: list[Tensor] = []
+        self.generated_tokens: dict[int, list[Tensor]] = {}
         self._init_gen_config()
 
     def _init_gen_config(self):
@@ -152,10 +152,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
             "use_cache",
             "past_key_values",
         ]
-        # self._trace_inputs = names + [
-        #     "past_key_values",
-        # ]
-        print(f"llama3 trace inputs: {self._trace_inputs}")
+        logger.info(f"llama3 trace inputs: {self._trace_inputs}")
 
     def get_model(self) -> AutoModelType:
         """Get model."""
@@ -188,7 +185,9 @@ class Llama3ModelMetaData(BaseModelMetaData):
     def get_output_parser(self) -> Union[Callable, None]:
         """Return function to parse output."""
 
-        def inner(outputs, attention_mask) -> dict[str, Union[Tensor, bool]]:
+        def inner(
+            seqno: int, outputs: dict[str, Tensor], attention_mask: Tensor
+        ) -> dict[str, Tensor]:
             next_token_logits = outputs["logits"][:, -1, :]
             device = next_token_logits.device
 
@@ -221,17 +220,25 @@ class Llama3ModelMetaData(BaseModelMetaData):
                 # Greedy decoding
                 next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
 
-            self.generated_tokens.append(next_token.item())
+            if seqno not in self.generated_tokens:
+                self.generated_tokens[seqno] = []
+            gen_token_list = self.generated_tokens[seqno]
+
+            gen_token_list.append(next_token.item())
+            # TODO: remove this print statement or convert it to a log statment
+            #       this is for temporary use to help understanding of the
+            #       generation process
+            print(f">>> generated {len(gen_token_list)}th token for batch {seqno}")
 
             # Check for EOS token or if max number of tokens are generated
             if (
-                self.max_new_tokens == len(self.generated_tokens)
+                self.max_new_tokens == len(gen_token_list)
                 or next_token.item() == self.eos_token_id
             ):
-                tensor = torch.tensor(
-                    self.generated_tokens, dtype=torch.int64, device=device
-                )
-                self.generated_tokens = []
+                tensor = torch.tensor(gen_token_list, dtype=torch.int64, device=device)
+                gen_token_list = []
+                del self.generated_tokens[seqno]
+
                 return {"tokens": tensor}
 
             # Update input_ids for the next iteration

@@ -48,6 +48,7 @@ class Stage(nn.Module):
         start: int,
         end: int,
         device: torch.device = torch.device("cpu"),
+        max_inflight: int = 1,
     ):
         """Initialize stage class instance."""
         super().__init__()
@@ -60,6 +61,8 @@ class Stage(nn.Module):
         self.end = end
 
         self.device = device
+
+        self.max_inflight = max_inflight
 
         # decide if this stage contains the first layer of a model
         self.is_first = start == 0
@@ -96,8 +99,8 @@ class Stage(nn.Module):
         if not isinstance(self.modelir.mmd, Llama3ModelMetaData):
             return
 
-        # further ste up LLM causal LM parameters
-        self.cache: DynamicCache = DynamicCache()
+        # further set up LLM causal LM parameters
+        self.caches: dict[int, DynamicCache] = {}
 
         if self.is_full_model:
             self._run_llm = self._run_llm_full_model
@@ -110,16 +113,11 @@ class Stage(nn.Module):
         else:
             self._run_llm = self._run_llm_middle_stage
 
-    def _run_llm_full_model(self, **inputs):
+    def _run_llm_full_model(
+        self, seqno: int, cache: DynamicCache, **inputs
+    ) -> dict[str, Tensor]:
         outputs = inputs
 
-        # TODO: we create a kv cache for each prompt.
-        #       Without doing it, it seems like llm produces garbage outputs
-        #       over time.
-        #       Creating a dynamic cache is done for a case where full model is
-        #       loaded. We need to handle the case where a model is partitioned
-        #       into several stages. This is left as a TODO.
-        self.cache = DynamicCache()
         while True:
             input_ids = outputs["input_ids"]
             attention_mask = outputs["attention_mask"]
@@ -131,10 +129,10 @@ class Stage(nn.Module):
             outputs = self.forward(
                 **outputs,
                 use_cache=True,
-                past_key_values=self.cache,
+                past_key_values=cache,
             )
 
-            outputs = self._output_parser(outputs, attention_mask)
+            outputs = self._output_parser(seqno, outputs, attention_mask)
 
             if "tokens" in outputs:
                 # generating tokens is done
@@ -142,50 +140,60 @@ class Stage(nn.Module):
 
         return outputs
 
-    def _run_llm_first_stage(self, **inputs) -> dict[str, Tensor]:
+    def _run_llm_first_stage(
+        self, seqno: int, cache: DynamicCache, **inputs
+    ) -> dict[str, Tensor]:
+        """Run the first stage of llm."""
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
+
         logger.debug("run llm first stage")
         logger.debug(
             f"input_ids's size: {input_ids.size()} ",
             f"attention_mask's size: {attention_mask.size()}",
         )
 
-        outputs = self.forward(**inputs, use_cache=True, past_key_values=self.cache)
+        outputs = self.forward(**inputs, use_cache=True, past_key_values=cache)
 
         # add attention mask to outputs to pass it to next stage
         outputs["attention_mask"] = attention_mask
 
         return outputs
 
-    def _run_llm_middle_stage(self, **inputs) -> dict[str, Tensor]:
+    def _run_llm_middle_stage(
+        self, seqno: int, cache: DynamicCache, **inputs
+    ) -> dict[str, Tensor]:
+        """Run a middle stage of llm."""
         logger.debug("run llm middle stage")
         # attention mask passed from the upstream stage shouldn't be used
         # during inference. we save it to pass it to the next stage
         attention_mask = inputs["attention_mask"]
         del inputs["attention_mask"]
 
-        outputs = self.forward(**inputs, past_key_values=self.cache)
+        outputs = self.forward(**inputs, past_key_values=cache)
 
         # add attention mask to outputs to pass it to next stage
         outputs["attention_mask"] = attention_mask
 
         return outputs
 
-    def _run_llm_last_stage(self, **inputs) -> dict[str, Tensor]:
+    def _run_llm_last_stage(
+        self, seqno: int, cache: DynamicCache, **inputs
+    ) -> dict[str, Tensor]:
+        """Run the last stage of llm."""
         logger.debug("run llm last stage")
         # attention mask passed from the upstream stage shouldn't be used
         # during inference. we save it to use during output parsing
         attention_mask = inputs["attention_mask"]
         del inputs["attention_mask"]
 
-        outputs = self.forward(**inputs, past_key_values=self.cache)
+        outputs = self.forward(**inputs, past_key_values=cache)
 
-        outputs = self._output_parser(outputs, attention_mask)
+        outputs = self._output_parser(seqno, outputs, attention_mask)
 
         return outputs
 
-    def _llm_generate(self, **inputs) -> tuple[dict[str, Tensor], int]:
+    def _llm_generate(self, seqno: int, **inputs) -> tuple[dict[str, Tensor], int]:
         """Return generated intermediate results or all the tokens.
 
         Returns
@@ -194,7 +202,15 @@ class Stage(nn.Module):
         2nd value: contains an index of layer that the results need to go back.
                    -1 means that the results goes back to the serving server.
         """
-        outputs = self._run_llm(**inputs)
+        # remove kv cache for batch that is already served to save memory
+        # we do max_inflight+1 instead of max_inflight to be safe
+        self.caches.pop(seqno - (self.max_inflight + 1), None)
+
+        if seqno not in self.caches:
+            self.caches[seqno] = DynamicCache()
+        cache = self.caches[seqno]
+
+        outputs = self._run_llm(seqno, cache, **inputs)
         # If DynamicCache is returned in outputs, it can't be forwarded
         # to other workers since it is not a tensor; so, we remove it
         # from outputs; this is a HACK; need to think about if there is
@@ -214,12 +230,12 @@ class Stage(nn.Module):
 
         return outputs, next_layer
 
-    def predict(self, **inputs) -> tuple[dict[str, Tensor], int]:
+    def predict(self, seqno: int, **inputs) -> tuple[dict[str, Tensor], int]:
         """Coduct inference."""
         if isinstance(self.modelir.mmd, Llama3ModelMetaData):
             # do generation; needs multiple passes of the layers in a stateful manner
             # we have to maintain the state
-            outputs, next_layer = self._llm_generate(**inputs)
+            outputs, next_layer = self._llm_generate(seqno, **inputs)
         else:
             # run the layers once
             outputs = self.forward(**inputs)

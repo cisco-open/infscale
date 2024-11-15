@@ -8,6 +8,8 @@ nfaults: 1
 micro_batch_size: 8
 fwd_policy: "static"
 job_id: "job1"
+# maximum number of requests in flight at any given point in time
+max_inflight: 4
 
 flow_graph:
   s-0:

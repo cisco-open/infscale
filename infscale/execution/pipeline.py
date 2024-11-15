@@ -52,6 +52,13 @@ class Pipeline:
         self.world_info_list: list[WorldInfo] = list()
         self.cfg_event = asyncio.Event()
 
+        # TODO: these variables are only for a server (i.e., dispatcher)
+        #       need to consider refactoring pipeline such that server code
+        #       and worker code are managed in a separate file.
+        self.n_inflight = 0
+        self.tx_allow_evt = asyncio.Event()
+        self.tx_allow_evt.set()
+
     async def _initialize_multiworld(self):
         my_id = self.spec.stage.id
 
@@ -160,7 +167,19 @@ class Pipeline:
             start=self.spec.stage.start,
             end=self.spec.stage.end,
             device=self.device,
+            max_inflight=self.max_inflight,
         )
+
+    async def _wait_tx_permission(self):
+        await self.tx_allow_evt.wait()
+        self.n_inflight += 1
+        if self.n_inflight == self.max_inflight:
+            self.tx_allow_evt.clear()
+
+    async def _check_n_enable_tx_permission(self):
+        self.n_inflight -= 1
+        if self.n_inflight < self.max_inflight:
+            self.tx_allow_evt.set()
 
     async def _server_send(self, router: Router):
         logger.info("start to send requests")
@@ -170,7 +189,9 @@ class Pipeline:
             if batch is None:
                 break
 
-            logger.debug(f"sending batch {seqno}")
+            await self._wait_tx_permission()
+
+            logger.info(f"sending batch {seqno}")
             # send batch to the first stage
             await router.send(seqno, batch, 0)
             seqno += 1
@@ -198,6 +219,9 @@ class Pipeline:
             outputs, seqno = await router.recv()
             results = self._predict_fn(outputs)
             logger.info(f"response for {seqno}: {results}")
+
+            await self._check_n_enable_tx_permission()
+
             if idx % 100 == 0:
                 if start_time is None:
                     start_time = time.perf_counter()
@@ -246,13 +270,14 @@ class Pipeline:
             logger.debug(f"received input {seqno} from router")
 
             with torch.inference_mode():
-                outputs, next_layer = self.stage.predict(**inputs)
+                outputs, next_layer = self.stage.predict(seqno, **inputs)
 
             logger.debug("got output from stage and put output into router")
             await router.send(seqno, outputs, next_layer)
             logger.debug("put output into router")
 
     async def handle_config(self) -> None:
+        """Handle a config sent by the controller."""
         while True:
             spec = await self.worker_manager.config_q.get()
 
@@ -260,6 +285,10 @@ class Pipeline:
                 continue
 
             self.spec = spec
+            # TODO: this is not the best place to initialize an instance
+            #       variable for readability; let's handle this later
+            self.max_inflight: int = self.spec.max_inflight
+
             self._init_assets()
             self._prepare_worker()
             await self._initialize_pipeline()

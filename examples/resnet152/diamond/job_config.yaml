@@ -9,6 +9,8 @@ micro_batch_size: 8
 # possible options: random, rr (round-robin), shortest, static
 fwd_policy: "rr"
 job_id: "job2"
+# maximum number of requests in flight at any given point in time
+max_inflight: 8
 
 flow_graph:
   s-0:

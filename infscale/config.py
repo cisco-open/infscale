@@ -22,6 +22,10 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, Field, PrivateAttr
 
+from infscale import get_logger
+
+logger = get_logger(__name__)
+
 RAW_KEY_PARTITIONS = "partitions"
 RAW_KEY_MINI_BATCH_SIZE = "mini_batch_size"
 RAW_KEY_PRE_TRAINED = "pre_trained"
@@ -229,6 +233,9 @@ class ServeConfig:
 
     fwd_policy: str = "random"
 
+    # maximum number of requests in flight at any given point in time
+    max_inflight: int = 1
+
     def __post_init__(self):
         """Convert stage dict into stage object."""
         # TODO - remove isinstance check when the config file is being sent through the api call
@@ -270,6 +277,7 @@ class JobConfig:
     nfaults: int = 0
     micro_batch_size: int = 8
     fwd_policy: str = "random"
+    max_inflight: int = 1
 
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
@@ -280,6 +288,10 @@ class JobConfig:
             wid = worker["id"]
             stage = worker["stage"]
             workers_stage_info[wid] = {**stage, "id": wid}
+
+        if self.max_inflight <= 0:
+            logger.warn("max_inflight must be a positive number; using 1")
+            self.max_inflight = 1
 
         for item in self.workers:
             config = {
@@ -295,6 +307,7 @@ class JobConfig:
                 "device": item["device"],
                 "workers_stage_info": workers_stage_info,
                 "job_id": self.job_id,
+                "max_inflight": self.max_inflight,
             }
             serve_configs.append(ServeConfig(**config))
 
