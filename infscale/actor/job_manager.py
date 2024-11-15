@@ -21,6 +21,7 @@ from multiprocessing import connection
 import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
+from infscale.config import JobConfig
 
 logger = get_logger()
 
@@ -41,9 +42,18 @@ class JobManager:
 
     def __init__(self):
         self._workers: dict[int, WorkerMetaData] = {}
+        self.jobs: dict[str, JobConfig] = {}
 
     def add_worker(self, worker: WorkerMetaData) -> None:
         self._workers[worker.pipe.fileno()] = worker
+
+    def _job_cleanup(self, job_id: str) -> None:
+        for k, v in list(self._workers.items()):
+            if v.job_id == job_id:
+                del self._workers[k]
+
+        if job_id in self.jobs:
+            del self.jobs[job_id]
 
     def send_message_to_worker(self, worker: WorkerMetaData, message: Message) -> None:
         """Send message to worker."""
@@ -58,33 +68,24 @@ class JobManager:
                 worker_data.pipe.fileno(),
                 self.on_read_ready,
                 worker_data,
-                loop,
                 worker_data.pipe.fileno(),
             )
 
     def on_read_ready(
         self,
         worker_data: WorkerMetaData,
-        loop: asyncio.AbstractEventLoop,
         descriptor: int,
     ) -> None:
         """Callback to wait for messages."""
-        if worker_data.pipe.poll():  # Check if there's data to read
+        if worker_data.pipe.poll():
             try:
-                message = worker_data.pipe.recv()  # Receive the message
+                message = worker_data.pipe.recv()
                 self._handle_message(message, worker_data, descriptor)
             except EOFError:
-                all_terminated = all(
-                    worker_data.status == WorkerStatus.TERMINATED
-                    for worker_data in self._workers.values()
-                )
+                self._handle_worker_failure(worker_data)
 
-                if not all_terminated:
-                    self._handle_worker_failure(loop, worker_data)
-
-    def _handle_worker_failure(self, loop, worker_data: WorkerMetaData) -> None:
-        loop.remove_reader(worker_data.pipe.fileno())  # Clean up the reader
-        self._terminate_workers()
+    def _handle_worker_failure(self, worker_data: WorkerMetaData) -> None:
+        self._terminate_workers(worker_data.job_id)
 
     def _handle_message(
         self, message: Message, worker_data: WorkerMetaData, descriptor: int
@@ -103,7 +104,7 @@ class JobManager:
 
         match message.content:
             case WorkerStatus.DONE:
-                self._terminate_workers()
+                self._terminate_workers(message.job_id)
 
             case WorkerStatus.STARTED:
                 pass
@@ -121,13 +122,35 @@ class JobManager:
         """Update Worker status."""
         self._workers[descriptor].status = message.content
 
-    def _terminate_workers(self) -> None:
+    def _terminate_workers(self, job_id: str) -> None:
         """Terminate Workers."""
-        for worker_data in self._workers.values():
-            # TODO: update logic to terminate workers belonging to a terminated server only
-            worker_data.status = WorkerStatus.TERMINATED
-            self.send_message_to_worker(worker_data, Message(MessageType.TERMINATE, ""))
+        loop = asyncio.get_event_loop()
 
+        for worker_data in self._workers.values():
+            if worker_data.job_id == job_id and worker_data.status in [WorkerStatus.STARTED, WorkerStatus.READY, WorkerStatus.RUNNING]:
+                worker_data.status = WorkerStatus.TERMINATED
+                self.send_message_to_worker(
+                    worker_data, Message(MessageType.TERMINATE, "", worker_data.job_id)
+                )
+
+                loop.remove_reader(worker_data.pipe.fileno())
+
+        logger.info(f"workers for job {job_id} terminated")
+
+        self._job_cleanup(job_id)
+            
     def _print_message(self, content: str, process_id: int) -> None:
         """Print received messages."""
         print(f"Process ID: {process_id}, Message: {content}")
+
+    def set_job_config(self, config: JobConfig) -> None:
+        """Set job config."""
+        self.jobs[config.job_id] = config
+
+    def get_job_config(self, job_id: str) -> JobConfig | None:
+        """Return job config."""
+        return self.jobs[job_id] if self.job_exists(job_id) else None
+
+    def job_exists(self, job_id) -> bool:
+        """Check if job exists."""
+        return job_id in self.jobs

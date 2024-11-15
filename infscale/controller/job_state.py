@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""AgentContext class."""
+"""JobState class."""
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType

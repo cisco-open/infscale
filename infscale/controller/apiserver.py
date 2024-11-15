@@ -84,7 +84,7 @@ class JobActionModel(BaseModel):
         if self.action in [JobAction.UPDATE, JobAction.START] and self.config is None:
             raise ValueError("config is required when updating a job")
         
-        if self.action in [JobAction.UPDATE, JobAction.STOP] and self.job_id is None:
+        if self.action == JobAction.STOP and self.job_id is None:
             raise ValueError("job id is required stopping or updating a job")
         return self
 

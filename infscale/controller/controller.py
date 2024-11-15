@@ -26,11 +26,9 @@ from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 
 from infscale import get_logger
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import (ApiServer, JobAction,
-                                           JobActionModel, ReqType)
+from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
 from infscale.controller.job_state import JobState
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
@@ -144,13 +142,14 @@ class Controller:
 
     async def _handle_fastapi_job_action(self, req: JobActionModel) -> None:
         """Handle fastapi job action request."""
-        if not self.jobs_state.can_update_job_state(req.job_id, req.action):
+        job_id = req.config.job_id if req.config else req.job_id
+        if not self.jobs_state.can_update_job_state(job_id, req.action):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Action '{req.action}' on job '{req.job_id}' is not allowed",
+                detail=f"Action '{req.action}' on job '{job_id}' is not allowed",
             )
 
-        self.jobs_state.set_job_state(req.job_id, req.action)
+        self.jobs_state.set_job_state(job_id, req.action)
 
         match req.action:
             case JobAction.UPDATE | JobAction.START:
@@ -158,7 +157,7 @@ class Controller:
 
             case JobAction.STOP:
                 await self.job_action_q.put(req)
-                self.jobs_state.remove_job(req.job_id)
+                self.jobs_state.remove_job(job_id)
 
     async def _handle_fastapi_serve(self, req: Request):
         logger.debug(f"req = {req}")
@@ -230,9 +229,11 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         event = agent_context.get_grpc_ctx_event()
 
         while True:
-            job_action = await self.ctrl.job_action_q.get()
+            job_action: JobActionModel = await self.ctrl.job_action_q.get()
             if job_action:
+                job_id = job_action.config.job_id if job_action.config else job_action.job_id
+                
                 payload = pb2.JobAction(
-                    type=job_action.action, job_id=job_action.job_id
+                    type=job_action.action, job_id=job_id
                 )
                 yield payload

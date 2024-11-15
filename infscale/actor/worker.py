@@ -34,12 +34,6 @@ class Worker:
         self.local_rank = local_rank
         self.conn = conn
         self.worker_manager = WorkerManager(self.conn)
-        self.worker_manager.send_message(
-            Message(
-                MessageType.STATUS,
-                WorkerStatus.STARTED,
-            )
-        )
 
     def run(self) -> None:
         """Run worker."""

@@ -219,6 +219,7 @@ class Pipeline:
             Message(
                 MessageType.STATUS,
                 WorkerStatus.RUNNING,
+                self.spec.job_id,
             )
         )
         while max_count == -1 or max_count > idx:
@@ -232,11 +233,14 @@ class Pipeline:
             idx += 1
 
         end_time = time.perf_counter()
-        print(f"Server recv done, elapsed time: {end_time - start_time}")
+        print(
+            f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
+        )
         self.worker_manager.send_message(
             Message(
                 MessageType.STATUS,
                 WorkerStatus.DONE,
+                self.spec.job_id,
             )
         )
 
@@ -297,6 +301,14 @@ class Pipeline:
             await self._initialize_pipeline()
             self.cfg_event.set()
 
+            self.worker_manager.send_message(
+                Message(
+                    MessageType.STATUS,
+                    WorkerStatus.STARTED,
+                    self.spec.job_id,
+                )
+            )
+
     def _init_assets(self) -> None:
         # load model meta info from zoo
         mmd = Zoo.get_model_metadata(self.spec.model)
@@ -332,11 +344,5 @@ class Pipeline:
 
     async def run(self):
         """Run pipeline."""
-        self.worker_manager.send_message(
-            Message(
-                MessageType.STATUS,
-                WorkerStatus.RUNNING,
-            )
-        )
         _ = asyncio.create_task(self.handle_config())
         await self._run()
