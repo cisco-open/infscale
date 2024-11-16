@@ -221,22 +221,19 @@ class Llama3ModelMetaData(BaseModelMetaData):
                 next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
 
             if seqno not in self.generated_tokens:
-                self.generated_tokens[seqno] = []
-            gen_token_list = self.generated_tokens[seqno]
+                self.generated_tokens[seqno] = [[] for _ in range(len(next_token))]
+            gen_tokens = self.generated_tokens[seqno]
 
-            gen_token_list.append(next_token.item())
-            # TODO: remove this print statement or convert it to a log statment
-            #       this is for temporary use to help understanding of the
-            #       generation process
-            print(f">>> generated {len(gen_token_list)}th token for batch {seqno}")
+            for i, token in enumerate(next_token):
+                gen_tokens[i].append(token.item())
 
             # Check for EOS token or if max number of tokens are generated
             if (
-                self.max_new_tokens == len(gen_token_list)
-                or next_token.item() == self.eos_token_id
+                self.max_new_tokens == len(gen_tokens[0])
+                or next_token[0].item() == self.eos_token_id
             ):
-                tensor = torch.tensor(gen_token_list, dtype=torch.int64, device=device)
-                gen_token_list = []
+                gen_tokens = gen_tokens if len(gen_tokens) > 1 else gen_tokens[0]
+                tensor = torch.tensor(gen_tokens, dtype=torch.int64, device=device)
                 del self.generated_tokens[seqno]
 
                 return {"tokens": tensor}
@@ -255,10 +252,14 @@ class Llama3ModelMetaData(BaseModelMetaData):
         """Return function to predict."""
 
         def inner(tensors: dict[str, Tensor]) -> list[str]:
-            results = []
             tokens = tensors["tokens"]
+            tokens = tokens if len(tokens.shape) > 1 else [tokens]
 
-            results.append(self.tokenizer.decode(tokens))
+            results = self.tokenizer.batch_decode(
+                tokens,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=True,
+            )
 
             return results
 
