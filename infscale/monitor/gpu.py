@@ -18,21 +18,27 @@
 import asyncio
 import dataclasses
 import json
+import os
 from dataclasses import dataclass
 from enum import Enum
 from typing import Union
+from infscale import log_registry
 
 from google._upb._message import RepeatedCompositeContainer
 from google.protobuf.json_format import MessageToJson, Parse
-from infscale import get_logger
+from pynvml import (
+    nvmlDeviceGetComputeRunningProcesses,
+    nvmlDeviceGetCount,
+    nvmlDeviceGetHandleByIndex,
+    nvmlDeviceGetMemoryInfo,
+    nvmlDeviceGetName,
+    nvmlDeviceGetUtilizationRates,
+    nvmlInit,
+)
+
 from infscale.proto import management_pb2 as pb2
-from pynvml import (nvmlDeviceGetComputeRunningProcesses, nvmlDeviceGetCount,
-                    nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo,
-                    nvmlDeviceGetName, nvmlDeviceGetUtilizationRates, nvmlInit)
 
 DEFAULT_INTERVAL = 10  # 10 seconds
-
-logger = get_logger()
 
 
 class GpuType(str, Enum):
@@ -79,13 +85,14 @@ class GpuMonitor:
         #       values to smoothe out jitter due to instantaneous values
         self.computes = list()
         self.mems = list()
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
     async def metrics(self) -> tuple[list[GpuStat], list[VramStat]]:
         """Return statistics on GPU resources."""
         # Wait until data refreshes
-        logger.debug("wait for monitor event")
+        self.logger.debug("wait for monitor event")
         await self.mon_event.wait()
-        logger.debug("monitor event is set")
+        self.logger.debug("monitor event is set")
 
         return self.computes, self.mems
 
@@ -99,8 +106,8 @@ class GpuMonitor:
         try:
             nvmlInit()
         except Exception as e:
-            logger.debug("failed to initialize gpustat.nvml.pynvml")
-            logger.debug(f"exception: {e}")
+            self.logger.debug("failed to initialize gpustat.nvml.pynvml")
+            self.logger.debug(f"exception: {e}")
             return
 
         while True:
@@ -122,8 +129,8 @@ class GpuMonitor:
                 except Exception as e:
                     # TODO: need to catch more specific exception
                     #       Exception is too generic
-                    logger.debug(f"failed to retrieve info for GPU {i}")
-                    logger.debug(f"exception: {e}")
+                    self.logger.debug(f"failed to retrieve info for GPU {i}")
+                    self.logger.debug(f"exception: {e}")
                     continue
 
                 mems[i] = VramStat(i, mem_info.total, mem_info.used)
@@ -174,6 +181,8 @@ class GpuMonitor:
         proto: Union[list[pb2.GpuStat], list[pb2.VramStat]]
     ) -> Union[None, list[GpuStat], list[VramStat]]:
         """Convert a list of protobuf messages to GpuStats or VramStats."""
+        logger = log_registry.get_logger(f"{os.getpid()}")
+
         if not isinstance(proto, RepeatedCompositeContainer) or len(proto) == 0:
             logger.debug("no protobuf message")
             return None

@@ -17,15 +17,13 @@
 """WorkerCommunicator class."""
 
 import asyncio
+import os
 import sys
 from multiprocessing import connection
 
-from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType
 from infscale.config import ServeConfig
-
-logger = get_logger()
-
+from infscale import log_registry
 
 class WorkerCommunicator:
     """WorkerCommunicator class."""
@@ -73,5 +71,6 @@ class WorkerCommunicator:
 
             case MessageType.TERMINATE:
                 # TODO: do the clean-up / caching before termination
+                logger = log_registry.get_logger(f"{os.getpid()}")
                 logger.info("worker is terminated")
                 sys.exit()

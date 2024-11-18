@@ -17,6 +17,7 @@
 """Controller class."""
 import asyncio
 import json
+import os
 from dataclasses import asdict
 from typing import Any, AsyncIterable, Union
 
@@ -24,18 +25,16 @@ import grpc
 from fastapi import HTTPException, Request, status
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
-from infscale import get_logger
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+
+from infscale import log_registry
+
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import (ApiServer, JobAction,
-                                           JobActionModel, ReqType)
+from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
 from infscale.controller.job_state import JobState
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
-
-logger = get_logger()
 
 CtrlRequest = Union[Request | JobActionModel]
 
@@ -59,6 +58,8 @@ class Controller:
 
         self.job_action_q = asyncio.Queue()
 
+        self.logger = log_registry.get_logger(name=f"{os.getpid()}", log_file_path="controller.log")
+
     async def _start_server(self):
         server_options = [
             ("grpc.max_send_message_length", GRPC_MAX_MESSAGE_LENGTH),
@@ -70,20 +71,20 @@ class Controller:
         endpoint = f"[::]:{self.port}"
         _ = server.add_insecure_port(endpoint)
 
-        logger.info(f"serving on {endpoint}")
+        self.logger.info(f"serving on {endpoint}")
         await server.start()
         await server.wait_for_termination()
 
     async def run(self):
         """Run controller."""
-        logger.info("starting controller")
+        self.logger.info("starting controller")
         _ = asyncio.create_task(self._start_server())
 
         await self.apiserver.run()
 
     async def handle_register(self, id: str) -> tuple[bool, str]:
         """Handle registration message."""
-        logger.debug(f"recevied id = {id}")
+        self.logger.debug(f"received id = {id}")
         if id in self.contexts:
             return False, f"{id} already registered"
 
@@ -92,7 +93,7 @@ class Controller:
         self.contexts[id].keep_alive()
         self.jobs_state.set_agent(id)
 
-        logger.debug(f"successfully registered {id}")
+        self.logger.debug(f"successfully registered {id}")
 
         return True, ""
 
@@ -107,10 +108,10 @@ class Controller:
     async def handle_status(self, request: pb2.Status) -> None:
         """Handle worker status message."""
         gpu_stats = GpuMonitor.proto_to_stats(request.gpu_stats)
-        logger.debug(f"gpu_stats = {gpu_stats}")
+        self.logger.debug(f"gpu_stats = {gpu_stats}")
 
         vram_stats = GpuMonitor.proto_to_stats(request.vram_stats)
-        logger.debug(f"vram_stats = {vram_stats}")
+        self.logger.debug(f"vram_stats = {vram_stats}")
 
         # TODO: use gpu and vram status to schedule deployment
 
@@ -127,10 +128,10 @@ class Controller:
     async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""
         if type != ReqType.JOB_ACTION:
-            logger.debug(f"unknown fastapi request type: {type}")
+            self.logger.debug(f"unknown fastapi request type: {type}")
             return None
 
-        logger.debug("got start job request")
+        self.logger.debug("got start job request")
 
         job_id = req.config.job_id if req.config else req.job_id
         if not self.jobs_state.can_update_job_state(job_id, req.action):
@@ -189,7 +190,7 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         # returned. For that, we create an asyncio event and let the event wait
         # forever. The event will be released only when agent is unreachable.
         if request.id not in self.ctrl.contexts:
-            logger.debug(f"{request.id} is not in controller'context")
+            self.ctrl.logger.debug(f"{request.id} is not in controller'context")
             return
         agent_context = self.ctrl.contexts[request.id]
         agent_context.set_grpc_ctx(context)

@@ -16,23 +16,22 @@
 
 """Router class."""
 import asyncio
+import os
 from collections import deque
 
 import torch
-from infscale import get_logger
+from multiworld.manager import WorldManager
+from torch import Tensor
+
 from infscale.config import ServeConfig
 from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.world import WorldInfo
 from infscale.fwding import random, rr, shortest, static
-from multiworld.manager import WorldManager
-from torch import Tensor
+from infscale import log_registry
 
 DEFAULT_QUEUE_SIZE = 3
 DEFAULT_SLEEP_TIME = 0.1  # 100ms
 QUEUE_WAIT_PERIOD = 0.1  # 100ms
-
-
-logger = get_logger()
 
 
 class Router:
@@ -54,6 +53,8 @@ class Router:
         self.senders: list[WorldInfo] = []
         self.__rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)
 
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
+
         self.orphan_dq: deque = deque()
 
         _ = asyncio.create_task(self._send_arbiter())
@@ -62,19 +63,19 @@ class Router:
     def _select_forwarding_policy(self, fwd_policy: str) -> None:
         match fwd_policy:
             case "random":
-                logger.info("random forwarding policy selected")
+                self.logger.info("random forwarding policy selected")
                 self._select = random.select
 
             case "rr":
-                logger.info("round-robin forwarding policy selected")
+                self.logger.info("round-robin forwarding policy selected")
                 self._select = rr.select
 
             case "shortest":
-                logger.info("shortest queue length forwarding policy selected")
+                self.logger.info("shortest queue length forwarding policy selected")
                 self._select = shortest.select
 
             case "static":
-                logger.info("static forwarding policy selected")
+                self.logger.info("static forwarding policy selected")
                 self._select = static.select
 
             case _:
@@ -124,7 +125,7 @@ class Router:
             _ = asyncio.create_task(self._recv(world_info))
 
     async def _recv(self, world_info: WorldInfo) -> None:
-        logger.debug(
+        self.logger.debug(
             f"start to receive tensor from {world_info.other} in world {world_info.name}"
         )
         recv_dev = torch.device("cpu") if world_info.backend == "gloo" else self.device
@@ -135,24 +136,24 @@ class Router:
             world_info.other,
             recv_dev,
         )
-        logger.debug("created tensor receiver")
+        self.logger.debug("created tensor receiver")
 
         while True:
             try:
                 tensors, seqno = await receiver.recv()
             except Exception as e:
-                logger.warn(f"{world_info.name} error: {e}")
+                self.logger.warn(f"{world_info.name} error: {e}")
                 break
 
             if recv_dev != self.device:
                 for k in tensors.keys():
                     tensors[k] = tensors[k].to(self.device)
 
-            logger.debug(f"received tensors of seqno {seqno}")
+            self.logger.debug(f"received tensors of seqno {seqno}")
             await self.__rx_q.put((tensors, seqno))
-            logger.debug(f"put tensors of seqno {seqno} into __rx_q")
+            self.logger.debug(f"put tensors of seqno {seqno} into __rx_q")
 
-        logger.warn(f"done with recv task for {world_info.name}")
+        self.logger.warn(f"done with recv task for {world_info.name}")
 
     def _find_tx_q(self, world_info: WorldInfo) -> asyncio.Queue:
         for _, v in self.__tx_qs.items():
@@ -174,7 +175,9 @@ class Router:
                 return
 
     async def _send(self, world_info: WorldInfo) -> None:
-        logger.debug(f"start to send tensor to {world_info.other} in {world_info.name}")
+        self.logger.debug(
+            f"start to send tensor to {world_info.other} in {world_info.name}"
+        )
         send_dev = torch.device("cpu") if world_info.backend == "gloo" else self.device
         sender = TensorSender(
             self.world_manager.communicator,
@@ -183,11 +186,11 @@ class Router:
             world_info.other,
             send_dev,
         )
-        logger.debug("created tensor sender")
+        self.logger.debug("created tensor sender")
 
         tx_q = self._find_tx_q(world_info)
         assert tx_q is not None, f"no tx queqe found for {world_info}"
-        logger.debug("acquired tx q")
+        self.logger.debug("acquired tx q")
 
         while True:
             try:
@@ -197,27 +200,27 @@ class Router:
             except asyncio.TimeoutError:
                 if not sender.is_broken():
                     continue
-                logger.warn(f"{world_info.name} is broken")
+                self.logger.warn(f"{world_info.name} is broken")
                 break
 
             if send_dev != self.device:
                 for k in tensors.keys():
                     tensors[k] = tensors[k].to(send_dev)
 
-            logger.debug(f"got tensors of seqno {seqno} from __tx_q")
+            self.logger.debug(f"got tensors of seqno {seqno} from __tx_q")
             try:
                 await sender.send(tensors, seqno)
             except Exception as e:
-                logger.warn(f"{world_info.name} error: {e}")
+                self.logger.warn(f"{world_info.name} error: {e}")
                 break
-            logger.debug(f"sent tensors of seqno {seqno}")
+            self.logger.debug(f"sent tensors of seqno {seqno}")
 
         # remove tx queue for the world
         self._cleanup_tx_q(world_info)
 
         await self._handle_orphan_data(tx_q)
 
-        logger.warn(f"done with send task for {world_info.name}")
+        self.logger.warn(f"done with send task for {world_info.name}")
 
     async def _handle_orphan_data(self, queue: asyncio.Queue) -> None:
         async def _drain_and_put_inner():
@@ -236,38 +239,38 @@ class Router:
         await _drain_and_put_inner()
 
     async def _recv_arbiter(self) -> None:
-        logger.debug("start recv_arbiter")
+        self.logger.debug("start recv_arbiter")
         while True:
             tensor, seqno = await self.__rx_q.get()
-            logger.debug(f"fetched tensor {seqno} from __rx_q")
+            self.logger.debug(f"fetched tensor {seqno} from __rx_q")
             # TODO: introduce a prioritization policy
             await self._rx_q.put((tensor, seqno))
-            logger.debug("put tensor to _rx_q")
+            self.logger.debug("put tensor to _rx_q")
 
     async def _send_arbiter(self) -> None:
-        logger.debug("start send_arbiter")
+        self.logger.debug("start send_arbiter")
         while True:
             try:
                 seqno, tensor, next_layer = self.orphan_dq.popleft()
-                logger.debug(f"fetched tensor {seqno} from orhpan_dq")
+                self.logger.debug(f"fetched tensor {seqno} from orhpan_dq")
             except IndexError:
                 # In case of this error, we know that there is no orphan
                 # data, so we can proceed to fetch data from _tx_q
                 seqno, tensor, next_layer = await self._tx_q.get()
-                logger.debug(f"fetched tensor {seqno} from _tx_q")
+                self.logger.debug(f"fetched tensor {seqno} from _tx_q")
 
             while len(self.__tx_qs[next_layer]) == 0:
-                logger.warn("no worker to send data")
+                self.logger.warn("no worker to send data")
                 await asyncio.sleep(DEFAULT_SLEEP_TIME)
 
             tx_qs = self.__tx_qs[next_layer]
             world_info, tx_q = self._select(tx_qs)
 
-            logger.debug(f"world name: {world_info.name}")
-            logger.debug(f"receiver rank: {world_info.other}")
+            self.logger.debug(f"world name: {world_info.name}")
+            self.logger.debug(f"receiver rank: {world_info.other}")
 
             await tx_q.put((seqno, tensor, next_layer))
-            logger.debug(
+            self.logger.debug(
                 f"put tensor {seqno} to __tx_q for {world_info.other} in {world_info.name}"
             )
 

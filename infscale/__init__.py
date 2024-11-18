@@ -16,38 +16,8 @@
 
 """Dunder init file."""
 
-import logging
-import os
-import sys
-from logging import Logger
-
+from infscale.logger.registry import LoggerRegistry
 from infscale.version import VERSION as __version__  # noqa: F401
 
-level = getattr(logging, os.getenv("INFSCALE_LOG_LEVEL", "WARNING"))
+log_registry = LoggerRegistry()
 
-format = "%(process)d | %(asctime)s | %(filename)s:%(lineno)d | %(levelname)s | %(threadName)s | %(funcName)s | %(message)s"
-
-logging.basicConfig(
-    level=level,
-    format=format,
-    stream=sys.stdout
-)
-
-logger_registry = dict()
-
-
-def get_logger(name: str = __name__) -> Logger:
-    """Return a logger with a given logger name.
-
-    A log file is created with the name under $HOME/infscale folder.
-    """
-    global logger_registry
-
-    if name in logger_registry:
-        return logger_registry[name]
-
-    logger = logging.getLogger(name)
-
-    logger_registry[name] = logger
-
-    return logger

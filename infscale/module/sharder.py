@@ -23,25 +23,27 @@ SOFTWARE.
 # This file was modified from
 # https://github.com/SymbioticLab/Oobleck/blob/3b7a0c2f19bff0991e623ffbeb8a5b365853bf3a/oobleck/module/sharding.py
 
+import os
 import sys
 from collections import defaultdict
 from itertools import chain
 from typing import Dict, List, Optional, Tuple
 
 import torch.fx
-from infscale import get_logger
-from infscale.module.model_metadata import BaseModelMetaData
 from torch.fx.node import Node
 from transformers.utils.fx import symbolic_trace
 
-logger = get_logger()
+from infscale.module.model_metadata import BaseModelMetaData
+from infscale import log_registry
 
 
 class Sharder:
     """A wrapper class that shards a model."""
 
     @classmethod
-    def shard(cls, mmd: BaseModelMetaData) -> List[torch.fx.GraphModule]:
+    def shard(
+        cls, mmd: BaseModelMetaData,
+    ) -> List[torch.fx.GraphModule]:
         """Return a list of layer objects that can be sharded."""
         split_points = mmd.get_split_points()
         concrete_args = mmd.trace_inputs
@@ -113,7 +115,9 @@ def _split_nodes(
 
 
 def shard_model(
-    model: torch.nn.Module, concrete_args: List[str], split_points: List[str]
+    model: torch.nn.Module,
+    concrete_args: List[str],
+    split_points: List[str],
 ) -> List[torch.fx.GraphModule]:
     """Use torch.fx to do symbolic trace on the given model, and shard it to several subgraphs based on the given split_points.
 
@@ -132,6 +136,7 @@ def shard_model(
         List[torch.fx.GraphModule]: The list of sharded :class:`torch.fx.GraphModule`s.
     """
     module_list: List[torch.fx.GraphModule] = []
+    logger = log_registry.get_logger(f"{os.getpid()}")
 
     try:
         traced = symbolic_trace(model, input_names=concrete_args)

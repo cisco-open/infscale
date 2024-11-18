@@ -20,11 +20,10 @@ from dataclasses import dataclass
 from typing import Optional
 
 import yaml
+import os
 from pydantic import BaseModel, Field, PrivateAttr
 
-from infscale import get_logger
-
-logger = get_logger(__name__)
+from infscale import log_registry
 
 RAW_KEY_PARTITIONS = "partitions"
 RAW_KEY_MINI_BATCH_SIZE = "mini_batch_size"
@@ -282,6 +281,7 @@ class JobConfig:
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
         serve_configs = []
+        logger = log_registry.get_logger(f"{os.getpid()}")
 
         workers_stage_info = {}
         for worker in self.workers:

@@ -15,25 +15,28 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """ModelMetaData."""
+import os
 from abc import abstractmethod
 from enum import Enum
 from typing import Callable, List, Union
+from infscale import log_registry
 
 import torch
 from accelerate import init_empty_weights
-from infscale import get_logger
 from torch import Tensor
-from transformers import (AutoModelForCausalLM,
-                          AutoModelForImageClassification,
-                          AutoModelForPreTraining, AutoTokenizer,
-                          PretrainedConfig, PreTrainedTokenizer,
-                          PreTrainedTokenizerFast)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoModelForImageClassification,
+    AutoModelForPreTraining,
+    AutoTokenizer,
+    PretrainedConfig,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+)
 
 AutoModelType = (
     AutoModelForPreTraining | AutoModelForCausalLM | AutoModelForImageClassification
 )
-
-logger = get_logger()
 
 
 class ModelGroup(str, Enum):
@@ -106,6 +109,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
         super().__init__(name, config)
 
         self.model_group = ModelGroup.LANG
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
         self.tokenizer = AutoTokenizer.from_pretrained(self.name, config=self.config)
         self.generated_tokens: dict[int, list[Tensor]] = {}
@@ -115,28 +119,28 @@ class Llama3ModelMetaData(BaseModelMetaData):
         self.bos_token_id = 128000
         if hasattr(self.config, "bos_token_id"):
             self.bos_token_id = self.config.bos_token_id
-        logger.info(f"bos_token_id = {self.bos_token_id}")
+        self.logger.info(f"bos_token_id = {self.bos_token_id}")
 
         if hasattr(self.config, "do_sample"):
             self.do_sample = self.config.do_sample
         # let's keep sampling true
         self.do_sample = True
-        logger.info(f"do_sample = {self.do_sample}")
+        self.logger.info(f"do_sample = {self.do_sample}")
 
         self.eos_token_id = 128001
         if hasattr(self.config, "eos_token_id"):
             self.eos_token_id = self.config.eos_token_id
-        logger.info(f"eos_token_id = {self.eos_token_id}")
+        self.logger.info(f"eos_token_id = {self.eos_token_id}")
 
         self.temperature = 0.6
         if hasattr(self.config, "temperature"):
             self.temperature = self.config.temperature
-        logger.info(f"temperature = {self.temperature}")
+        self.logger.info(f"temperature = {self.temperature}")
 
         self.top_p = 1.0
         if hasattr(self.config, "top_p"):
             self.top_p = self.config.top_p
-        logger.info(f"top_p = {self.top_p}")
+        self.logger.info(f"top_p = {self.top_p}")
 
         self.max_new_tokens = 64
 
@@ -152,7 +156,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
             "use_cache",
             "past_key_values",
         ]
-        logger.info(f"llama3 trace inputs: {self._trace_inputs}")
+        self.logger.info(f"llama3 trace inputs: {self._trace_inputs}")
 
     def get_model(self) -> AutoModelType:
         """Get model."""
@@ -178,7 +182,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
         self.split_points.append("model.norm")
         self.split_points.append("lm_head")
 
-        logger.info(f"#hidden_layers = {self.config.num_hidden_layers}")
+        self.logger.info(f"#hidden_layers = {self.config.num_hidden_layers}")
 
         return self.split_points
 
@@ -274,6 +278,7 @@ class Gpt2ModelMetaData(BaseModelMetaData):
         super().__init__(name, config)
 
         self.model_group = ModelGroup.LANG
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
     @property
     def trace_inputs(self) -> list[str]:
@@ -308,7 +313,7 @@ class Gpt2ModelMetaData(BaseModelMetaData):
         self.split_points.append("transformer.ln_f")
         # self.split_points.append("lm_head.weight")
 
-        logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
+        self.logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
 
         return self.split_points
 
@@ -348,6 +353,7 @@ class BertModelMetaData(BaseModelMetaData):
         super().__init__(name, config)
 
         self.model_group = ModelGroup.LANG
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
     def get_model(self) -> AutoModelType:
         """Get model."""
@@ -371,7 +377,7 @@ class BertModelMetaData(BaseModelMetaData):
             self.split_points.append(f"bert.encoder.layer.{i}")
         self.split_points.append("cls")
 
-        logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
+        self.logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
 
         return self.split_points
 
@@ -392,6 +398,7 @@ class T5ModelMetaData(BaseModelMetaData):
         super().__init__(name, config)
 
         self.model_group = ModelGroup.LANG
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
     def get_model(self) -> AutoModelType:
         """Get model."""
@@ -417,8 +424,8 @@ class T5ModelMetaData(BaseModelMetaData):
             self.split_points.append(f"decoder.block.{i}")
         self.split_points.append("lm_head")
 
-        logger.debug(f"#layers = {self.config.num_layers}")
-        logger.debug(f"#decoder_layers = {self.config.num_decoder_layers}")
+        self.logger.debug(f"#layers = {self.config.num_layers}")
+        self.logger.debug(f"#decoder_layers = {self.config.num_decoder_layers}")
 
         return self.split_points
 
@@ -439,6 +446,7 @@ class VitModelMetaData(BaseModelMetaData):
         super().__init__(name, config)
 
         self.model_group = ModelGroup.IMAGE
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
     def get_model(self) -> AutoModelType:
         """Get model."""
@@ -464,7 +472,7 @@ class VitModelMetaData(BaseModelMetaData):
             self.split_points.append(f"vit.encoder.layer.{i}")
         self.split_points.append("vit.layernorm")
 
-        logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
+        self.logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
 
         return self.split_points
 
@@ -485,6 +493,7 @@ class ResnetModelMetaData(BaseModelMetaData):
         super().__init__(name, config)
 
         self.model_group = ModelGroup.IMAGE
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
     def get_model(self) -> AutoModelType:
         """Get model."""
@@ -512,7 +521,7 @@ class ResnetModelMetaData(BaseModelMetaData):
 
         self.split_points.append("resnet.pooler")
 
-        logger.debug(f"#depths = {sum(self.config.depths)}")
+        self.logger.debug(f"#depths = {sum(self.config.depths)}")
 
         return self.split_points
 

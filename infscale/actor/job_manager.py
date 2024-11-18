@@ -15,16 +15,14 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
+import os
 from dataclasses import dataclass
 from multiprocessing import connection
 
 import torch.multiprocessing as mp
-from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.config import JobConfig
-
-logger = get_logger()
-
+from infscale import log_registry
 
 @dataclass
 class WorkerMetaData:
@@ -41,6 +39,7 @@ class JobManager:
     """JobManager class."""
 
     def __init__(self):
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
         self._workers: dict[int, WorkerMetaData] = {}
         self.jobs: dict[str, JobConfig] = {}
 
@@ -135,7 +134,7 @@ class JobManager:
 
                 loop.remove_reader(worker_data.pipe.fileno())
 
-        logger.info(f"workers for job {job_id} terminated")
+        self.logger.info(f"workers for job {job_id} terminated")
 
         self._job_cleanup(job_id)
 

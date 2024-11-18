@@ -17,10 +17,13 @@
 """Pipeline class."""
 
 import asyncio
+import os
 import time
 
 import torch
-from infscale import get_logger
+from multiworld.manager import WorldManager
+
+from infscale import log_registry
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker_comm import WorkerCommunicator
 from infscale.config import ServeConfig
@@ -32,8 +35,6 @@ from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
 from multiworld.manager import WorldManager
-
-logger = get_logger()
 
 # a global variable to store start time of the first request
 start_time = None
@@ -49,13 +50,14 @@ class Pipeline:
         """Initialize pipeline instance."""
         self.stage: Stage = None
         self.world_manager = WorldManager()
-        self.router = Router(self.world_manager)
+        self.router = None
         self.wcomm = wcomm
         self.spec: ServeConfig = None
         self.device = None
         self.world_infos: dict[str, WorldInfo] = {}
         self.cfg_event = asyncio.Event()
         self._initialized = False
+        self.logger = None
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -74,9 +76,9 @@ class Pipeline:
             world_info.me,
         )
 
-        logger.info(f"configuring world {name} of size {world_size}")
-        logger.info(f"my rank: {my_rank} backend: {backend}")
-        logger.info(f"leader addr={addr}, port={port}")
+        self.logger.info(f"configuring world {name} of size {world_size}")
+        self.logger.info(f"my rank: {my_rank} backend: {backend}")
+        self.logger.info(f"leader addr={addr}, port={port}")
         try:
             await self.world_manager.initialize_world(
                 name,
@@ -87,25 +89,25 @@ class Pipeline:
                 port=port,
             )
         except Exception as e:
-            logger.error(f"failed to initialize a multiworld {name}: {e}")
+            self.logger.error(f"failed to initialize a multiworld {name}: {e}")
             return
 
-        logger.debug(f"done initializing multiworld {name}")
+        self.logger.debug(f"done initializing multiworld {name}")
 
     async def _configure_control_channel(self, world_info: WorldInfo) -> None:
         await world_info.channel.setup()
-        logger.debug(f"done configuring control channel for {world_info.name}")
+        self.logger.debug(f"done configuring control channel for {world_info.name}")
 
         await world_info.channel.wait_readiness()
-        logger.info(f"control channel for {world_info.name} is ready")
+        self.logger.info(f"control channel for {world_info.name} is ready")
 
     def _reset_multiworld(self, world_info: WorldInfo) -> None:
         # TODO: implement this
-        logger.info(f"remove world {world_info.name} from multiworld")
+        self.logger.info(f"remove world {world_info.name} from multiworld")
 
     def _reset_control_channel(self, world_info: WorldInfo) -> None:
         # TODO: implement this
-        logger.info(f"remove world {world_info.name} from control channel")
+        self.logger.info(f"remove world {world_info.name} from control channel")
 
     async def _configure(self) -> None:
         """(Re)configure multiworld, control channel and router."""
@@ -147,7 +149,7 @@ class Pipeline:
         # handle unnecessary world
         # remove is executed in the reverse order of add
         for world_info in worlds_to_remove:
-            logger.info(f"remove world {world_info.name}")
+            self.logger.info(f"remove world {world_info.name}")
             # 1. remove unnecessary world from control channel
             self._reset_control_channel(world_info)
             # 2. remove unnecessary world from multiworld
@@ -179,7 +181,7 @@ class Pipeline:
     async def _server_send(self, router: Router):
         global start_time
 
-        logger.info("start to send requests")
+        self.logger.info("start to send requests")
         seqno = 0
         start_time = time.perf_counter()
         while True:
@@ -189,11 +191,11 @@ class Pipeline:
 
             await self._wait_tx_permission()
 
-            logger.info(f"sending batch {seqno}")
+            self.logger.info(f"sending batch {seqno}")
             # send batch to the first stage
             await router.send(seqno, batch, 0)
             seqno += 1
-        logger.info("_server_send task done")
+        self.logger.info("_server_send task done")
 
     async def _server_recv(self, router: Router, max_count: int = -1):
         """
@@ -204,16 +206,16 @@ class Pipeline:
         """
         global start_time
 
-        logger.info("start to receive responses")
+        self.logger.info("start to receive responses")
         seqno = -1
         idx = 0
         msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
         self.wcomm.send(msg)
         while max_count == -1 or max_count > idx:
-            logger.debug("waiting for response")
+            self.logger.debug("waiting for response")
             outputs, seqno = await router.recv()
             results = self._predict_fn(outputs)
-            logger.info(f"response for {seqno}: {results}")
+            self.logger.info(f"response for {seqno}: {results}")
 
             await self._check_n_enable_tx_permission()
 
@@ -226,7 +228,7 @@ class Pipeline:
         msg = Message(MessageType.STATUS, WorkerStatus.DONE, self.spec.job_id)
         self.wcomm.send(msg)
 
-        logger.info("_server_recv task done")
+        self.logger.info("_server_recv task done")
 
     async def _run_server(self):
         # TODO: we read data directly from a dataset right now.
@@ -239,10 +241,10 @@ class Pipeline:
         recv_task = asyncio.create_task(self._server_recv(self.router, max_count))
 
         await asyncio.gather(*[send_task, recv_task])
-        logger.info("inference serving is done")
+        self.logger.info("inference serving is done")
 
     async def _run_worker(self):
-        logger.debug("start to run worker")
+        self.logger.debug("start to run worker")
         while True:
             inputs, seqno = await self.router.recv()
 
@@ -258,6 +260,7 @@ class Pipeline:
 
             if spec is None:
                 continue
+
 
             self._configure_variables(spec)
 
@@ -324,6 +327,11 @@ class Pipeline:
         self.spec = spec
         self.max_inflight = spec.max_inflight
 
+        self.logger = log_registry.get_logger(
+            name=f"{os.getpid()}",
+            log_file_path=f"job-{self.spec.job_id}/worker-{self.spec.stage.id}.log"
+        )
+
     def _initialize_once(self) -> None:
         if self._initialized:
             return
@@ -347,21 +355,23 @@ class Pipeline:
         self.device = torch.device(self.spec.device)
 
         # load model intermediate representation
-        self.modelir = ModelIR(mmd)
+        self.modelir = ModelIR(mmd, self.logger)
 
     def _prepare_worker(self) -> None:
         if self.spec.stage.is_server:
-            logger.info("I am server and leader")
+            self.logger.info("I am server and leader")
             self.dataset = self.dataset
             self._predict_fn = self.modelir.predict_fn
         else:
-            logger.info("I am a worker")
+            self.logger.info("I am a worker")
             self._initialize_worker(self.modelir)
 
     async def run(self) -> None:
         """Run pipeline."""
         _ = asyncio.create_task(self.handle_config())
         await self.cfg_event.wait()
+
+        self.router = Router(self.world_manager)
 
         if self.spec.stage.is_server:
             await self._run_server()

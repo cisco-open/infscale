@@ -17,16 +17,15 @@
 """Control channel class."""
 
 import asyncio
+import os
 import pickle
 from asyncio import StreamReader, StreamWriter
 from dataclasses import dataclass
 from typing import Union
+from infscale import log_registry
 
 import torch
-from infscale import get_logger
 from torch import Tensor
-
-logger = get_logger()
 
 
 MSG_SIZE = 10000
@@ -55,7 +54,9 @@ class ControlMessage:
 class Channel:
     """Control Channel class."""
 
-    def __init__(self, rank: int, world_size: int, addr: str, port: int):
+    def __init__(
+        self, rank: int, world_size: int, addr: str, port: int,
+    ):
         """Initialize an instance."""
         self.rank = rank
         self.world_size = world_size
@@ -64,15 +65,16 @@ class Channel:
 
         self.peers: dict[int, tuple[StreamReader, StreamWriter]] = {}
         self.prev_ctrl_msg: ControlMessage = ControlMessage()
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
     async def _setup_server(self, setup_done: asyncio.Event) -> None:
         server = await asyncio.start_server(self._handle_client, self.addr, self.port)
 
         addrs = ", ".join(str(sock.getsockname()) for sock in server.sockets)
-        logger.info(f"Serving on {addrs}")
+        self.logger.info(f"Serving on {addrs}")
 
         setup_done.set()
-        logger.info("set the setup_done event")
+        self.logger.info("set the setup_done event")
 
         async with server:
             await server.serve_forever()
@@ -82,29 +84,29 @@ class Channel:
         message = data.decode()
         peer_rank = int(message)
 
-        logger.info(f"peer rank: {peer_rank}")
+        self.logger.info(f"peer rank: {peer_rank}")
         # save reader and writer streams for peer rank
         self.peers[peer_rank] = (reader, writer)
 
     async def _setup_client(self, setup_done: asyncio.Event) -> None:
-        logger.info(f"setting up a client: {self.addr}:{self.port}")
+        self.logger.info(f"setting up a client: {self.addr}:{self.port}")
         for i in range(3):
             try:
                 reader, writer = await asyncio.open_connection(self.addr, self.port)
             except Exception as e:
-                logger.warning(f"try {i+1}: exception occurred: {e}")
+                self.logger.warning(f"try {i+1}: exception occurred: {e}")
                 await asyncio.sleep(3)
 
         # send my rank to rank 0
         message = f"{self.rank}"
         writer.write(message.encode())
         await writer.drain()
-        logger.info(f"sent rank info({message}) to server")
+        self.logger.info(f"sent rank info({message}) to server")
         # server is always rank 0
         self.peers[0] = (reader, writer)
 
         setup_done.set()
-        logger.info("set the setup_done event")
+        self.logger.info("set the setup_done event")
 
     async def wait_readiness(self):
         """Wait until control channel is fully configured."""
@@ -128,7 +130,7 @@ class Channel:
         # wait until setting up either server or client is done
         await setup_done.wait()
 
-        logger.info("channel setup is done")
+        self.logger.info("channel setup is done")
 
     async def send_ctrl_msg(
         self, rank: int, tensors: dict[str, Tensor], seqno: int = 0

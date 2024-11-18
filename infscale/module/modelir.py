@@ -24,19 +24,19 @@ SOFTWARE.
 # https://github.com/SymbioticLab/Oobleck/blob/3b7a0c2f19bff0991e623ffbeb8a5b365853bf3a/oobleck/module/model.py
 from __future__ import annotations
 
+import os
 import random
 from typing import TYPE_CHECKING, Callable, Union
 
 import torch
-from infscale import get_logger
+
 from infscale.module.sharder import Sharder
+from infscale import log_registry
 
 if TYPE_CHECKING:
     from infscale.module.model_metadata import BaseModelMetaData
 
 RANDOM_SEED = 42
-
-logger = get_logger()
 
 
 class ModelIR:
@@ -59,6 +59,7 @@ class ModelIR:
         torch.default_generator.manual_seed(RANDOM_SEED)
 
         self.mmd = mmd
+        self.logger = log_registry.get_logger(f"{os.getpid()}")
 
         self.layers = Sharder.shard(mmd)
         self.model_name = mmd.name
@@ -71,4 +72,4 @@ class ModelIR:
         self.output_parser: Union[Callable, None] = mmd.get_output_parser()
         self.predict_fn: Union[Callable, None] = mmd.get_predict_fn()
 
-        logger.info(f"# of layers = {len(self.layers)}")
+        self.logger.info(f"# of layers = {len(self.layers)}")

@@ -18,11 +18,14 @@
 
 import asyncio
 import json
+import os
 
 import grpc
 import torch
 import torch.multiprocessing as mp
-from infscale import get_logger
+from multiprocess.connection import Pipe
+
+from infscale import log_registry
 from infscale.actor.config_diff import get_config_diff_ids
 from infscale.actor.job_manager import JobManager, WorkerMetaData
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
@@ -33,9 +36,6 @@ from infscale.controller.apiserver import JobAction
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
-from multiprocess.connection import Pipe
-
-logger = get_logger()
 
 service_config_json = json.dumps(
     {
@@ -74,6 +74,7 @@ class Agent:
         #       if resource (gpu memory, gpu cycle) are available
         #       explore this possibility later
         # one worker per GPU
+        self.logger = log_registry.get_logger(name=f"{os.getpid()}", log_file_path=f"agent-{id}.log")
 
         self.id = id
         self.endpoint = endpoint
@@ -94,6 +95,7 @@ class Agent:
 
         self.stub = pb2_grpc.ManagementRouteStub(self.channel)
 
+
         self.gpu_monitor = GpuMonitor()
 
     async def _init_controller_session(self) -> bool:
@@ -101,11 +103,11 @@ class Agent:
             reg_req = pb2.RegReq(id=self.id)  # register agent
             reg_res = await self.stub.register(reg_req)
         except grpc.aio.AioRpcError as e:
-            logger.debug(f"can't register: {e}")
+            self.logger.debug(f"can't register: {e}")
             return False
 
         if not reg_res.status:
-            logger.error(f"registration failed: {reg_res.reason}")
+            self.logger.error(f"registration failed: {reg_res.reason}")
             return False
 
         # create a task to send heart beat periodically
@@ -124,7 +126,7 @@ class Agent:
         try:
             await self._fetch()
         except Exception as e:
-            logger.error(f"Error in connection: {e}")
+            self.logger.error(f"Error in connection: {e}")
 
     async def _fetch(self) -> None:
         """Listen for job action pushes from the ManagementRoute."""
@@ -148,7 +150,7 @@ class Agent:
 
     def _handle_config(self, config: JobConfig) -> None:
         """Handle configuration file received from controller."""
-        logger.debug(f"got new config: {config}")
+        self.logger.debug(f"got new config: {config}")
 
         if self.job_manager.job_exists(config.job_id):
             old_config = self.job_manager.get_job_config(config.job_id)
@@ -249,7 +251,7 @@ class Agent:
 
     async def run(self):
         """Start the agent."""
-        logger.info("run agent")
+        self.logger.info("run agent")
 
         if not await self._init_controller_session():
             return
