@@ -35,6 +35,9 @@ from multiworld.manager import WorldManager
 
 logger = get_logger()
 
+# a global variable to store start time of the first request
+start_time = None
+
 
 class Pipeline:
     """Pipeline class."""
@@ -182,8 +185,11 @@ class Pipeline:
             self.tx_allow_evt.set()
 
     async def _server_send(self, router: Router):
+        global start_time
+
         logger.info("start to send requests")
         seqno = 0
+        start_time = time.perf_counter()
         while True:
             batch = self.dataset.next_batch(self.device)
             if batch is None:
@@ -204,10 +210,11 @@ class Pipeline:
         max_count: if it's -1, run forever;
                    get out of loop if the number of responses becomes max_count
         """
+        global start_time
+
         logger.info("start to receive responses")
         seqno = -1
         idx = 0
-        start_time = None
         self.worker_manager.send_message(
             Message(
                 MessageType.STATUS,
@@ -221,10 +228,6 @@ class Pipeline:
             logger.info(f"response for {seqno}: {results}")
 
             await self._check_n_enable_tx_permission()
-
-            if idx % 100 == 0:
-                if start_time is None:
-                    start_time = time.perf_counter()
 
             idx += 1
 
