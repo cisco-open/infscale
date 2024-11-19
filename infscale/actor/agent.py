@@ -80,7 +80,6 @@ class Agent:
         self.endpoint = endpoint
         self.job_config = None
         self.job_manager = JobManager()
-        self.cfg_event = asyncio.Event()
 
         self._workers: dict[int, WorkerMetaData] = {}
         self.n_workers = torch.cuda.device_count()
@@ -157,15 +156,13 @@ class Agent:
 
         async for job_action in self.stub.get_job_action(request):
             if job_action:
-                action = job_action
-                self._handle_job_action(action.type)
+                self._handle_job_action(job_action)
 
-    def _handle_job_action(self, action: JobAction) -> None:
+    def _handle_job_action(self, action: pb2.JobAction) -> None:
         """Handles job action"""
-        match action:
+        match action.type:
             case JobAction.STOP:
-                # TODO add support for terminate job specific workers
-                self.job_manager._terminate_workers()
+                self.job_manager._terminate_workers(action.job_id)
 
     async def run(self):
         """Start the agent."""
@@ -176,11 +173,6 @@ class Agent:
 
         self.monitor()
 
-        await self.cfg_event.wait()
-        # TODO: revisit launch later
-        #       launch may need to be executed whenever manifest is fetched
-        self.launch()
-
         # wait forever
         await asyncio.Event().wait()
 
@@ -188,18 +180,21 @@ class Agent:
         """Handle configuration file received from controller."""
         logger.debug(f"got new config: {config}")
 
-        if self.job_config:
+        if self.job_manager.job_exists(config.job_id):
+            old_config = self.job_manager.get_job_config(config.job_id)
+
             terminate_ids, start_ids, updated_ids = get_config_diff_ids(
-                self.job_config, config
+                old_config, config
             )
             self.kill_workers(terminate_ids)
             self.reconfigure_job(config, start_ids, updated_ids)
-            self.job_config = config
+            self.job_manager.set_job_config(config)
 
-        if self.job_config is None:
-            self.job_config = config
+            return
 
-        self.cfg_event.set()
+        self.job_manager.set_job_config(config)
+
+        self.launch(config)
 
     def kill_workers(self, workers) -> None:
         """Terminate workers whose IDs are in extra_in_a_ids."""
@@ -225,11 +220,11 @@ class Agent:
             self.stub.heartbeat(agent_id)
             await asyncio.sleep(HEART_BEAT_PERIOD)
 
-    def launch(self):
+    def launch(self, job_config: JobConfig):
         """Launch workers."""
         ctx = mp.get_context("spawn")
 
-        for local_rank, config in enumerate(self.job_config.get_serve_configs()):
+        for local_rank, config in enumerate(job_config.get_serve_configs()):
             pipe, child_pipe = ctx.Pipe()
             process = ctx.Process(
                 target=_run_worker,
@@ -240,14 +235,18 @@ class Agent:
                 daemon=True,
             )
             process.start()
-            w = WorkerMetaData(pipe, process, WorkerStatus.READY, config.stage.id, config.job_id)
+            w = WorkerMetaData(
+                pipe, process, WorkerStatus.READY, config.stage.id, config.job_id
+            )
             self._workers[w.pipe.fileno()] = w
             self.job_manager.add_worker(w)
             self.job_manager.send_message_to_worker(
-                w, Message(MessageType.CONFIG, config)
+                w, Message(MessageType.CONFIG, config, config.job_id)
             )
 
-            print(f"Process ID: {process.pid} - Worker: {config.stage.id}")
+            print(
+                f"Process ID: {process.pid} - Job ID: {config.job_id} - Worker: {config.stage.id}"
+            )
 
         self.job_manager.message_listener()
 
