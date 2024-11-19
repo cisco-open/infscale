@@ -43,9 +43,8 @@ def job(endpoint: str, job_id: str):
         )
 
         if response.status_code == 200:
-            click.echo("Job stopped successfully.")
+            click.echo(f"{response.status_code}: Job stopped successfully")
         else:
-            click.echo(f"Failed to stop job. Status code: {response.status_code}")
-            click.echo(f"Response: {response.content}")
+            click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
     except requests.exceptions.RequestException as e:
         click.echo(f"Error making request: {e}")

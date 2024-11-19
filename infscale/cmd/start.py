@@ -83,9 +83,8 @@ def job(endpoint: str, config: str) -> None:
         )
 
         if response.status_code == 200:
-            click.echo(f"{response.content}. Status code: {response.status_code}")
+            click.echo(f"{response.status_code}: Job started successfully")
         else:
-            click.echo(f"Failed to start job. Status code: {response.status_code}")
-            click.echo(f"Response: {response.content}")
+            click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
     except requests.exceptions.RequestException as e:
         click.echo(f"Error making request: {e}")
