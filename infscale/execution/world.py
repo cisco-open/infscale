@@ -29,12 +29,14 @@ class WorldInfo:
     """
 
     name: str  # world's name
+    size: int  # size of the world
+    addr: str  # IP address or hostname
+    port: int  # port number for CCL communication
+    backend: str  # backend
+    channel: Channel  # control channel
 
     my_id: str  # my id
     me: int  # my rank
 
     other_id: str  # other id
     other: int  # other peer's rank
-
-    backend: str  # backend
-    channel: Channel  # control channel

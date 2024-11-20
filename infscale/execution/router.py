@@ -41,7 +41,7 @@ class Router:
     def __init__(
         self,
         world_manager: WorldManager,
-        world_info_list: list[WorldInfo],
+        world_infos: dict[str, WorldInfo],
         spec: ServeConfig,
         device=torch.device("cpu"),
     ):
@@ -61,7 +61,7 @@ class Router:
         self.__rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)
 
         self.orphan_dq: deque = deque()
-        for world_info in world_info_list:
+        for _, world_info in world_infos.items():
             if world_info.me == 0:  # I am a receiver from other
                 self.senders.append(world_info)
             else:  # I am a sender to other
