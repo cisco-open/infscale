@@ -23,7 +23,7 @@ import torch
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker_manager import WorkerManager
-from infscale.config import ServeConfig, WorkerInfo
+from infscale.config import ServeConfig
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.router import Router
 from infscale.execution.stage import Stage
@@ -52,8 +52,9 @@ class Pipeline:
         self.worker_manager = worker_manager
         self.spec: ServeConfig = None
         self.device = None
-        self.world_info_list: list[WorldInfo] = list()
+        self.world_infos: dict[str, WorldInfo] = {}
         self.cfg_event = asyncio.Event()
+        self._initialized = False
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -62,106 +63,100 @@ class Pipeline:
         self.tx_allow_evt = asyncio.Event()
         self.tx_allow_evt.set()
 
-    async def _initialize_multiworld(self):
-        my_id = self.spec.stage.id
+    async def _configure_multiworld(self, world_info: WorldInfo) -> None:
+        (name, world_size, addr, port, backend, my_rank) = (
+            world_info.name,
+            world_info.size,
+            world_info.addr,
+            world_info.port,
+            world_info.backend,
+            world_info.me,
+        )
 
-        for k, v in self.spec.flow_graph.items():
-            for wrk_info in v:
-                assert len(wrk_info.peers) == 1
-
-                if my_id == k:
-                    my_rank = 0
-                elif my_id in wrk_info.peers:
-                    my_rank = wrk_info.peers.index(my_id) + 1
-                else:
-                    continue
-
-                name, backend, addr, port = (
-                    wrk_info.name,
-                    wrk_info.backend,
-                    wrk_info.addr,
-                    wrk_info.port,
-                )
-                world_size = len(wrk_info.peers) + 1
-
-                logger.info(f"initializing world {name} with my rank {my_rank}")
-                logger.info(f"leader addr={addr}, port={port}")
-                await self.world_manager.initialize_world(
-                    name,
-                    my_rank,
-                    world_size,
-                    backend=backend,
-                    addr=addr,
-                    port=port,
-                )
-                logger.debug(f"done initializing multiworld {name}")
-
-    async def _initialize_control_channel(self):
-        async def _inner(
-            my_id: str,
-            my_rank: int,
-            other_id: str,
-            other_rank: int,
-            wrk_info: WorkerInfo,
-        ):
-            name, backend, addr, port = (
-                wrk_info.name,
-                wrk_info.backend,
-                wrk_info.addr,
-                wrk_info.port,
+        logger.info(f"configuring world {name} of size {world_size}")
+        logger.info(f"my rank: {my_rank} backend: {backend}")
+        logger.info(f"leader addr={addr}, port={port}")
+        try:
+            await self.world_manager.initialize_world(
+                name,
+                my_rank,
+                world_size,
+                backend=backend,
+                addr=addr,
+                port=port,
             )
-            world_size = len(wrk_info.peers) + 1
+        except Exception as e:
+            logger.error(f"failed to initialize a multiworld {name}: {e}")
+            return
 
-            # increment port number by 1
-            port = port + 1
-            ctrl_ch = CtrlCh(my_rank, world_size, addr, port)
-            await ctrl_ch.setup()
-            data = {
-                "name": name,
-                "my_id": my_id,
-                "me": my_rank,
-                "other_id": other_id,
-                "other": other_rank,
-                "backend": backend,
-                "channel": ctrl_ch,
-            }
-            world_info = WorldInfo(**data)
-            self.world_info_list.append(world_info)
-            logger.debug(f"done initializing control channel for {name}")
+        logger.debug(f"done initializing multiworld {name}")
 
-        my_id = self.spec.stage.id
+    async def _configure_control_channel(self, world_info: WorldInfo) -> None:
+        await world_info.channel.setup()
+        logger.debug(f"done configuring control channel for {world_info.name}")
 
-        # initialize server first
-        for k, v in self.spec.flow_graph.items():
-            if my_id != k:
-                continue
+        await world_info.channel.wait_readiness()
+        logger.info(f"control channel for {world_info.name} is ready")
 
-            my_rank = 0
-            other_rank = 1
-            for wrk_info in v:
-                assert len(wrk_info.peers) == 1
-                other_id = wrk_info.peers[0]
-                await _inner(my_id, my_rank, other_id, other_rank, wrk_info)
+    def _reset_multiworld(self, world_info: WorldInfo) -> None:
+        # TODO: implement this
+        logger.info(f"remove world {world_info.name} from multiworld")
 
-        # initialize client next
-        for k, v in self.spec.flow_graph.items():
-            for wrk_info in v:
-                assert len(wrk_info.peers) == 1
-                if my_id not in wrk_info.peers:
-                    continue
+    def _reset_control_channel(self, world_info: WorldInfo) -> None:
+        # TODO: implement this
+        logger.info(f"remove world {world_info.name} from control channel")
 
-                my_rank = wrk_info.peers.index(my_id) + 1
-                other_rank = 0
-                other_id = k
-                await _inner(my_id, my_rank, other_id, other_rank, wrk_info)
+    async def _configure(self) -> None:
+        """(Re)configure multiworld, control channel and router."""
+        new_world_infos = self._build_world_infos()
+        new_worlds = new_world_infos.keys()
+        cur_worlds = self.world_infos.keys()
 
-        for world_info in self.world_info_list:
-            await world_info.channel.wait_readiness()
-            logger.info(f"control channel for {world_info.name} is ready")
+        worlds_to_remove = cur_worlds - new_worlds
+        worlds_to_add = new_worlds - cur_worlds
 
-    async def _initialize_pipeline(self):
-        await self._initialize_multiworld()
-        await self._initialize_control_channel()
+        # handle new worlds
+        tasks = []
+        # 1. set up multiworld
+        for name in worlds_to_add:
+            world_info = new_world_infos[name]
+            task = self._configure_multiworld(world_info)
+            tasks.append(task)
+
+        # TODO: this doesn't handle partial success
+        #       a mechanism to handle a failure is left as a todo
+        await asyncio.gather(*tasks)
+
+        tasks = []
+        # 2. set up control channel
+        for name in worlds_to_add:
+            world_info = new_world_infos[name]
+            task = self._configure_control_channel(world_info)
+            tasks.append(task)
+
+        # TODO: this doesn't handle partial success
+        #       a mechanism to handle a failure is left as a todo
+        await asyncio.gather(*tasks)
+
+        # TODO: 3. set up router; add new world
+
+        # update world_info for added worlds
+        for name in worlds_to_add:
+            world_info = new_world_infos[name]
+            self.world_infos[name] = world_info
+
+        # handle unnecessary world
+        # remove is executed in the reverse order of add
+        for name in worlds_to_remove:
+            logger.info(f"remove world {name}")
+            world_info = self.world_infos[name]
+            # TODO: 1. update router; remove unnecssary world
+            # 2. remove unnecessary world from control channel
+            self._reset_control_channel(world_info)
+            # 3. remove unnecessary world from multiworld
+            self._reset_multiworld(world_info)
+
+            del self.world_infos[name]
 
     def _initialize_worker(self, modelir: ModelIR):
         self.stage = Stage(
@@ -248,9 +243,7 @@ class Pipeline:
 
     async def _run_server(self):
         # create router
-        router = Router(
-            self.world_manager, self.world_info_list, self.spec, self.device
-        )
+        router = Router(self.world_manager, self.world_infos, self.spec, self.device)
         router.prepare()
 
         # TODO: we read data directly from a dataset right now.
@@ -268,9 +261,7 @@ class Pipeline:
 
     async def _run_worker(self):
         logger.debug("start to run worker")
-        router = Router(
-            self.world_manager, self.world_info_list, self.spec, self.device
-        )
+        router = Router(self.world_manager, self.world_infos, self.spec, self.device)
         router.prepare()
         while True:
             inputs, seqno = await router.recv()
@@ -291,14 +282,13 @@ class Pipeline:
             if spec is None:
                 continue
 
-            self.spec = spec
-            # TODO: this is not the best place to initialize an instance
-            #       variable for readability; let's handle this later
-            self.max_inflight: int = self.spec.max_inflight
+            self._configure_variables(spec)
 
-            self._init_assets()
-            self._prepare_worker()
-            await self._initialize_pipeline()
+            self._initialize_once()
+
+            # (re)configure the pipeline
+            await self._configure()
+
             self.cfg_event.set()
 
             self.worker_manager.send_message(
@@ -308,6 +298,68 @@ class Pipeline:
                     self.spec.job_id,
                 )
             )
+
+    def _build_world_infos(self) -> dict[str, WorldInfo]:
+        world_infos: dict[str, WorldInfo] = {}
+
+        my_id = self.spec.stage.id
+        for k, v in self.spec.flow_graph.items():
+            for wrk_info in v:
+                # NOTE: no. of peers is always 1 for now
+                assert len(wrk_info.peers) == 1
+
+                if my_id == k:
+                    my_rank = 0
+                    other_rank = 1
+                    other_id = wrk_info.peers[0]
+                elif my_id in wrk_info.peers:
+                    # NOTE: this is always 1 for now
+                    my_rank = wrk_info.peers.index(my_id) + 1
+                    other_rank = 0
+                    other_id = k
+                else:
+                    continue
+
+                name, backend, addr, port = (
+                    wrk_info.name,
+                    wrk_info.backend,
+                    wrk_info.addr,
+                    wrk_info.port,
+                )
+
+                world_size = len(wrk_info.peers) + 1
+                ctrl_ch = CtrlCh(my_rank, world_size, addr, port + 1)
+
+                data = {
+                    "name": name,
+                    "size": world_size,
+                    "addr": addr,
+                    "port": port,
+                    "backend": backend,
+                    "channel": ctrl_ch,
+                    "my_id": my_id,
+                    "me": my_rank,
+                    "other_id": other_id,
+                    "other": other_rank,
+                }
+                world_info = WorldInfo(**data)
+                world_infos[name] = world_info
+
+        return world_infos
+
+    def _configure_variables(self, spec: ServeConfig) -> None:
+        """Set variables that need to be updated."""
+        self.spec = spec
+        self.max_inflight = spec.max_inflight
+
+    def _initialize_once(self) -> None:
+        if self._initialized:
+            return
+
+        self._init_assets()
+        self._prepare_worker()
+
+        self._initialized = True
 
     def _init_assets(self) -> None:
         # load model meta info from zoo
@@ -334,15 +386,12 @@ class Pipeline:
             logger.info("I am a worker")
             self._initialize_worker(self.modelir)
 
-    async def _run(self) -> None:
+    async def run(self) -> None:
+        """Run pipeline."""
+        _ = asyncio.create_task(self.handle_config())
         await self.cfg_event.wait()
 
         if self.spec.stage.is_server:
             await self._run_server()
         else:
             await self._run_worker()
-
-    async def run(self):
-        """Run pipeline."""
-        _ = asyncio.create_task(self.handle_config())
-        await self._run()
