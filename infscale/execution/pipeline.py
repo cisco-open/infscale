@@ -49,6 +49,7 @@ class Pipeline:
         """Initialize pipeline instance."""
         self.stage: Stage = None
         self.world_manager = WorldManager()
+        self.router = Router(self.world_manager)
         self.worker_manager = worker_manager
         self.spec: ServeConfig = None
         self.device = None
@@ -109,17 +110,16 @@ class Pipeline:
     async def _configure(self) -> None:
         """(Re)configure multiworld, control channel and router."""
         new_world_infos = self._build_world_infos()
-        new_worlds = new_world_infos.keys()
-        cur_worlds = self.world_infos.keys()
+        new = new_world_infos.keys()
+        cur = self.world_infos.keys()
 
-        worlds_to_remove = cur_worlds - new_worlds
-        worlds_to_add = new_worlds - cur_worlds
+        worlds_to_add = [new_world_infos[name] for name in new - cur]
+        worlds_to_remove = [self.world_infos[name] for name in cur - new]
 
         # handle new worlds
         tasks = []
         # 1. set up multiworld
-        for name in worlds_to_add:
-            world_info = new_world_infos[name]
+        for world_info in worlds_to_add:
             task = self._configure_multiworld(world_info)
             tasks.append(task)
 
@@ -129,8 +129,7 @@ class Pipeline:
 
         tasks = []
         # 2. set up control channel
-        for name in worlds_to_add:
-            world_info = new_world_infos[name]
+        for world_info in worlds_to_add:
             task = self._configure_control_channel(world_info)
             tasks.append(task)
 
@@ -138,25 +137,23 @@ class Pipeline:
         #       a mechanism to handle a failure is left as a todo
         await asyncio.gather(*tasks)
 
-        # TODO: 3. set up router; add new world
-
         # update world_info for added worlds
-        for name in worlds_to_add:
-            world_info = new_world_infos[name]
-            self.world_infos[name] = world_info
+        for world_info in worlds_to_add:
+            self.world_infos[world_info.name] = world_info
+
+        # configure router with worlds to add and remove
+        self.router.configure(self.spec, self.device, worlds_to_add, worlds_to_remove)
 
         # handle unnecessary world
         # remove is executed in the reverse order of add
-        for name in worlds_to_remove:
-            logger.info(f"remove world {name}")
-            world_info = self.world_infos[name]
-            # TODO: 1. update router; remove unnecssary world
-            # 2. remove unnecessary world from control channel
+        for world_info in worlds_to_remove:
+            logger.info(f"remove world {world_info.name}")
+            # 1. remove unnecessary world from control channel
             self._reset_control_channel(world_info)
-            # 3. remove unnecessary world from multiworld
+            # 2. remove unnecessary world from multiworld
             self._reset_multiworld(world_info)
 
-            del self.world_infos[name]
+            del self.world_infos[world_info.name]
 
     def _initialize_worker(self, modelir: ModelIR):
         self.stage = Stage(
@@ -242,37 +239,27 @@ class Pipeline:
         logger.info("_server_recv task done")
 
     async def _run_server(self):
-        # create router
-        router = Router(self.world_manager, self.world_infos, self.spec, self.device)
-        router.prepare()
-
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
         max_count = self.dataset.num_of_batches()
 
         # send and recv asynchronously
-        send_task = asyncio.create_task(self._server_send(router))
-        recv_task = asyncio.create_task(self._server_recv(router, max_count))
-        logger.debug("created _send_request and _recv_resp tasks")
+        send_task = asyncio.create_task(self._server_send(self.router))
+        recv_task = asyncio.create_task(self._server_recv(self.router, max_count))
 
         await asyncio.gather(*[send_task, recv_task])
         logger.info("inference serving is done")
 
     async def _run_worker(self):
         logger.debug("start to run worker")
-        router = Router(self.world_manager, self.world_infos, self.spec, self.device)
-        router.prepare()
         while True:
-            inputs, seqno = await router.recv()
-            logger.debug(f"received input {seqno} from router")
+            inputs, seqno = await self.router.recv()
 
             with torch.inference_mode():
                 outputs, next_layer = self.stage.predict(seqno, **inputs)
 
-            logger.debug("got output from stage and put output into router")
-            await router.send(seqno, outputs, next_layer)
-            logger.debug("put output into router")
+            await self.router.send(seqno, outputs, next_layer)
 
     async def handle_config(self) -> None:
         """Handle a config sent by the controller."""

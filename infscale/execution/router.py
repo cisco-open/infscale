@@ -38,16 +38,10 @@ logger = get_logger()
 class Router:
     """Router class."""
 
-    def __init__(
-        self,
-        world_manager: WorldManager,
-        world_infos: dict[str, WorldInfo],
-        spec: ServeConfig,
-        device=torch.device("cpu"),
-    ):
+    def __init__(self, world_manager: WorldManager):
         """Initialize Router instance."""
         self.world_manager = world_manager
-        self.device = device
+        # self.device = device
 
         self._rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
         self._tx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
@@ -61,22 +55,9 @@ class Router:
         self.__rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)
 
         self.orphan_dq: deque = deque()
-        for _, world_info in world_infos.items():
-            if world_info.me == 0:  # I am a receiver from other
-                self.senders.append(world_info)
-            else:  # I am a sender to other
-                self.receivers.append(world_info)
 
-                tpl = (world_info, asyncio.Queue(DEFAULT_QUEUE_SIZE))
-
-                stage_cfg = spec.workers_stage_info[world_info.other_id]
-
-                if stage_cfg.start not in self.__tx_qs:
-                    self.__tx_qs[stage_cfg.start] = []
-
-                self.__tx_qs[stage_cfg.start].append(tpl)
-
-        self._select_forwarding_policy(spec.fwd_policy)
+        _ = asyncio.create_task(self._send_arbiter())
+        _ = asyncio.create_task(self._recv_arbiter())
 
     def _select_forwarding_policy(self, fwd_policy: str) -> None:
         match fwd_policy:
@@ -109,10 +90,32 @@ class Router:
         """Return transmit queue."""
         return self._tx_q
 
-    def prepare(self) -> None:
-        """Create asyncio tasks for sending and receiving."""
-        _ = asyncio.create_task(self._send_arbiter())
-        _ = asyncio.create_task(self._recv_arbiter())
+    def configure(
+        self,
+        spec: ServeConfig,
+        device=torch.device("cpu"),
+        worlds_to_add: list[WorldInfo] = [],
+        worlds_to_remove: list[WorldInfo] = [],
+    ) -> None:
+        """(Re)configure router."""
+        self.device = device
+
+        self._select_forwarding_policy(spec.fwd_policy)
+
+        for world_info in worlds_to_add:
+            if world_info.me == 0:  # I am a receiver from other
+                self.senders.append(world_info)
+            else:  # I am a sender to other
+                self.receivers.append(world_info)
+
+                tpl = (world_info, asyncio.Queue(DEFAULT_QUEUE_SIZE))
+
+                stage_cfg = spec.workers_stage_info[world_info.other_id]
+
+                if stage_cfg.start not in self.__tx_qs:
+                    self.__tx_qs[stage_cfg.start] = []
+
+                self.__tx_qs[stage_cfg.start].append(tpl)
 
         for world_info in self.receivers:
             _ = asyncio.create_task(self._send(world_info))
