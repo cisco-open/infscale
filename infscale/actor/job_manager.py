@@ -85,7 +85,7 @@ class JobManager:
                 self._handle_worker_failure(worker_data)
 
     def _handle_worker_failure(self, worker_data: WorkerMetaData) -> None:
-        self._terminate_workers(worker_data.job_id)
+        self._terminate_worker(worker_data)
 
     def _handle_message(
         self, message: Message, worker_data: WorkerMetaData, descriptor: int
@@ -138,6 +138,21 @@ class JobManager:
         logger.info(f"workers for job {job_id} terminated")
 
         self._job_cleanup(job_id)
+
+    def _terminate_worker(self, worker_data: WorkerMetaData) -> None:
+        """Terminate Worker."""
+        loop = asyncio.get_event_loop()
+
+        if worker_data.status in [WorkerStatus.STARTED, WorkerStatus.READY, WorkerStatus.RUNNING]:
+            worker_data.status = WorkerStatus.TERMINATED
+
+            self.send_message_to_worker(
+                worker_data, Message(MessageType.TERMINATE, "", worker_data.job_id)
+            )
+
+            loop.remove_reader(worker_data.pipe.fileno())
+            worker_data.pipe.close()
+
             
     def _print_message(self, content: str, process_id: int) -> None:
         """Print received messages."""
