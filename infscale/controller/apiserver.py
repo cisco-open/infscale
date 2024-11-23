@@ -62,7 +62,6 @@ class ReqType(str, Enum):
     """Enum class for request type."""
 
     UNKNOWN = "unknown"
-    SERVE = "serve"
     JOB_ACTION = "job_action"
 
 
@@ -83,7 +82,7 @@ class JobActionModel(BaseModel):
     def check_config_for_update(self):
         if self.action in [JobAction.UPDATE, JobAction.START] and self.config is None:
             raise ValueError("config is required when updating a job")
-        
+
         if self.action == JobAction.STOP and self.job_id is None:
             raise ValueError("job id is required stopping or updating a job")
         return self
@@ -108,15 +107,6 @@ class Response(BaseModel):
     """Response model."""
 
     message: str
-
-
-@app.post("/models", response_model=Response)
-async def serve(spec: ServeSpec):
-    """Serve a model."""
-    await _ctrl.handle_fastapi_request(ReqType.SERVE, spec)
-
-    res = {"message": "started serving"}
-    return res
 
 
 @app.post("/job", response_model=Response)

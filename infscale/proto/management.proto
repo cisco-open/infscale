@@ -13,10 +13,8 @@ service ManagementRoute {
   rpc heartbeat(AgentID) returns (google.protobuf.Empty) {}
   // agent calls update rpc to provide status of workers
   rpc update(Status) returns (google.protobuf.Empty) {}
-  // agent calls fetch rpc to obtain manifest for inference service
-  rpc fetch(AgentID) returns (stream Manifest) {}
-  // agent calls get_job_action rpc to get job action messages
-  rpc get_job_action(AgentID) returns (stream JobAction) {}
+  // agent calls fetch rpc to get job action messages
+  rpc fetch(AgentID) returns (stream JobAction) {}
 }
 
 message AgentID {
@@ -26,6 +24,7 @@ message AgentID {
 message JobAction {
   string type = 1;
   string job_id = 2;
+  optional bytes manifest = 3;
 }
 
 message RegReq {
@@ -93,11 +92,4 @@ message WorkerStatus {
 message Statistics {
   int32 throughput = 1; // requests (e.g., prompts) per second; can be an average value
   int32 latency_ms = 2; // delay in millisecond; can be an average value
-}
-
-// manifest contains details about configuring inference service
-// TODO: for now, we keep this as byte stream; revisit this
-//       once manifest's structure is confirmed
-message Manifest {
-  bytes payload = 1;
 }

@@ -22,7 +22,6 @@ import json
 import grpc
 import torch
 import torch.multiprocessing as mp
-
 from infscale import get_logger
 from infscale.actor.config_diff import get_config_diff_ids
 from infscale.actor.job_manager import JobManager, WorkerMetaData
@@ -115,68 +114,39 @@ class Agent:
         # create a task to send status in an event-driven fashion
         _ = asyncio.create_task(self.report())
 
-        # create a task to wait for config
-        _ = asyncio.create_task(self.fetch_config())
-
-        # create a task to wait for job_action
-        _ = asyncio.create_task(self.get_job_action())
+        # create a task to wait for fetch job action
+        _ = asyncio.create_task(self.fetch())
 
         return True
 
-    async def fetch_config(self) -> None:
+    async def fetch(self) -> None:
         """Connect to the server and start the listening task."""
-        while True:
-            try:
-                await self._fetch_config()
-            except Exception as e:
-                logger.error(f"Error in connection: {e}")
-                break
+        try:
+            await self._fetch()
+        except Exception as e:
+            logger.error(f"Error in connection: {e}")
 
-    async def _fetch_config(self) -> None:
-        """Listen for configuration pushes (manifest) from the ManagementRoute."""
-        request = pb2.AgentID(id=self.id)
-
-        async for manifest in self.stub.fetch(request):
-            if manifest:
-                job_config = JobConfig(**json.loads(manifest.payload.decode("utf-8")))
-                self.handle_config(job_config)
-
-    async def get_job_action(self) -> None:
-        """Connect to the server and start the listening task."""
-        while True:
-            try:
-                await self._get_job_action()
-            except Exception as e:
-                logger.error(f"Error in connection: {e}")
-                break
-
-    async def _get_job_action(self) -> None:
+    async def _fetch(self) -> None:
         """Listen for job action pushes from the ManagementRoute."""
         request = pb2.AgentID(id=self.id)
 
-        async for job_action in self.stub.get_job_action(request):
-            if job_action:
-                self._handle_job_action(job_action)
+        async for action in self.stub.fetch(request):
+            if not action:
+                continue
+
+            self._handle_job_action(action)
 
     def _handle_job_action(self, action: pb2.JobAction) -> None:
-        """Handles job action"""
+        """Handle job-related action."""
         match action.type:
+            case JobAction.START | JobAction.UPDATE:
+                config = JobConfig(**json.loads(action.manifest.decode("utf-8")))
+                self._handle_config(config)
+
             case JobAction.STOP:
                 self.job_manager._terminate_workers(action.job_id)
 
-    async def run(self):
-        """Start the agent."""
-        logger.info("run agent")
-
-        if not await self._init_controller_session():
-            return
-
-        self.monitor()
-
-        # wait forever
-        await asyncio.Event().wait()
-
-    def handle_config(self, config: JobConfig) -> None:
+    def _handle_config(self, config: JobConfig) -> None:
         """Handle configuration file received from controller."""
         logger.debug(f"got new config: {config}")
 
@@ -235,18 +205,17 @@ class Agent:
                 daemon=True,
             )
             process.start()
-            w = WorkerMetaData(
-                pipe, process, WorkerStatus.READY, config.stage.id, config.job_id
-            )
+
+            pid, job_id, stage_id = process.pid, config.job_id, config.stage.id
+
+            w = WorkerMetaData(pipe, process, WorkerStatus.READY, stage_id, job_id)
             self._workers[w.pipe.fileno()] = w
             self.job_manager.add_worker(w)
-            self.job_manager.send_message_to_worker(
-                w, Message(MessageType.CONFIG, config, config.job_id)
-            )
 
-            print(
-                f"Process ID: {process.pid} - Job ID: {config.job_id} - Worker: {config.stage.id}"
-            )
+            msg = Message(MessageType.CONFIG, config, config.job_id)
+            self.job_manager.send_message_to_worker(w, msg)
+
+            print(f"PID: {pid} - Job ID: {job_id} - Worker: {stage_id}")
 
         self.job_manager.message_listener()
 
@@ -277,6 +246,18 @@ class Agent:
 
     async def _monitor_gpu(self):
         await self.gpu_monitor.start()
+
+    async def run(self):
+        """Start the agent."""
+        logger.info("run agent")
+
+        if not await self._init_controller_session():
+            return
+
+        self.monitor()
+
+        # wait forever
+        await asyncio.Event().wait()
 
 
 def _run_worker(local_rank: int, child_pipe: Pipe):

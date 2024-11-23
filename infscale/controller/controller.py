@@ -24,11 +24,12 @@ import grpc
 from fastapi import HTTPException, Request, status
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
-
 from infscale import get_logger
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
+from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
+                                GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
+from infscale.controller.apiserver import (ApiServer, JobAction,
+                                           JobActionModel, ReqType)
 from infscale.controller.job_state import JobState
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
@@ -53,8 +54,6 @@ class Controller:
         self.contexts: dict[str, AgentContext] = dict()
 
         self.apiserver = ApiServer(self, apiport)
-
-        self.config_q = asyncio.Queue()
 
         self.jobs_state = JobState()
 
@@ -127,21 +126,12 @@ class Controller:
 
     async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""
-        match type:
-            case ReqType.SERVE:
-                logger.debug("got request serve")
-                return await self._handle_fastapi_serve(req)
+        if type != ReqType.JOB_ACTION:
+            logger.debug(f"unknown fastapi request type: {type}")
+            return None
 
-            case ReqType.JOB_ACTION:
-                logger.debug("got start job request")
-                return await self._handle_fastapi_job_action(req)
+        logger.debug("got start job request")
 
-            case _:
-                logger.debug(f"unknown fastapi request type: {type}")
-                return None
-
-    async def _handle_fastapi_job_action(self, req: JobActionModel) -> None:
-        """Handle fastapi job action request."""
         job_id = req.config.job_id if req.config else req.job_id
         if not self.jobs_state.can_update_job_state(job_id, req.action):
             raise HTTPException(
@@ -151,16 +141,14 @@ class Controller:
 
         self.jobs_state.set_job_state(job_id, req.action)
 
+        await self.job_action_q.put(req)
+
         match req.action:
             case JobAction.UPDATE | JobAction.START:
-                await self.config_q.put(req.config)
+                pass
 
             case JobAction.STOP:
-                await self.job_action_q.put(req)
                 self.jobs_state.remove_job(job_id)
-
-    async def _handle_fastapi_serve(self, req: Request):
-        logger.debug(f"req = {req}")
 
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):
@@ -195,8 +183,8 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
 
     async def fetch(
         self, request: pb2.AgentID, context: ServicerContext
-    ) -> AsyncIterable[pb2.Manifest]:
-        """Push manifest to agent to configure worker for inference service."""
+    ) -> AsyncIterable[pb2.JobAction]:
+        """Push JobAction so that agent can take necessary actions for workers."""
         # since fetch() is used for manifest "push", this function shouldn't be
         # returned. For that, we create an asyncio event and let the event wait
         # forever. The event will be released only when agent is unreachable.
@@ -208,32 +196,18 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         event = agent_context.get_grpc_ctx_event()
 
         while True:
-            config = await self.ctrl.config_q.get()
+            action: JobActionModel = await self.ctrl.job_action_q.get()
+            if not action:
+                continue
 
-            if config:
-                manifest = pb2.Manifest(
-                    payload=json.dumps(asdict(config)).encode("utf-8")
-                )
-                yield manifest
+            job_id = action.config.job_id if action.config else action.job_id
 
-    async def get_job_action(
-        self, request: pb2.AgentID, context: ServicerContext
-    ) -> AsyncIterable[pb2.JobAction]:
-        """Push job action message to agent."""
-
-        if request.id not in self.ctrl.contexts:
-            logger.debug(f"{request.id} is not in controller'context")
-            return
-        agent_context = self.ctrl.contexts[request.id]
-        agent_context.set_grpc_ctx(context)
-        event = agent_context.get_grpc_ctx_event()
-
-        while True:
-            job_action: JobActionModel = await self.ctrl.job_action_q.get()
-            if job_action:
-                job_id = job_action.config.job_id if job_action.config else job_action.job_id
-                
+            if action.config:
+                manifest = json.dumps(asdict(action.config)).encode("utf-8")
                 payload = pb2.JobAction(
-                    type=job_action.action, job_id=job_id
+                    type=action.action, job_id=job_id, manifest=manifest
                 )
-                yield payload
+            else:
+                payload = pb2.JobAction(type=action.action, job_id=job_id)
+
+            yield payload
