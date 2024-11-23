@@ -19,8 +19,7 @@ import asyncio
 from multiprocessing.connection import Connection
 
 from infscale import get_logger
-from infscale.actor.job_msg import Message, MessageType, WorkerStatus
-from infscale.actor.worker_manager import WorkerManager
+from infscale.actor.worker_comm import WorkerCommunicator
 from infscale.execution.pipeline import Pipeline
 
 logger = get_logger()
@@ -32,8 +31,7 @@ class Worker:
     def __init__(self, local_rank: int, conn: Connection):
         """Initialize an instance."""
         self.local_rank = local_rank
-        self.conn = conn
-        self.worker_manager = WorkerManager(self.conn)
+        self.wcomm = WorkerCommunicator(conn)
 
     def run(self) -> None:
         """Run worker."""
@@ -42,6 +40,6 @@ class Worker:
     async def _run(self) -> None:
         """Run the worker."""
         logger.info(f"worker {self.local_rank}")
-        self.worker_manager.message_listener()
-        pipeline = Pipeline(self.worker_manager)
+        self.wcomm.message_listener()
+        pipeline = Pipeline(self.wcomm)
         await pipeline.run()

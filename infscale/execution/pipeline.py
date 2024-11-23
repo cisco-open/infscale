@@ -22,7 +22,7 @@ import time
 import torch
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
-from infscale.actor.worker_manager import WorkerManager
+from infscale.actor.worker_comm import WorkerCommunicator
 from infscale.config import ServeConfig
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.router import Router
@@ -44,13 +44,13 @@ class Pipeline:
 
     def __init__(
         self,
-        worker_manager: WorkerManager,
+        wcomm: WorkerCommunicator,
     ):
         """Initialize pipeline instance."""
         self.stage: Stage = None
         self.world_manager = WorldManager()
         self.router = Router(self.world_manager)
-        self.worker_manager = worker_manager
+        self.wcomm = wcomm
         self.spec: ServeConfig = None
         self.device = None
         self.world_infos: dict[str, WorldInfo] = {}
@@ -207,13 +207,8 @@ class Pipeline:
         logger.info("start to receive responses")
         seqno = -1
         idx = 0
-        self.worker_manager.send_message(
-            Message(
-                MessageType.STATUS,
-                WorkerStatus.RUNNING,
-                self.spec.job_id,
-            )
-        )
+        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
+        self.wcomm.send(msg)
         while max_count == -1 or max_count > idx:
             logger.debug("waiting for response")
             outputs, seqno = await router.recv()
@@ -228,13 +223,8 @@ class Pipeline:
         print(
             f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
         )
-        self.worker_manager.send_message(
-            Message(
-                MessageType.STATUS,
-                WorkerStatus.DONE,
-                self.spec.job_id,
-            )
-        )
+        msg = Message(MessageType.STATUS, WorkerStatus.DONE, self.spec.job_id)
+        self.wcomm.send(msg)
 
         logger.info("_server_recv task done")
 
@@ -264,7 +254,7 @@ class Pipeline:
     async def handle_config(self) -> None:
         """Handle a config sent by the controller."""
         while True:
-            spec = await self.worker_manager.config_q.get()
+            spec = await self.wcomm.recv()
 
             if spec is None:
                 continue
@@ -278,13 +268,8 @@ class Pipeline:
 
             self.cfg_event.set()
 
-            self.worker_manager.send_message(
-                Message(
-                    MessageType.STATUS,
-                    WorkerStatus.STARTED,
-                    self.spec.job_id,
-                )
-            )
+            msg = Message(MessageType.STATUS, WorkerStatus.STARTED, self.spec.job_id)
+            self.wcomm.send(msg)
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}

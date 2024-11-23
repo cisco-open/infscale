@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Worker class."""
+"""WorkerCommunicator class."""
 
 import asyncio
 import sys
@@ -22,20 +22,26 @@ from multiprocessing import connection
 
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType
+from infscale.config import ServeConfig
 
 logger = get_logger()
 
 
-class WorkerManager:
-    """WorkerManager class."""
+class WorkerCommunicator:
+    """WorkerCommunicator class."""
 
     def __init__(self, pipe: connection.Connection):
+        """Initialize an instance."""
         self.pipe = pipe
         self.config_q = asyncio.Queue()
 
-    def send_message(self, message: str):
-        """Send message to Agent."""
+    def send(self, message: Message) -> None:
+        """Send a message to agent."""
         self.pipe.send(message)
+
+    async def recv(self) -> ServeConfig:
+        """Receive a config."""
+        return await self.config_q.get()
 
     def message_listener(self) -> None:
         """Asynchronous worker listener to handle communication with agent."""
@@ -51,7 +57,7 @@ class WorkerManager:
         self,
         loop: asyncio.AbstractEventLoop,
     ) -> None:
-        """Callback to wait for messages."""
+        """Receive message from a pipe via callback."""
         if self.pipe.poll():
             try:
                 message = self.pipe.recv()
