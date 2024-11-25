@@ -142,9 +142,10 @@ class Controller:
             )
 
         if not self.jobs_state.can_update_job_state(job_id, req.action):
+            state = self.jobs_state.get_job_state(job_id)
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Action '{req.action}' on job '{job_id}' is not allowed",
+                detail=f"Action '{req.action}' on job '{job_id}' is not allowed. Current state: {state}",
             )
 
         self.jobs_state.set_job_state(job_id, req.action)

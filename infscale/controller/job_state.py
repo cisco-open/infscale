@@ -83,6 +83,16 @@ class JobState:
 
         return False
 
+    def get_job_state(self, job_id: str) -> None:
+        """Return the current state of a job."""
+        agent_ids = self._get_job_agent_ids(job_id)
+
+        state = set()
+        for agent_id in agent_ids:
+            state.add(self.job_status[agent_id][job_id].state)
+
+        return state.pop()
+
     def set_job_state(
         self, job_id: str, job_action: JobAction, job_state: JobStateEnum = None
     ) -> None:
