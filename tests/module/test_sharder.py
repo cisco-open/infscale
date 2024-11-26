@@ -16,7 +16,7 @@
 
 import pytest
 from infscale.module.dataset import HuggingFaceDataset
-from infscale.module.sharding import Sharder
+from infscale.module.sharder import Sharder
 from infscale.module.zoo import Zoo
 from tests.module.conftest import model_dataset_pairs
 

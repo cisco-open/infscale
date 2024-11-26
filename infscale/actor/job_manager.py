@@ -14,158 +14,119 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-import asyncio
-from dataclasses import dataclass
-from multiprocessing import connection
+"""job_manager.py."""
 
-import torch.multiprocessing as mp
+from dataclasses import dataclass
+
 from infscale import get_logger
-from infscale.actor.job_msg import Message, MessageType, WorkerStatus
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerInfo
+from infscale.controller.job_state import JobStateEnum
 
 logger = get_logger()
 
 
 @dataclass
-class WorkerMetaData:
-    """WorkerMetaData dataclass."""
+class JobMetaData:
+    """JobMetaData dataclass."""
 
-    pipe: connection.Connection
-    process: mp.Process
-    status: WorkerStatus
-    id: str
     job_id: str
+    config: JobConfig
+    state: JobStateEnum
+    wrkrs_to_start: set[str]  # workers to start
+    wrkrs_to_update: set[str]  # workers to update
+    wrkrs_to_stop: set[str]  # workers to stop
 
 
 class JobManager:
     """JobManager class."""
 
     def __init__(self):
-        self._workers: dict[int, WorkerMetaData] = {}
-        self.jobs: dict[str, JobConfig] = {}
+        """Initialize an instance."""
+        self.jobs: dict[str, JobMetaData] = {}
 
-    def add_worker(self, worker: WorkerMetaData) -> None:
-        self._workers[worker.pipe.fileno()] = worker
+    def process_config(self, config: JobConfig) -> None:
+        """Process a config."""
+        logger.debug(f"got new config: {config}")
 
-    def _job_cleanup(self, job_id: str) -> None:
-        for k, v in list(self._workers.items()):
-            if v.job_id == job_id:
-                del self._workers[k]
+        curr_config = None
+        if config.job_id in self.jobs:
+            curr_config = self.jobs[config.job_id].config
 
-        if job_id in self.jobs:
-            del self.jobs[job_id]
+        results = self.compare_configs(curr_config, config)
+        # updating config for exsiting workers will be handled by each worker
+        wrkrs_to_start, wrkrs_to_update, wrkrs_to_stop = results
 
-    def send_message_to_worker(self, worker: WorkerMetaData, message: Message) -> None:
-        """Send message to worker."""
-        worker.pipe.send(message)
-
-    def message_listener(self) -> None:
-        """Asynchronous parent listener to handle communication with workers."""
-        loop = asyncio.get_event_loop()
-
-        for worker_data in self._workers.values():
-            loop.add_reader(
-                worker_data.pipe.fileno(),
-                self.on_read_ready,
-                worker_data,
-                worker_data.pipe.fileno(),
+        if config.job_id in self.jobs:
+            job_data = self.jobs[config.job_id]
+            job_data.config = config
+            job_data.state = JobStateEnum.UPDATING
+            job_data.wrkrs_to_start = wrkrs_to_start
+            job_data.wrkrs_to_update = wrkrs_to_update
+            job_data.wrkrs_to_stop = wrkrs_to_stop
+        else:
+            job_data = JobMetaData(
+                config.job_id,
+                config,
+                JobStateEnum.READY,
+                wrkrs_to_start,
+                wrkrs_to_update,
+                wrkrs_to_stop,
             )
+            self.jobs[config.job_id] = job_data
 
-    def on_read_ready(
-        self,
-        worker_data: WorkerMetaData,
-        descriptor: int,
-    ) -> None:
-        """Callback to wait for messages."""
-        if worker_data.pipe.poll():
-            try:
-                message = worker_data.pipe.recv()
-                self._handle_message(message, worker_data, descriptor)
-            except EOFError:
-                self._handle_worker_failure(worker_data)
+    def compare_configs(
+        self, curr_config: JobConfig, new_config: JobConfig
+    ) -> tuple[set[str], set[str], set[str]]:
+        """Compare two flow_graph dictionaries, and return the diffs."""
+        old_cfg = set(curr_config.flow_graph.keys()) if curr_config else set()
+        new_cfg = set(new_config.flow_graph.keys())
 
-    def _handle_worker_failure(self, worker_data: WorkerMetaData) -> None:
-        self._terminate_worker(worker_data)
+        wrkrs_to_start = new_cfg - old_cfg
+        wrkrs_to_stop = old_cfg - new_cfg
 
-    def _handle_message(
-        self, message: Message, worker_data: WorkerMetaData, descriptor: int
-    ) -> None:
-        """Handle received messages."""
-        match message.type:
-            case MessageType.LOG:
-                self._print_message(message.content, worker_data.process.pid)
+        wrkrs_to_update = set()
+        for key in old_cfg & new_cfg:
+            old_value = curr_config.flow_graph[key]
+            new_value = new_config.flow_graph[key]
 
-            case MessageType.STATUS:
-                self._handle_status(message, descriptor)
+            if len(old_value) != len(new_value):
+                wrkrs_to_update.add(key)
+                continue
 
-    def _handle_status(self, message: Message, descriptor: int) -> None:
-        """Handle status update from Workers."""
-        self._update_worker_status(message, descriptor)
+            for old_worker, new_worker in zip(old_value, new_value):
+                old_peers = old_worker.peers
 
-        match message.content:
-            case WorkerStatus.DONE:
-                self._terminate_workers(message.job_id)
+                # TODO: remove isinstance check when the config file is being
+                #       sent through the api call
+                if isinstance(new_worker, WorkerInfo):
+                    new_peers = new_worker.peers
+                else:
+                    new_peers = new_worker["peers"]
 
-            case WorkerStatus.STARTED:
-                pass
+                if old_peers != new_peers:
+                    wrkrs_to_update.add(key)
+                    break
 
-            case WorkerStatus.RUNNING:
-                pass
+        return wrkrs_to_start, wrkrs_to_update, wrkrs_to_stop
 
-            case WorkerStatus.TERMINATED:
-                pass
+    def get_config(self, job_id: str) -> JobConfig | None:
+        """Return a job config of given job name."""
+        return self.jobs[job_id].config if job_id in self.jobs else None
 
-            case WorkerStatus.FAILED:
-                pass
+    def get_workers(self, job_id: str, sort: str = "start") -> set[str]:
+        """Return workers that match sort for a given job name.
 
-    def _update_worker_status(self, message: Message, descriptor: int) -> None:
-        """Update Worker status."""
-        self._workers[descriptor].status = message.content
+        sort is one of the three values: start (default), update and stop.
+        """
+        if job_id not in self.jobs:
+            return set()
 
-    def _terminate_workers(self, job_id: str) -> None:
-        """Terminate Workers."""
-        loop = asyncio.get_event_loop()
-
-        for worker_data in self._workers.values():
-            if worker_data.job_id == job_id and worker_data.status in [WorkerStatus.STARTED, WorkerStatus.READY, WorkerStatus.RUNNING]:
-                worker_data.status = WorkerStatus.TERMINATED
-                self.send_message_to_worker(
-                    worker_data, Message(MessageType.TERMINATE, "", worker_data.job_id)
-                )
-
-                loop.remove_reader(worker_data.pipe.fileno())
-
-        logger.info(f"workers for job {job_id} terminated")
-
-        self._job_cleanup(job_id)
-
-    def _terminate_worker(self, worker_data: WorkerMetaData) -> None:
-        """Terminate Worker."""
-        loop = asyncio.get_event_loop()
-
-        if worker_data.status in [WorkerStatus.STARTED, WorkerStatus.READY, WorkerStatus.RUNNING]:
-            worker_data.status = WorkerStatus.TERMINATED
-
-            self.send_message_to_worker(
-                worker_data, Message(MessageType.TERMINATE, "", worker_data.job_id)
-            )
-
-            loop.remove_reader(worker_data.pipe.fileno())
-            worker_data.pipe.close()
-
-            
-    def _print_message(self, content: str, process_id: int) -> None:
-        """Print received messages."""
-        print(f"Process ID: {process_id}, Message: {content}")
-
-    def set_job_config(self, config: JobConfig) -> None:
-        """Set job config."""
-        self.jobs[config.job_id] = config
-
-    def get_job_config(self, job_id: str) -> JobConfig | None:
-        """Return job config."""
-        return self.jobs[job_id] if self.job_exists(job_id) else None
-
-    def job_exists(self, job_id) -> bool:
-        """Check if job exists."""
-        return job_id in self.jobs
+        match sort:
+            case "start":
+                return self.jobs[job_id].wrkrs_to_start
+            case "update":
+                return self.jobs[job_id].wrkrs_to_update
+            case "stop":
+                return self.jobs[job_id].wrkrs_to_stop
+            case _:
+                raise ValueError(f"unknown sort: {sort}")

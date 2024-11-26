@@ -26,6 +26,7 @@ from infscale.controller.apiserver import JobAction
 class JobStateEnum(Enum):
     """JobState enum."""
 
+    READY = "ready"
     STARTED = "started"
     STARTING = "starting"
     STOPPED = "stopped"
@@ -35,6 +36,7 @@ class JobStateEnum(Enum):
 
 JOB_ALLOWED_ACTIONS = MappingProxyType(
     {
+        JobStateEnum.READY: (JobAction.START),
         JobStateEnum.STARTED: (JobAction.STOP, JobAction.UPDATE),
         JobStateEnum.STARTING: (JobAction.STOP),
         JobStateEnum.STOPPED: (JobAction.START),
@@ -82,13 +84,13 @@ class JobState:
 
         if new_job:
             agent_id = self._get_available_agent_id()
-            
+
             self.job_status[agent_id][job_id] = JobStateData(
                 JobStateEnum.STARTING, JOB_ALLOWED_ACTIONS.get(JobStateEnum.STARTING)
             )
 
             return
-        
+
         agent_ids = self._get_job_agent_ids(job_id)
 
         for agent_id in agent_ids:
@@ -106,13 +108,11 @@ class JobState:
         if agent_ids is None and job_action == JobAction.START:
             return True
 
-
         for agent_id in agent_ids:
             if job_action in self.job_status[agent_id][job_id].possible_actions:
                 return True
 
         return False
-
 
     def _get_job_agent_ids(self, job_id) -> list[str] | None:
         """Return agent_ids for job_id or None."""

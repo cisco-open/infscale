@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Agent class."""
+"""agent.py."""
 
 import asyncio
 import json
@@ -23,10 +23,10 @@ import grpc
 import torch
 import torch.multiprocessing as mp
 from infscale import get_logger
-from infscale.actor.config_diff import get_config_diff_ids
-from infscale.actor.job_manager import JobManager, WorkerMetaData
-from infscale.actor.job_msg import Message, MessageType, WorkerStatus
+from infscale.actor.job_manager import JobManager
+from infscale.actor.job_msg import Message, MessageType
 from infscale.actor.worker import Worker
+from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.controller.apiserver import JobAction
@@ -77,10 +77,9 @@ class Agent:
 
         self.id = id
         self.endpoint = endpoint
-        self.job_config = None
-        self.job_manager = JobManager()
+        self.job_mgr = JobManager()
+        self.worker_mgr = WorkerManager()
 
-        self._workers: dict[int, WorkerMetaData] = {}
         self.n_workers = torch.cuda.device_count()
 
         self.channel = grpc.aio.insecure_channel(
@@ -141,47 +140,18 @@ class Agent:
         match action.type:
             case JobAction.START | JobAction.UPDATE:
                 config = JobConfig(**json.loads(action.manifest.decode("utf-8")))
-                self._handle_config(config)
+                logger.debug(f"got a new config for job {config.job_id}")
+
+                self.job_mgr.process_config(config)
+
+                self._start_workers(config.job_id)
+
+                self._update_workers(config.job_id)
+
+                self._stop_workers(config.job_id)
 
             case JobAction.STOP:
-                self.job_manager._terminate_workers(action.job_id)
-
-    def _handle_config(self, config: JobConfig) -> None:
-        """Handle configuration file received from controller."""
-        logger.debug(f"got new config: {config}")
-
-        if self.job_manager.job_exists(config.job_id):
-            old_config = self.job_manager.get_job_config(config.job_id)
-
-            terminate_ids, start_ids, updated_ids = get_config_diff_ids(
-                old_config, config
-            )
-            self.kill_workers(terminate_ids)
-            self.reconfigure_job(config, start_ids, updated_ids)
-            self.job_manager.set_job_config(config)
-
-            return
-
-        self.job_manager.set_job_config(config)
-
-        self.launch(config)
-
-    def kill_workers(self, workers) -> None:
-        """Terminate workers whose IDs are in extra_in_a_ids."""
-        for worker in self._workers.values():
-            if worker.id in workers:
-                print(f"Terminating worker with ID: {worker.id}")
-
-    def reconfigure_job(
-        self, job_config: JobConfig, start_ids: list[int], update_ids: list[int]
-    ) -> None:
-        """Reconfigure workers with new config."""
-        for _, config in enumerate(job_config.get_serve_configs()):
-            if config.stage.id in start_ids:
-                print(f"worker {config.stage.id} needs to be started")
-
-            if config.stage.id in update_ids:
-                print(f"worker {config.stage.id} is updated")
+                self.worker_mgr.terminate_workers(action.job_id)
 
     async def heart_beat(self):
         """Send a heart beat message periodically."""
@@ -190,11 +160,21 @@ class Agent:
             self.stub.heartbeat(agent_id)
             await asyncio.sleep(HEART_BEAT_PERIOD)
 
-    def launch(self, job_config: JobConfig):
-        """Launch workers."""
+    def _start_workers(self, job_id: str) -> None:
+        """Start workers."""
         ctx = mp.get_context("spawn")
 
+        job_config = self.job_mgr.get_config(job_id)
+        if not job_config:
+            logger.debug(f"no worker to start for job {job_id}")
+            return
+
+        wrkrs_to_start = self.job_mgr.get_workers(job_id)
+
         for local_rank, config in enumerate(job_config.get_serve_configs()):
+            if config.stage.id not in wrkrs_to_start:
+                continue
+
             pipe, child_pipe = ctx.Pipe()
             process = ctx.Process(
                 target=_run_worker,
@@ -208,20 +188,35 @@ class Agent:
 
             pid, job_id, stage_id = process.pid, config.job_id, config.stage.id
 
-            w = WorkerMetaData(pipe, process, WorkerStatus.READY, stage_id, job_id)
-            self._workers[w.pipe.fileno()] = w
-            self.job_manager.add_worker(w)
+            w = self.worker_mgr.add(pipe, process, job_id, stage_id)
 
             msg = Message(MessageType.CONFIG, config, config.job_id)
-            self.job_manager.send_message_to_worker(w, msg)
+            self.worker_mgr.send(w, msg)
+
+            self.worker_mgr.initialize_listener(w)
 
             print(f"PID: {pid} - Job ID: {job_id} - Worker: {stage_id}")
 
-        self.job_manager.message_listener()
+    def _update_workers(self, job_id: str) -> None:
+        job_config = self.job_mgr.get_config(job_id)
+        if not job_config:
+            logger.debug(f"no config for job {job_id}")
+            return
 
-    def configure(self):
-        """Configure workers."""
-        pass
+        wrkrs_to_update = self.job_mgr.get_workers(job_id, "update")
+        workers = self.worker_mgr.get_workers(job_id, wrkrs_to_update)
+
+        for local_rank, config in enumerate(job_config.get_serve_configs()):
+            if config.stage.id not in wrkrs_to_update:
+                continue
+
+            w = workers[config.stage.id]
+            msg = Message(MessageType.CONFIG, config, config.job_id)
+            self.worker_mgr.send(w, msg)
+
+    def _stop_workers(self, job_id: str) -> None:
+        wrkrs_to_stop = self.job_mgr.get_workers(job_id, "stop")
+        self.worker_mgr.terminate_workers(job_id, True, wrkrs_to_stop)
 
     async def report(self):
         """Report status about resources and workers to controller."""
