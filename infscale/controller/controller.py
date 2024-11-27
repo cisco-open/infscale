@@ -25,11 +25,9 @@ from fastapi import HTTPException, Request, status
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import (ApiServer, JobAction,
-                                           JobActionModel, ReqType)
+from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
 from infscale.controller.job_state import JobState
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
@@ -130,9 +128,19 @@ class Controller:
             logger.debug(f"unknown fastapi request type: {type}")
             return None
 
-        logger.debug("got start job request")
+        logger.debug(f"got {req.action} request")
 
         job_id = req.config.job_id if req.config else req.job_id
+
+        if not self.jobs_state.job_exists(job_id) and req.action in [
+            JobAction.STOP,
+            JobAction.UPDATE,
+        ]:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"job with id: '{job_id}' was not found",
+            )
+
         if not self.jobs_state.can_update_job_state(job_id, req.action):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -131,7 +131,7 @@ async def update_job(job_action: JobActionModel):
     try:
         await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, job_action)
     except HTTPException as e:
-        return JSONResponse(status_code=e.status_code, content={e.detail})
+        return JSONResponse(status_code=e.status_code, content=e.detail)
 
     res = "job updated"
 

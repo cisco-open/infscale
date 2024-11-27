@@ -30,16 +30,15 @@ def update():
 
 @update.command()
 @click.option("--endpoint", default=APISERVER_ENDPOINT, help="Controller's endpoint")
-@click.argument("job_id", required=True)
 @click.argument("config", required=True)
-def job(endpoint: str, job_id: str, config: str):
+def job(endpoint: str, config: str):
     """Update a job with new config."""
 
     with open(config) as f:
         job_config = yaml.safe_load(f)
 
     payload = JobActionModel(
-        action=JobAction.UPDATE, job_id=job_id, config=job_config
+        action=JobAction.UPDATE, config=job_config
     ).model_dump_json()
 
     try:

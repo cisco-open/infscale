@@ -74,6 +74,13 @@ class JobState:
     def _is_new_job(self, job_id: str, job_action: JobAction) -> bool:
         return self._get_job_agent_ids(job_id) is None and job_action == JobAction.START
 
+    def job_exists(self, job_id: str) -> bool:
+        for jobs in self.job_status.values():
+            if job_id in jobs:
+                return True
+
+        return False
+
     def set_job_state(
         self, job_id: str, job_action: JobAction, job_state: JobStateEnum = None
     ) -> None:
@@ -82,13 +89,13 @@ class JobState:
 
         if new_job:
             agent_id = self._get_available_agent_id()
-            
+
             self.job_status[agent_id][job_id] = JobStateData(
                 JobStateEnum.STARTING, JOB_ALLOWED_ACTIONS.get(JobStateEnum.STARTING)
             )
 
             return
-        
+
         agent_ids = self._get_job_agent_ids(job_id)
 
         for agent_id in agent_ids:
@@ -106,13 +113,11 @@ class JobState:
         if agent_ids is None and job_action == JobAction.START:
             return True
 
-
         for agent_id in agent_ids:
             if job_action in self.job_status[agent_id][job_id].possible_actions:
                 return True
 
         return False
-
 
     def _get_job_agent_ids(self, job_id) -> list[str] | None:
         """Return agent_ids for job_id or None."""
