@@ -33,7 +33,7 @@ from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
 from multiworld.manager import WorldManager
 
-logger = get_logger()
+logger = None
 
 # a global variable to store start time of the first request
 start_time = None
@@ -47,6 +47,9 @@ class Pipeline:
         wcomm: WorkerCommunicator,
     ):
         """Initialize pipeline instance."""
+        global logger
+        logger = get_logger()
+
         self.stage: Stage = None
         self.world_manager = WorldManager()
         self.router = Router(self.world_manager)

@@ -22,7 +22,7 @@ from infscale import get_logger
 from infscale.config import JobConfig, WorkerInfo
 from infscale.controller.job_state import JobStateEnum
 
-logger = get_logger()
+logger = None
 
 
 @dataclass
@@ -42,6 +42,9 @@ class JobManager:
 
     def __init__(self):
         """Initialize an instance."""
+        global logger
+        logger = get_logger()
+
         self.jobs: dict[str, JobMetaData] = {}
 
     def process_config(self, config: JobConfig) -> None:

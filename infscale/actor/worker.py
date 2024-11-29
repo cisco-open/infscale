@@ -16,20 +16,24 @@
 
 """Worker class."""
 import asyncio
+import os
 from multiprocessing.connection import Connection
 
 from infscale import get_logger
 from infscale.actor.worker_comm import WorkerCommunicator
 from infscale.execution.pipeline import Pipeline
 
-logger = get_logger()
+logger = None
 
 
 class Worker:
     """Worker class."""
 
-    def __init__(self, local_rank: int, conn: Connection):
+    def __init__(self, local_rank: int, conn: Connection, job_id: str, wrk_id: str):
         """Initialize an instance."""
+        global logger
+        logger = get_logger(f"{os.getpid()}", f"job-{job_id}/worker-{wrk_id}.log")
+
         self.local_rank = local_rank
         self.wcomm = WorkerCommunicator(conn)
 

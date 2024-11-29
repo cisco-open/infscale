@@ -32,7 +32,7 @@ from pynvml import (nvmlDeviceGetComputeRunningProcesses, nvmlDeviceGetCount,
 
 DEFAULT_INTERVAL = 10  # 10 seconds
 
-logger = get_logger()
+logger = None
 
 
 class GpuType(str, Enum):
@@ -72,6 +72,9 @@ class GpuMonitor:
 
     def __init__(self, interval: int = DEFAULT_INTERVAL):
         """Initialize GpuMonitor instance."""
+        global logger
+        logger = get_logger()
+
         self.interval = interval
 
         self.mon_event = asyncio.Event()
@@ -174,6 +177,9 @@ class GpuMonitor:
         proto: Union[list[pb2.GpuStat], list[pb2.VramStat]]
     ) -> Union[None, list[GpuStat], list[VramStat]]:
         """Convert a list of protobuf messages to GpuStats or VramStats."""
+        global logger
+        logger = get_logger()
+
         if not isinstance(proto, RepeatedCompositeContainer) or len(proto) == 0:
             logger.debug("no protobuf message")
             return None

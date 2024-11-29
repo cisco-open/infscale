@@ -26,7 +26,7 @@ import torch
 from infscale import get_logger
 from torch import Tensor
 
-logger = get_logger()
+logger = None
 
 
 MSG_SIZE = 10000
@@ -57,6 +57,9 @@ class Channel:
 
     def __init__(self, rank: int, world_size: int, addr: str, port: int):
         """Initialize an instance."""
+        global logger
+        logger = get_logger()
+
         self.rank = rank
         self.world_size = world_size
         self.addr = addr

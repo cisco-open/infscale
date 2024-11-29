@@ -19,35 +19,52 @@
 import logging
 import os
 import sys
-from logging import Logger
-
+from pathlib import Path
 from infscale.version import VERSION as __version__  # noqa: F401
 
 level = getattr(logging, os.getenv("INFSCALE_LOG_LEVEL", "WARNING"))
 
 format = "%(process)d | %(asctime)s | %(filename)s:%(lineno)d | %(levelname)s | %(threadName)s | %(funcName)s | %(message)s"
 
-logging.basicConfig(
-    level=level,
-    format=format,
-    stream=sys.stdout
-)
-
-logger_registry = dict()
+logging.basicConfig(level=level, format=format, stream=sys.stdout)
 
 
-def get_logger(name: str = __name__) -> Logger:
-    """Return a logger with a given logger name.
+HOME_LOG_DIR = Path(os.getenv("HOME")) / ".infscale" / "log"
+HOME_LOG_DIR.mkdir(parents=True, exist_ok=True)
+logger_registry: dict[str | int, logging.Logger] = dict()
 
-    A log file is created with the name under $HOME/infscale folder.
+
+def get_logger(
+    key: str = f"{os.getpid()}",
+    log_file_path: str = None,
+) -> logging.Logger:
+    """Get a logger with a given key.
+
+    If the logger doesn't exist, one will be created.
     """
-    global logger_registry
+    if key not in logger_registry:
+        _create_logger(key, log_file_path)
 
-    if name in logger_registry:
-        return logger_registry[name]
-
-    logger = logging.getLogger(name)
-
-    logger_registry[name] = logger
+    logger = logger_registry[key]
 
     return logger
+
+
+def _create_logger(key: str | int, log_file_path: str = None) -> None:
+    """Create a logger with a given key."""
+    if key in logger_registry:
+        raise ValueError(f"Logger '{key}' already exists.")
+
+    logger = logging.getLogger(key)
+
+    if log_file_path:
+        log_file_path = HOME_LOG_DIR / log_file_path
+        log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(logging.Formatter(format))
+
+        logger.addHandler(file_handler)
+
+    logger_registry[key] = logger

@@ -32,7 +32,7 @@ DEFAULT_SLEEP_TIME = 0.1  # 100ms
 QUEUE_WAIT_PERIOD = 0.1  # 100ms
 
 
-logger = get_logger()
+logger = None
 
 
 class Router:
@@ -40,6 +40,9 @@ class Router:
 
     def __init__(self, world_manager: WorldManager):
         """Initialize Router instance."""
+        global logger
+        logger = get_logger()
+
         self.world_manager = world_manager
         # self.device = device
 

@@ -17,6 +17,7 @@
 """Controller class."""
 import asyncio
 import json
+import os
 from dataclasses import asdict
 from typing import Any, AsyncIterable, Union
 
@@ -33,7 +34,7 @@ from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
 
-logger = get_logger()
+logger = None
 
 CtrlRequest = Union[Request | JobActionModel]
 
@@ -47,6 +48,9 @@ class Controller:
         apiport: int = APISERVER_PORT,
     ):
         """Initialize an instance."""
+        global logger
+        logger = get_logger(f"{os.getpid()}", "controller.log")
+
         self.port = port
 
         self.contexts: dict[str, AgentContext] = dict()

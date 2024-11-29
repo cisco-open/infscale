@@ -25,7 +25,7 @@ from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.module.dataset import HuggingFaceDataset
 from torch.utils.data import DataLoader
 
-logger = get_logger()
+logger = None
 
 
 class Server:
@@ -39,6 +39,9 @@ class Server:
         self, spec: ServeConfig, dataset: HuggingFaceDataset, device: torch.device
     ):
         """Initialize server instance."""
+        global logger
+        logger = get_logger()
+
         self.next_stages: set[str] = set()
         self.prev_stages: set[str] = set()
 

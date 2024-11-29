@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 RANDOM_SEED = 42
 
-logger = get_logger()
+logger = None
 
 
 class ModelIR:
@@ -54,6 +54,9 @@ class ModelIR:
 
     def __init__(self, mmd: BaseModelMetaData):
         """Initialize the class."""
+        global logger
+        logger = get_logger()
+
         # Initialize CPU seed
         random.seed(RANDOM_SEED)
         torch.default_generator.manual_seed(RANDOM_SEED)
