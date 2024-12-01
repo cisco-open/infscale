@@ -25,9 +25,11 @@ from fastapi import HTTPException, Request, status
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
+from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
+                                GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.apiserver import ApiServer, JobAction, JobActionModel, ReqType
+from infscale.controller.apiserver import ApiServer
+from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
 from infscale.controller.job_state import JobState
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2

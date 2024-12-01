@@ -18,14 +18,13 @@
 from __future__ import annotations
 
 import asyncio
-from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
-from infscale.config import Dataset, JobConfig, StageConfig, WorkerInfo
 from infscale.constants import APISERVER_PORT
-from pydantic import BaseModel, model_validator
+from infscale.controller.ctrl_dtype import (JobAction, JobActionModel, ReqType,
+                                            Response)
 from uvicorn import Config, Server
 
 if TYPE_CHECKING:
@@ -56,57 +55,6 @@ class ApiServer:
 
         server = Server(config)
         await server.serve()
-
-
-class ReqType(str, Enum):
-    """Enum class for request type."""
-
-    UNKNOWN = "unknown"
-    JOB_ACTION = "job_action"
-
-
-class JobAction(str, Enum):
-    """Enum class for request type."""
-
-    START = "start"
-    STOP = "stop"
-    UPDATE = "update"
-
-
-class JobActionModel(BaseModel):
-    action: JobAction
-    job_id: Optional[str] = None
-    config: Optional[JobConfig] = None
-
-    @model_validator(mode="after")
-    def check_config_for_update(self):
-        if self.action in [JobAction.UPDATE, JobAction.START] and self.config is None:
-            raise ValueError("config is required when updating a job")
-
-        if self.action == JobAction.STOP and self.job_id is None:
-            raise ValueError("job id is required stopping or updating a job")
-        return self
-
-
-class ServeSpec(BaseModel):
-    """ServiceSpec model."""
-
-    name: str
-    model: str
-    stage: StageConfig
-    dataset: Dataset
-    flow_graph: dict[str, list[WorkerInfo]]
-    rank_map: dict[str, int]
-    device: str = "cpu"
-    nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
-    micro_batch_size: int = 8
-    fwd_policy: str = "random"
-
-
-class Response(BaseModel):
-    """Response model."""
-
-    message: str
 
 
 @app.post("/job", response_model=Response)

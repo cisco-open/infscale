@@ -17,9 +17,8 @@
 import click
 import requests
 import yaml
-
 from infscale.constants import APISERVER_ENDPOINT
-from infscale.controller.apiserver import JobAction, JobActionModel
+from infscale.controller.ctrl_dtype import JobAction, JobActionModel
 
 
 @click.group()
@@ -33,7 +32,6 @@ def update():
 @click.argument("config", required=True)
 def job(endpoint: str, config: str):
     """Update a job with new config."""
-
     with open(config) as f:
         job_config = yaml.safe_load(f)
 

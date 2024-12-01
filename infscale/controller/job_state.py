@@ -20,7 +20,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Optional, Tuple
 
-from infscale.controller.apiserver import JobAction
+from infscale.controller.ctrl_dtype import JobAction
 
 
 class JobStateEnum(Enum):

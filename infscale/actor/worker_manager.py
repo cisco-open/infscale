@@ -68,7 +68,7 @@ class WorkerManager:
     ) -> dict[str, WorkerMetaData]:
         """Return workers that match job_id and id in worker_ids."""
         results = {}
-        for k, v in self._workers.items():
+        for v in self._workers.values():
             if v.job_id == job_id and v.id in worker_ids:
                 results[v.id] = v
 
@@ -154,6 +154,7 @@ class WorkerManager:
         If by_worker_id is true, then workers in the worker_ids set
         are terminated.
         """
+        terminated = False
         for worker in self._workers.values():
             if worker.job_id != job_id:
                 continue
@@ -162,12 +163,16 @@ class WorkerManager:
                 continue
 
             self._terminate_worker(worker)
+            terminated = True
 
         self._cleanup(job_id, by_worker_id, worker_ids)
 
+        if not terminated:
+            # no worker is termianted; so no need to log below
+            return
+
         if by_worker_id:
-            if len(worker_ids) > 0:
-                logger.info(f"workers {worker_ids} for job {job_id} terminated")
+            logger.info(f"workers {worker_ids} for job {job_id} terminated")
         else:
             logger.info(f"all workers for job {job_id} terminated")
 

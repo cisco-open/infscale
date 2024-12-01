@@ -29,7 +29,7 @@ from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
-from infscale.controller.apiserver import JobAction
+from infscale.controller.ctrl_dtype import JobAction
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -203,7 +203,7 @@ class Agent:
             logger.debug(f"no config for job {job_id}")
             return
 
-        wrkrs_to_update = self.job_mgr.get_workers(job_id, "update")
+        wrkrs_to_update = self.job_mgr.get_workers(job_id, JobAction.UPDATE)
         workers = self.worker_mgr.get_workers(job_id, wrkrs_to_update)
 
         for local_rank, config in enumerate(job_config.get_serve_configs()):
@@ -215,7 +215,7 @@ class Agent:
             self.worker_mgr.send(w, msg)
 
     def _stop_workers(self, job_id: str) -> None:
-        wrkrs_to_stop = self.job_mgr.get_workers(job_id, "stop")
+        wrkrs_to_stop = self.job_mgr.get_workers(job_id, JobAction.STOP)
         self.worker_mgr.terminate_workers(job_id, True, wrkrs_to_stop)
 
     async def report(self):

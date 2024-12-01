@@ -19,12 +19,11 @@ import asyncio
 import click
 import requests
 import yaml
-
 from infscale.actor.agent import Agent
 from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
                                 CONTROLLER_PORT, LOCALHOST)
 from infscale.controller import controller as ctrl
-from infscale.controller.apiserver import JobAction, JobActionModel
+from infscale.controller.ctrl_dtype import JobAction, JobActionModel
 
 
 @click.group()
