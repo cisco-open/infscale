@@ -203,8 +203,19 @@ class Stage(nn.Module):
                    -1 means that the results goes back to the serving server.
         """
         # remove kv cache for batch that is already served to save memory
-        # we do max_inflight+1 instead of max_inflight to be safe
-        self.caches.pop(seqno - (self.max_inflight + 1), None)
+        # we do max_inflight+5 instead of max_inflight to be safe
+        # TODO: An out-of-order llm request serving case can happen in infscale
+        #       because it allows the arrival of other requests. Specifically,
+        #       for the requests submitted late, if the llm produces shorter
+        #       responses, the out-of-order serving is possible. The logic to
+        #       remove kv caches of the served requests is built with assumption
+        #       that the requests are served in order. This discrepancy sometimes
+        #       creates an error at runtime. To fundamentally resolve the issue,
+        #       we need an additional mechanism to determine which request is
+        #       served. For now, to mitigate the issue, we lazily remove kv cache
+        #       corresponding to a request whose sequence number is
+        #       (seqno of the current request - (max_inflight + 5)).
+        self.caches.pop(seqno - (self.max_inflight + 5), None)
 
         if seqno not in self.caches:
             self.caches[seqno] = DynamicCache()
