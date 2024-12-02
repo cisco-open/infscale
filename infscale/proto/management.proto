@@ -44,7 +44,7 @@ message Status {
   repeated VramStat vram_stats = 3;
   repeated CpuStat cpu_stats = 4;
   RamStat ram_stat = 5;
-  repeated WorkerStatus worker_statuses = 6;
+  WorkerStatus worker_status = 6;
 }
 
 // gpustat contains status information about GPU
@@ -77,14 +77,13 @@ message RamStat {
 
 // workerstatus contains information about worker's status
 message WorkerStatus {
-  int32 deploy_id = 1; // deployment is a unit that encapsulates deployed model's stages
-                       // deploy id is an identifier for one deployment
-  int32 worker_id = 2; // worker id within deployment; each id is unique within one deployment
-  bool healthy = 3;    // true or false
-  bool on_gpu = 4;     // boolean value to specifiy whether task (managed by worker) is done on gpu or not
-  int32 cid = 5;       // compute id specifies device id where the task is running
-                       // if on_gpu is false and cid = -1, no cpu pinning
-  int32 mid = 6;       // vram id; meaningful only if on_gpu is true
+  string job_id = 1;     // job id
+  string worker_id = 2;  // worker id within deployment; each id is unique within one deployment
+  string status = 3;     // current status of a worker
+  bool on_gpu = 4;       // boolean value to specifiy whether task (managed by worker) is done on gpu or not
+  int32 cid = 5;         // compute id specifies device id where the task is running
+                         // if on_gpu is false and cid = -1, no cpu pinning
+  int32 mid = 6;         // vram id; meaningful only if on_gpu is true
   Statistics statistics = 7;
 }
 

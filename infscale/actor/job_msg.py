@@ -47,3 +47,11 @@ class Message:
     type: MessageType
     content: str | WorkerStatus | ServeConfig
     job_id: str
+
+@dataclass
+class WorkerStatusMessage:
+    """WorkerStatusMessage dataclass."""
+
+    id: str
+    job_id: str
+    status: WorkerStatus

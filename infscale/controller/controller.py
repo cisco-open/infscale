@@ -110,6 +110,8 @@ class Controller:
         vram_stats = GpuMonitor.proto_to_stats(request.vram_stats)
         logger.debug(f"vram_stats = {vram_stats}")
 
+        # TODO: update job state based on worker status
+
         # TODO: use gpu and vram status to schedule deployment
 
     def reset_agent_context(self, id: str) -> None:

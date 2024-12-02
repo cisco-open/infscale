@@ -24,7 +24,7 @@ import torch
 import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager
-from infscale.actor.job_msg import Message, MessageType
+from infscale.actor.job_msg import Message, MessageType, WorkerStatusMessage
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig
@@ -94,6 +94,24 @@ class Agent:
         self.stub = pb2_grpc.ManagementRouteStub(self.channel)
 
         self.gpu_monitor = GpuMonitor()
+
+    async def _get_worker_status(self) -> None:
+        while True:
+            status = await self.worker_mgr.status_q.get()
+            if status is None:
+                continue
+
+            await self.update_worker_status(status)
+
+    async def update_worker_status(self, message: WorkerStatusMessage) -> None:
+        worker_status = {
+            "job_id": message.job_id,
+            "status": message.status.name.lower(),
+            "worker_id": message.id,
+        }
+
+        req = pb2.Status(worker_status=worker_status)
+        await self.stub.update(req)
 
     async def _init_controller_session(self) -> bool:
         try:
@@ -248,6 +266,8 @@ class Agent:
 
         if not await self._init_controller_session():
             return
+
+        _ = asyncio.create_task(self._get_worker_status())
 
         self.monitor()
 
