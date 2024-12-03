@@ -8,7 +8,7 @@ nfaults: 1
 micro_batch_size: 8
 # possible options: random, rr (round-robin), shortest, static
 fwd_policy: "rr"
-job_id: "job2"
+job_id: "job1"
 # maximum number of requests in flight at any given point in time
 max_inflight: 8
 
@@ -26,20 +26,20 @@ flow_graph:
       peers: [s-0]
       backend: nccl
   0-1:
-    - name: w2
-      addr: "127.0.0.1"
-      port: 31500
-      peers: [s-0]
-      backend: nccl
-  1-0:
-    - name: w3
-      addr: "127.0.0.1"
-      port: 32500
-      peers: [0-0]
-      backend: nccl
     - name: w4
       addr: "127.0.0.1"
       port: 33500
+      peers: [s-0]
+      backend: nccl
+  1-0:
+    - name: w2
+      addr: "127.0.0.1"
+      port: 31500
+      peers: [0-0]
+      backend: nccl
+    - name: w3
+      addr: "127.0.0.1"
+      port: 32500
       peers: [0-1]
       backend: nccl
 

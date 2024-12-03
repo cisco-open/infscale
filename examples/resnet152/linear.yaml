@@ -6,10 +6,11 @@ nfaults: 1
 # after development is done, they need to be revised accordingly
 # to automate building flow_graph, etc.
 micro_batch_size: 8
-fwd_policy: "static"
+# possible options: random, rr (round-robin), shortest, static
+fwd_policy: "rr"
 job_id: "job1"
 # maximum number of requests in flight at any given point in time
-max_inflight: 4
+max_inflight: 8
 
 flow_graph:
   s-0:
@@ -54,7 +55,7 @@ workers:
       start: 0
       end: 25
   - id: 1-0
-    device: cuda:2
+    device: cuda:3
     stage:
       start: 26
       end: 51

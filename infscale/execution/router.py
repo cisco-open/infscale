@@ -44,17 +44,13 @@ class Router:
         logger = get_logger()
 
         self.world_manager = world_manager
-        # self.device = device
 
         self._rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
         self._tx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
 
-        # a collection of receivers that receive data from me
-        self.receivers: list[WorldInfo] = []
+        # maintains the tasks of send / recv for worlds
+        self._tasks: dict[str, asyncio.Task] = {}
         self.__tx_qs: dict[int, list[tuple[WorldInfo, asyncio.Queue]]] = {}
-
-        # a collection of senders that send data to me
-        self.senders: list[WorldInfo] = []
         self.__rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)
 
         self.orphan_dq: deque = deque()
@@ -106,10 +102,13 @@ class Router:
         self._select_forwarding_policy(spec.fwd_policy)
 
         for world_info in worlds_to_add:
+            logger.info(f"world info: {world_info}")
             if world_info.me == 0:  # I am a receiver from other
-                self.senders.append(world_info)
+                task = asyncio.create_task(self._recv(world_info))
+                self._tasks[world_info.name] = task
             else:  # I am a sender to other
-                self.receivers.append(world_info)
+                task = asyncio.create_task(self._send(world_info))
+                self._tasks[world_info.name] = task
 
                 tpl = (world_info, asyncio.Queue(DEFAULT_QUEUE_SIZE))
 
@@ -120,11 +119,19 @@ class Router:
 
                 self.__tx_qs[stage_cfg.start].append(tpl)
 
-        for world_info in self.receivers:
-            _ = asyncio.create_task(self._send(world_info))
+        for world_info in worlds_to_remove:
+            # reset tx q related to a given world info
+            self.cleanup_tx_q(world_info)
 
-        for world_info in self.senders:
-            _ = asyncio.create_task(self._recv(world_info))
+            name = world_info.name
+            task = self._tasks.pop(name, None)
+            if task is None:
+                continue
+            try:
+                task.cancel()
+                logger.info(f"canceled task for world {name}")
+            except Exception as e:
+                logger.error(f"failed to cancel task for world {name}: {e}")
 
     async def _recv(self, world_info: WorldInfo) -> None:
         logger.debug(

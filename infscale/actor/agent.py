@@ -172,10 +172,10 @@ class Agent:
             logger.debug(f"no worker to start for job {job_id}")
             return
 
-        wrkrs_to_start = self.job_mgr.get_workers(job_id)
+        start_wrkrs = self.job_mgr.get_workers(job_id)
 
         for local_rank, config in enumerate(job_config.get_serve_configs()):
-            if config.stage.id not in wrkrs_to_start:
+            if config.stage.id not in start_wrkrs:
                 continue
 
             pipe, child_pipe = ctx.Pipe()
@@ -203,11 +203,12 @@ class Agent:
             logger.debug(f"no config for job {job_id}")
             return
 
-        wrkrs_to_update = self.job_mgr.get_workers(job_id, JobAction.UPDATE)
-        workers = self.worker_mgr.get_workers(job_id, wrkrs_to_update)
+        update_wrkrs = self.job_mgr.get_workers(job_id, JobAction.UPDATE)
+        workers = self.worker_mgr.get_workers(job_id, update_wrkrs)
 
-        for local_rank, config in enumerate(job_config.get_serve_configs()):
-            if config.stage.id not in wrkrs_to_update:
+        logger.debug(f"workers to update: {update_wrkrs}")
+        for config in job_config.get_serve_configs():
+            if config.stage.id not in update_wrkrs:
                 continue
 
             w = workers[config.stage.id]
@@ -215,8 +216,8 @@ class Agent:
             self.worker_mgr.send(w, msg)
 
     def _stop_workers(self, job_id: str) -> None:
-        wrkrs_to_stop = self.job_mgr.get_workers(job_id, JobAction.STOP)
-        self.worker_mgr.terminate_workers(job_id, True, wrkrs_to_stop)
+        stop_wrkrs = self.job_mgr.get_workers(job_id, JobAction.STOP)
+        self.worker_mgr.terminate_workers(job_id, True, stop_wrkrs)
 
     async def report(self):
         """Report status about resources and workers to controller."""

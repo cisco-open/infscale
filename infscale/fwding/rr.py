@@ -24,7 +24,14 @@ def select(tx_qs: list[tuple[WorldInfo, asyncio.Queue]]) -> (WorldInfo, asyncio.
     """Select tx queue in a round-robin fashion."""
     global _curr_q_idx
 
-    world_info, tx_q = tx_qs[_curr_q_idx]
+    try:
+        world_info, tx_q = tx_qs[_curr_q_idx]
+    except IndexError:
+        # IndexError can happen due to online reconfiguration (e.g., worker leave)
+        # In such a case, reset the current index and do selection again
+        _curr_q_idx = 0
+        world_info, tx_q = tx_qs[_curr_q_idx]
+
     _curr_q_idx = (_curr_q_idx + 1) % len(tx_qs)
 
     return world_info, tx_q

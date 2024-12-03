@@ -38,7 +38,12 @@ JOB_ALLOWED_ACTIONS = MappingProxyType(
     {
         JobStateEnum.READY: (JobAction.START),
         JobStateEnum.STARTED: (JobAction.STOP, JobAction.UPDATE),
-        JobStateEnum.STARTING: (JobAction.STOP),
+        # TODO: we add JobAction.UPDATE for STARTING; this is a hack
+        #       to allow job update because the state doesn't transition
+        #       into STARTED; overall the state management code needs
+        #       to be refactored so that the state mamangement becomes
+        #       more intuitive.
+        JobStateEnum.STARTING: (JobAction.STOP, JobAction.UPDATE),
         JobStateEnum.STOPPED: (JobAction.START),
         JobStateEnum.STOPPING: (),
         JobStateEnum.UPDATING: (JobAction.STOP),
@@ -112,7 +117,7 @@ class JobState:
         """Find agent with less workload."""
         if len(self.job_status) == 0:
             return None
-    
+
         return min(self.job_status, key=lambda agent_id: len(self.job_status[agent_id]))
 
     def can_update_job_state(self, job_id: str, job_action: JobAction) -> bool:

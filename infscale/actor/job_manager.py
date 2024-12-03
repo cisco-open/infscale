@@ -33,9 +33,9 @@ class JobMetaData:
     job_id: str
     config: JobConfig
     state: JobStateEnum
-    wrkrs_to_start: set[str]  # workers to start
-    wrkrs_to_update: set[str]  # workers to update
-    wrkrs_to_stop: set[str]  # workers to stop
+    start_wrkrs: set[str]  # workers to start
+    update_wrkrs: set[str]  # workers to update
+    stop_wrkrs: set[str]  # workers to stop
 
 
 class JobManager:
@@ -58,23 +58,23 @@ class JobManager:
 
         results = self.compare_configs(curr_config, config)
         # updating config for exsiting workers will be handled by each worker
-        wrkrs_to_start, wrkrs_to_update, wrkrs_to_stop = results
+        start_wrkrs, update_wrkrs, stop_wrkrs = results
 
         if config.job_id in self.jobs:
             job_data = self.jobs[config.job_id]
             job_data.config = config
             job_data.state = JobStateEnum.UPDATING
-            job_data.wrkrs_to_start = wrkrs_to_start
-            job_data.wrkrs_to_update = wrkrs_to_update
-            job_data.wrkrs_to_stop = wrkrs_to_stop
+            job_data.start_wrkrs = start_wrkrs
+            job_data.update_wrkrs = update_wrkrs
+            job_data.stop_wrkrs = stop_wrkrs
         else:
             job_data = JobMetaData(
                 config.job_id,
                 config,
                 JobStateEnum.READY,
-                wrkrs_to_start,
-                wrkrs_to_update,
-                wrkrs_to_stop,
+                start_wrkrs,
+                update_wrkrs,
+                stop_wrkrs,
             )
             self.jobs[config.job_id] = job_data
 
@@ -82,36 +82,79 @@ class JobManager:
         self, curr_config: JobConfig, new_config: JobConfig
     ) -> tuple[set[str], set[str], set[str]]:
         """Compare two flow_graph dictionaries, and return the diffs."""
-        old_cfg = set(curr_config.flow_graph.keys()) if curr_config else set()
-        new_cfg = set(new_config.flow_graph.keys())
+        old_cfg_wrkrs = set(curr_config.flow_graph.keys()) if curr_config else set()
+        new_cfg_wrkrs = set(new_config.flow_graph.keys())
 
-        wrkrs_to_start = new_cfg - old_cfg
-        wrkrs_to_stop = old_cfg - new_cfg
+        start_wrkrs = new_cfg_wrkrs - old_cfg_wrkrs
+        stop_wrkrs = old_cfg_wrkrs - new_cfg_wrkrs
 
-        wrkrs_to_update = set()
-        for key in old_cfg & new_cfg:
-            old_value = curr_config.flow_graph[key]
-            new_value = new_config.flow_graph[key]
+        update_wrkrs = set()
 
-            if len(old_value) != len(new_value):
-                wrkrs_to_update.add(key)
-                continue
-
-            for old_worker, new_worker in zip(old_value, new_value):
-                old_peers = old_worker.peers
-
+        # select workers that will be affected by workers to be started
+        for w, wrkr_info_list in new_config.flow_graph.items():
+            for wrkr_info in wrkr_info_list:
                 # TODO: remove isinstance check when the config file is being
                 #       sent through the api call
-                if isinstance(new_worker, WorkerInfo):
-                    new_peers = new_worker.peers
+                if isinstance(wrkr_info, WorkerInfo):
+                    peers = wrkr_info.peers
                 else:
-                    new_peers = new_worker["peers"]
+                    peers = wrkr_info["peers"]
 
-                if old_peers != new_peers:
-                    wrkrs_to_update.add(key)
-                    break
+                self._pick_workers(update_wrkrs, start_wrkrs, w, peers)
 
-        return wrkrs_to_start, wrkrs_to_update, wrkrs_to_stop
+        if curr_config is None:
+            return start_wrkrs, update_wrkrs, stop_wrkrs
+
+        # select workers that will be affected by workers to be stopped
+        for w, wrkr_info_list in curr_config.flow_graph.items():
+            for wrkr_info in wrkr_info_list:
+                # TODO: remove isinstance check when the config file is being
+                #       sent through the api call
+                if isinstance(wrkr_info, WorkerInfo):
+                    peers = wrkr_info.peers
+                else:
+                    peers = wrkr_info["peers"]
+
+                self._pick_workers(update_wrkrs, stop_wrkrs, w, peers)
+
+        return start_wrkrs, update_wrkrs, stop_wrkrs
+
+    def _pick_workers(
+        self,
+        res_set: set[str],
+        needles: set[str],
+        name: str,
+        peers: list[str],
+    ) -> None:
+        """Pick workers to update given needles and haystack.
+
+        The needles are workers to start or stop and the haystack is
+        name and peers.
+        """
+        if name in needles:  # in case name is in the needles
+            for peer in peers:
+                if peer in needles:
+                    # if peer is also in the needles,
+                    # the peer is not the subject of update
+                    # because it is a worker that we start or stop
+                    continue
+                res_set.add(peer)
+
+        else:  # in case name is not in the needles
+            for peer in peers:
+                if peer not in needles:
+                    continue
+
+                # if peer is in the needles,
+                # the peer is a worker that we start or stop
+                # so, name is a subect of update
+                # because name is affected by the peer
+                res_set.add(name)
+
+                # we don't need to check other peers
+                # because name is already affected by one peer
+                # so we come out of the for-loop
+                break
 
     def get_config(self, job_id: str) -> JobConfig | None:
         """Return a job config of given job name."""
@@ -129,10 +172,10 @@ class JobManager:
         #       we eed to revisit this later.
         match sort:
             case JobAction.START:
-                return self.jobs[job_id].wrkrs_to_start
+                return self.jobs[job_id].start_wrkrs
             case JobAction.UPDATE:
-                return self.jobs[job_id].wrkrs_to_update
+                return self.jobs[job_id].update_wrkrs
             case JobAction.STOP:
-                return self.jobs[job_id].wrkrs_to_stop
+                return self.jobs[job_id].stop_wrkrs
             case _:
                 raise ValueError(f"unknown sort: {sort}")
