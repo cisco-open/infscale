@@ -55,8 +55,6 @@ class Controller:
 
         self.jobs_state = JobState()
 
-        self.job_action_q = asyncio.Queue()
-
     async def _start_server(self):
         server_options = [
             ("grpc.max_send_message_length", GRPC_MAX_MESSAGE_LENGTH),
@@ -149,7 +147,15 @@ class Controller:
 
         self.jobs_state.set_job_state(job_id, req.action)
 
-        await self.job_action_q.put(req)
+        agent_id = self.jobs_state._get_available_agent_id()
+
+        if agent_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No agent found",
+            )
+        
+        await self._send_manifest_to_agent(agent_id, req)
 
         match req.action:
             case JobAction.UPDATE | JobAction.START:
@@ -157,6 +163,22 @@ class Controller:
 
             case JobAction.STOP:
                 self.jobs_state.remove_job(job_id)
+
+    async def _send_manifest_to_agent(self, agent_id: str, action: JobActionModel) -> None:
+        """Send manifest to agent."""
+        agent_context = self.contexts[agent_id]
+        context = agent_context.get_grpc_ctx()
+        job_id = action.config.job_id if action.config else action.job_id
+
+        if action.config:
+            manifest = json.dumps(asdict(action.config)).encode("utf-8")
+            payload = pb2.JobAction(
+                type=action.action, job_id=job_id, manifest=manifest
+            )
+        else:
+            payload = pb2.JobAction(type=action.action, job_id=job_id)
+
+        await context.write(payload)
 
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):
@@ -203,19 +225,5 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         agent_context.set_grpc_ctx(context)
         event = agent_context.get_grpc_ctx_event()
 
-        while True:
-            action: JobActionModel = await self.ctrl.job_action_q.get()
-            if not action:
-                continue
+        await event.wait()
 
-            job_id = action.config.job_id if action.config else action.job_id
-
-            if action.config:
-                manifest = json.dumps(asdict(action.config)).encode("utf-8")
-                payload = pb2.JobAction(
-                    type=action.action, job_id=job_id, manifest=manifest
-                )
-            else:
-                payload = pb2.JobAction(type=action.action, job_id=job_id)
-
-            yield payload

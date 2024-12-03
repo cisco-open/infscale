@@ -92,6 +92,9 @@ class JobState:
         if new_job:
             agent_id = self._get_available_agent_id()
 
+            if agent_id is None:
+                return
+
             self.job_status[agent_id][job_id] = JobStateData(
                 JobStateEnum.STARTING, JOB_ALLOWED_ACTIONS.get(JobStateEnum.STARTING)
             )
@@ -105,8 +108,11 @@ class JobState:
                 job_state, JOB_ALLOWED_ACTIONS.get(job_state)
             )
 
-    def _get_available_agent_id(self) -> str:
+    def _get_available_agent_id(self) -> str | None:
         """Find agent with less workload."""
+        if len(self.job_status) == 0:
+            return None
+    
         return min(self.job_status, key=lambda agent_id: len(self.job_status[agent_id]))
 
     def can_update_job_state(self, job_id: str, job_action: JobAction) -> bool:
