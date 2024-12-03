@@ -24,7 +24,7 @@ import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 
-logger = get_logger()
+logger = None
 
 
 @dataclass
@@ -43,6 +43,9 @@ class WorkerManager:
 
     def __init__(self):
         """Initialize an instance."""
+        global logger
+        logger = get_logger()
+
         self._workers: dict[int, WorkerMetaData] = {}
 
     def add(

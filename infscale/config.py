@@ -20,7 +20,7 @@ from dataclasses import dataclass
 
 from infscale import get_logger
 
-logger = get_logger(__name__)
+logger = None
 
 
 @dataclass
@@ -133,6 +133,8 @@ class JobConfig:
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
         serve_configs = []
+        global logger
+        logger = get_logger()
 
         workers_stage_info = {}
         for worker in self.workers:

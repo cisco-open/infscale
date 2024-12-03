@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD
 
 
-logger = get_logger()
+logger = None
 
 
 class AgentContext:
@@ -39,6 +39,9 @@ class AgentContext:
 
     def __init__(self, ctrl: Controller, id: str):
         """Initialize instance."""
+        global logger
+        logger = get_logger()
+
         self.ctrl = ctrl
         self.id: str = id
 

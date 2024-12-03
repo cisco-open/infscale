@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from torch import Tensor
 
 
-logger = get_logger()
+logger = None
 
 
 class Stage(nn.Module):
@@ -52,6 +52,8 @@ class Stage(nn.Module):
     ):
         """Initialize stage class instance."""
         super().__init__()
+        global logger
+        logger = get_logger()
 
         self.id = stage_id
 

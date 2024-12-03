@@ -22,7 +22,7 @@ from typing import Any, Callable
 
 from infscale import get_logger
 
-logger = get_logger()
+logger = None
 
 
 class Timer:
@@ -33,6 +33,9 @@ class Timer:
 
         *args and **kwargs are parameters for callback
         """
+        global logger
+        logger = get_logger()
+
         self._timeout = timeout
         self._callback = callback
         self._args = args

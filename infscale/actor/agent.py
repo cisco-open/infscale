@@ -18,6 +18,7 @@
 
 import asyncio
 import json
+import os
 
 import grpc
 import torch
@@ -35,7 +36,7 @@ from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
 from multiprocess.connection import Pipe
 
-logger = get_logger()
+logger = None
 
 service_config_json = json.dumps(
     {
@@ -74,6 +75,8 @@ class Agent:
         #       if resource (gpu memory, gpu cycle) are available
         #       explore this possibility later
         # one worker per GPU
+        global logger
+        logger = get_logger(f"agnt {os.getpid()}", f"agent-{id}.log")
 
         self.id = id
         self.endpoint = endpoint
@@ -178,10 +181,7 @@ class Agent:
             pipe, child_pipe = ctx.Pipe()
             process = ctx.Process(
                 target=_run_worker,
-                args=(
-                    local_rank,
-                    child_pipe,
-                ),
+                args=(local_rank, child_pipe, config.job_id, config.stage.id),
                 daemon=True,
             )
             process.start()
@@ -255,6 +255,6 @@ class Agent:
         await asyncio.Event().wait()
 
 
-def _run_worker(local_rank: int, child_pipe: Pipe):
-    w = Worker(local_rank, child_pipe)
+def _run_worker(local_rank: int, child_pipe: Pipe, job_id: str, wrk_id: str):
+    w = Worker(local_rank, child_pipe, job_id, wrk_id)
     w.run()

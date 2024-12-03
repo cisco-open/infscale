@@ -33,7 +33,7 @@ AutoModelType = (
     AutoModelForPreTraining | AutoModelForCausalLM | AutoModelForImageClassification
 )
 
-logger = get_logger()
+logger = None
 
 
 class ModelGroup(str, Enum):
@@ -49,6 +49,9 @@ class BaseModelMetaData:
 
     def __init__(self, name: str, config: PretrainedConfig):
         """Initialize class."""
+        global logger
+        logger = get_logger()
+
         self.name: str = name
         self.model_group = ModelGroup.UNKNOWN
         self.config: PretrainedConfig = config

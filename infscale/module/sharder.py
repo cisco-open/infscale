@@ -34,7 +34,7 @@ from infscale.module.model_metadata import BaseModelMetaData
 from torch.fx.node import Node
 from transformers.utils.fx import symbolic_trace
 
-logger = get_logger()
+logger = None
 
 
 class Sharder:
@@ -132,6 +132,9 @@ def shard_model(
         List[torch.fx.GraphModule]: The list of sharded :class:`torch.fx.GraphModule`s.
     """
     module_list: List[torch.fx.GraphModule] = []
+    
+    global logger
+    logger = get_logger()
 
     try:
         traced = symbolic_trace(model, input_names=concrete_args)

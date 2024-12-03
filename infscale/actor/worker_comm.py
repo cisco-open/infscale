@@ -24,7 +24,7 @@ from infscale import get_logger
 from infscale.actor.job_msg import Message, MessageType
 from infscale.config import ServeConfig
 
-logger = get_logger()
+logger = None
 
 
 class WorkerCommunicator:
@@ -32,6 +32,9 @@ class WorkerCommunicator:
 
     def __init__(self, pipe: connection.Connection):
         """Initialize an instance."""
+        global logger
+        logger = get_logger()
+
         self.pipe = pipe
         self.config_q = asyncio.Queue()
 
