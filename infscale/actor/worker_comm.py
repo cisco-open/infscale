@@ -75,6 +75,12 @@ class WorkerCommunicator:
                 _ = asyncio.create_task(self.config_q.put(message.content))
 
             case MessageType.TERMINATE:
-                # TODO: do the clean-up / caching before termination
+                self._close_comm()
                 logger.info("worker is terminated")
                 sys.exit()
+
+    def _close_comm(self) -> None:
+        """Close pipe communication."""
+        loop = asyncio.get_event_loop()
+        loop.remove_reader(self.pipe.fileno())
+        self.pipe.close()
