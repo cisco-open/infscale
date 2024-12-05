@@ -76,7 +76,7 @@ class Agent:
         #       explore this possibility later
         # one worker per GPU
         global logger
-        logger = get_logger(f"agnt {os.getpid()}", f"agent-{id}.log")
+        logger = get_logger(f"{os.getpid()}", f"agent-{id}.log")
 
         self.id = id
         self.endpoint = endpoint
