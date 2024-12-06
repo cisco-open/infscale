@@ -27,7 +27,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-0": [{"peers": ["1-0"]}],
@@ -40,7 +39,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-0": [{"peers": ["1-0"]}],
@@ -59,7 +57,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-0": [{"peers": ["1-0"]}],
@@ -72,7 +69,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-0": [{"peers": ["1-0"]}],
@@ -92,7 +88,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-0": [{"peers": ["1-0"]}],
@@ -106,7 +101,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-0": [{"peers": ["1-0"]}],
@@ -125,7 +119,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-0": [{"peers": ["1-0"]}],
@@ -138,7 +131,6 @@ job_config_diffs = [
             workers=[],
             name="test",
             model="model",
-            rank_map={},
             dataset=None,
             flow_graph={
                 "s-4": [{"peers": ["4-0"]}],

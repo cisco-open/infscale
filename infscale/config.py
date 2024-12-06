@@ -70,8 +70,6 @@ class ServeConfig:
 
     flow_graph: dict[str, list[WorkerInfo]]
 
-    rank_map: dict[str, int]
-
     workers_stage_info: dict[str, StageConfig]
 
     job_id: str
@@ -122,7 +120,6 @@ class JobConfig:
     name: str
     model: str
     flow_graph: dict[str, list[WorkerInfo]]
-    rank_map: dict[str, int]
     dataset: Dataset
     job_id: str
     nfaults: int = 0
@@ -152,7 +149,6 @@ class JobConfig:
                 "model": self.model,
                 "flow_graph": self.flow_graph,
                 "stage": {**item["stage"], "id": item["id"]},
-                "rank_map": self.rank_map,
                 "dataset": self.dataset,
                 "nfaults": self.nfaults,
                 "micro_batch_size": self.micro_batch_size,
