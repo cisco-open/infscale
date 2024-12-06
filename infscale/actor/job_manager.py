@@ -93,12 +93,7 @@ class JobManager:
         # select workers that will be affected by workers to be started
         for w, wrkr_info_list in new_config.flow_graph.items():
             for wrkr_info in wrkr_info_list:
-                # TODO: remove isinstance check when the config file is being
-                #       sent through the api call
-                if isinstance(wrkr_info, WorkerInfo):
-                    peers = wrkr_info.peers
-                else:
-                    peers = wrkr_info["peers"]
+                peers = wrkr_info.peers
 
                 self._pick_workers(update_wrkrs, start_wrkrs, w, peers)
 
@@ -108,12 +103,7 @@ class JobManager:
         # select workers that will be affected by workers to be stopped
         for w, wrkr_info_list in curr_config.flow_graph.items():
             for wrkr_info in wrkr_info_list:
-                # TODO: remove isinstance check when the config file is being
-                #       sent through the api call
-                if isinstance(wrkr_info, WorkerInfo):
-                    peers = wrkr_info.peers
-                else:
-                    peers = wrkr_info["peers"]
+                peers = wrkr_info.peers
 
                 self._pick_workers(update_wrkrs, stop_wrkrs, w, peers)
 

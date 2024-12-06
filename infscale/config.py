@@ -130,6 +130,15 @@ class JobConfig:
     fwd_policy: str = "random"
     max_inflight: int = 1
 
+    def __post_init__(self) -> None:
+        """Handle post init class variables."""
+        for k in list(self.flow_graph.keys()):
+            for i, item in enumerate(self.flow_graph[k]):
+                worker_info = (
+                    item if isinstance(item, WorkerInfo) else WorkerInfo(**item)
+                )
+                self.flow_graph[k][i] = worker_info
+
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
         serve_configs = []
@@ -143,7 +152,7 @@ class JobConfig:
             workers_stage_info[wid] = {**stage, "id": wid}
 
         if self.max_inflight <= 0:
-            logger.warn("max_inflight must be a positive number; using 1")
+            logger.warning("max_inflight must be a positive number; using 1")
             self.max_inflight = 1
 
         for item in self.workers:
