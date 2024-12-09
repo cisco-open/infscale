@@ -64,7 +64,6 @@ class ServeSpec(BaseModel):
     stage: StageConfig
     dataset: Dataset
     flow_graph: dict[str, list[WorkerInfo]]
-    rank_map: dict[str, int]
     device: str = "cpu"
     nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
     micro_batch_size: int = 8

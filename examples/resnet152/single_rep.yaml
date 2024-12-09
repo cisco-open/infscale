@@ -36,11 +36,6 @@ flow_graph:
       peers: [s-0]
       backend: nccl
 
-rank_map: # run worker in this rank order
-  s-0: 0
-  0-0: 1
-  1-0: 2
-
 dataset: # huggingface dataset
   path: "cifar10"
   name: ""

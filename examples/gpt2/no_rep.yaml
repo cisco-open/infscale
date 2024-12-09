@@ -22,10 +22,6 @@ flow_graph:
       peers: [s-0]
       backend: gloo
 
-rank_map: # run worker in this rank order
-  s-0: 0
-  0-0: 1
-
 dataset: # huggingface dataset
   path: fka/awesome-chatgpt-prompts
   name: ""
