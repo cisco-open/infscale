@@ -27,4 +27,4 @@ def test_datasets(model_name, dataset_info):
 
     dataset_path, dataset_name, split = dataset_info
     dataset = HuggingFaceDataset(mmd, dataset_path, dataset_name, split)
-    assert dataset.sample
+    assert dataset.dataset

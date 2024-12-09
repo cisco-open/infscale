@@ -27,8 +27,8 @@ def test_shard(model_name, dataset_info):
     assert mmd is not None
 
     dataset_path, dataset_name, split = dataset_info
-    dataset = HuggingFaceDataset(mmd, dataset_path, dataset_name, split)
-    assert dataset.sample
+    _ = HuggingFaceDataset(mmd, dataset_path, dataset_name, split)
+    assert mmd.trace_inputs
 
-    layers = Sharder.shard(mmd, list(dataset.sample.keys()))
+    layers = Sharder.shard(mmd)
     assert layers is not None and len(layers) > 0
