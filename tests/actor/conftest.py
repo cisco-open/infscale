@@ -29,9 +29,30 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-0": [{"peers": ["1-0"]}],
-                "0-0": [{"peers": ["s-0"]}],
-                "1-0": [{"peers": ["0-0"]}],
+                "s-0": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["1-0"],
+                    }
+                ],
+                "0-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "1-0": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["0-0"],
+                    }
+                ],
             },
         ),
         JobConfig(
@@ -41,16 +62,37 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-0": [{"peers": ["1-0"]}],
-                "0-0": [{"peers": ["s-0"]}],
-                "1-0": [{"peers": ["0-0"]}],
+                "s-0": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["1-0"],
+                    }
+                ],
+                "0-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "1-0": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["0-0"],
+                    }
+                ],
             },
         ),
         [],  # Expected terminate_ids
         [],  # Expected start_ids
         [],  # Expected updated_ids
     ),
-    # # Test case 2: One worker updated, one started
+    # # Test case 2: Two workers updated, one started
     (
         JobConfig(
             job_id="job1",
@@ -59,9 +101,30 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-0": [{"peers": ["1-0"]}],
-                "0-0": [{"peers": ["s-0"]}],
-                "1-0": [{"peers": ["0-0"]}],
+                "s-0": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["1-0"],
+                    }
+                ],
+                "0-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "1-0": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["0-0"],
+                    }
+                ],
             },
         ),
         JobConfig(
@@ -71,17 +134,50 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-0": [{"peers": ["1-0"]}],
-                "0-0": [{"peers": ["s-0"]}],
-                "0-1": [{"peers": ["s-0"]}],
-                "1-0": [{"peers": ["0-0"]}, {"peers": ["0-1"]}],
+                "s-0": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["1-0"],
+                    }
+                ],
+                "0-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "0-1": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "1-0": [
+                    {
+                        "name": "w3",
+                        "addr": "127.0.0.1",
+                        "port": 32500,
+                        "peers": ["0-0"],
+                    },
+                    {
+                        "name": "w4",
+                        "addr": "127.0.0.1",
+                        "port": 33500,
+                        "peers": ["0-1"],
+                    }],
             },
         ),
         [],  # Expected terminate_ids
         ["0-1"],  # Expected start_ids
-        ["1-0"],  # Expected updated_ids
+        ["1-0", "s-0"],  # Expected updated_ids
     ),
-    # Test case 3: One worker terminated, one updated
+    # Test case 3: One worker terminated, two updated
     (
         JobConfig(
             job_id="job1",
@@ -90,10 +186,43 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-0": [{"peers": ["1-0"]}],
-                "0-0": [{"peers": ["s-0"]}],
-                "0-1": [{"peers": ["s-0"]}],
-                "1-0": [{"peers": ["0-0"]}, {"peers": ["0-1"]}],
+                "s-0": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["1-0"],
+                    }
+                ],
+                "0-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "0-1": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "1-0": [
+                    {
+                        "name": "w3",
+                        "addr": "127.0.0.1",
+                        "port": 32500,
+                        "peers": ["0-0"],
+                    },
+                    {
+                        "name": "w4",
+                        "addr": "127.0.0.1",
+                        "port": 33500,
+                        "peers": ["0-1"],
+                    }],
             },
         ),
         JobConfig(
@@ -103,14 +232,35 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-0": [{"peers": ["1-0"]}],
-                "0-0": [{"peers": ["s-0"]}],
-                "1-0": [{"peers": ["0-0"]}],
+                "s-0": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["1-0"],
+                    }
+                ],
+                "0-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "1-0": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["0-0"],
+                    }
+                ],
             },
         ),
         ["0-1"],  # Expected terminate_ids
         [],  # Expected start_ids
-        ["1-0"],  # Expected updated_ids
+        ["1-0", "s-0"],  # Expected updated_ids
     ),
     # # Test case 4: All workers updated
     (
@@ -121,9 +271,30 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-0": [{"peers": ["1-0"]}],
-                "0-0": [{"peers": ["s-0"]}],
-                "1-0": [{"peers": ["0-0"]}],
+                "s-0": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["1-0"],
+                    }
+                ],
+                "0-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-0"],
+                    }
+                ],
+                "1-0": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["0-0"],
+                    }
+                ],
             },
         ),
         JobConfig(
@@ -133,9 +304,30 @@ job_config_diffs = [
             model="model",
             dataset=None,
             flow_graph={
-                "s-4": [{"peers": ["4-0"]}],
-                "2-0": [{"peers": ["s-4"]}],
-                "4-0": [{"peers": ["2-0"]}],
+                "s-4": [
+                    {
+                        "name": "w0",
+                        "addr": "127.0.0.1",
+                        "port": 29500,
+                        "peers": ["4-0"],
+                    }
+                ],
+                "2-0": [
+                    {
+                        "name": "w1",
+                        "addr": "127.0.0.1",
+                        "port": 30500,
+                        "peers": ["s-4"],
+                    }
+                ],
+                "4-0": [
+                    {
+                        "name": "w2",
+                        "addr": "127.0.0.1",
+                        "port": 31500,
+                        "peers": ["2-0"],
+                    }
+                ],
             },
         ),
         ["s-0", "0-0", "1-0"],  # Expected terminate_ids
