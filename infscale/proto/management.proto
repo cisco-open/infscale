@@ -30,6 +30,7 @@ message JobAction {
 message RegReq {
   string id = 1; // a unique string for an agent:
                  // ip address, host name or random string
+  string ip = 2; // ip address of the agent
 }
 
 message RegRes {

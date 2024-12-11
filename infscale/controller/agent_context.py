@@ -37,13 +37,14 @@ logger = None
 class AgentContext:
     """Agent Context class."""
 
-    def __init__(self, ctrl: Controller, id: str):
+    def __init__(self, ctrl: Controller, id: str, ip: str):
         """Initialize instance."""
         global logger
         logger = get_logger()
 
         self.ctrl = ctrl
         self.id: str = id
+        self.ip: str = ip
 
         self.grpc_ctx = None
         self.grpc_ctx_event = asyncio.Event()

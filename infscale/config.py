@@ -50,9 +50,9 @@ class WorkerInfo:
     """Specification about worker info in the flow graph."""
 
     name: str
-    addr: str
     port: int
     peers: list[str]
+    addr: str = "127.0.0.1"
     backend: str = "gloo"
 
 

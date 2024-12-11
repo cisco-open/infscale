@@ -19,6 +19,7 @@
 import asyncio
 import json
 import os
+import socket
 
 import grpc
 import torch
@@ -117,8 +118,9 @@ class Agent:
         await self.stub.update(req)
 
     async def _init_controller_session(self) -> bool:
+        ip_address = self._get_ip_address()
         try:
-            reg_req = pb2.RegReq(id=self.id)  # register agent
+            reg_req = pb2.RegReq(id=self.id, ip=ip_address)  # register agent
             reg_res = await self.stub.register(reg_req)
         except grpc.aio.AioRpcError as e:
             logger.debug(f"can't register: {e}")
@@ -155,6 +157,12 @@ class Agent:
                 continue
 
             self._handle_job_action(action)
+
+    def _get_ip_address(self) -> str:
+        """Get ip address of agent"""
+        hostname = socket.gethostname()
+        ip_address = socket.gethostbyname(hostname)
+        return ip_address
 
     def _handle_job_action(self, action: pb2.JobAction) -> None:
         """Handle job-related action."""

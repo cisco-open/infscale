@@ -14,13 +14,11 @@ max_inflight: 4
 flow_graph:
   s-0:
     - name: w0
-      addr: "127.0.0.1"
       port: 29500
       peers: [0-0]
       backend: gloo
   0-0:
     - name: w1
-      addr: "127.0.0.1"
       port: 30500
       peers: [s-0]
       backend: gloo

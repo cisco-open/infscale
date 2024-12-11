@@ -26,6 +26,7 @@ from fastapi import HTTPException, Request, status
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
+from infscale.config import JobConfig
 from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
                                 GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
@@ -83,18 +84,18 @@ class Controller:
 
         await self.apiserver.run()
 
-    async def handle_register(self, id: str) -> tuple[bool, str]:
+    async def handle_register(self, req: pb2.RegReq) -> tuple[bool, str]:
         """Handle registration message."""
-        logger.debug(f"recevied id = {id}")
-        if id in self.contexts:
-            return False, f"{id} already registered"
+        logger.debug(f"recevied req = {req}")
+        if req.id in self.contexts:
+            return False, f"{req.id} already registered"
 
-        self.contexts[id] = AgentContext(self, id)
+        self.contexts[req.id] = AgentContext(self, req.id, req.ip)
         # since registration is done, let's keep agent context alive
-        self.contexts[id].keep_alive()
-        self.jobs_state.set_agent(id)
+        self.contexts[req.id].keep_alive()
+        self.jobs_state.set_agent(req.id)
 
-        logger.debug(f"successfully registered {id}")
+        logger.debug(f"successfully registered {req.id}")
 
         return True, ""
 
@@ -179,6 +180,7 @@ class Controller:
         job_id = action.config.job_id if action.config else action.job_id
 
         if action.config:
+            self._update_conn_info(action.config, agent_context.ip)
             manifest = json.dumps(asdict(action.config)).encode("utf-8")
             payload = pb2.JobAction(
                 type=action.action, job_id=job_id, manifest=manifest
@@ -187,6 +189,13 @@ class Controller:
             payload = pb2.JobAction(type=action.action, job_id=job_id)
 
         await context.write(payload)
+    
+    def _update_conn_info(self, config: JobConfig, ip: str) -> JobConfig:
+        """Update connection info of flow_graph"""
+        for worker_list in config.flow_graph.values():
+            for worker in worker_list:
+                logger.debug(f"updating addr for worker '{worker.name}' to '{id}'")
+                worker.addr = ip
 
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):
@@ -200,7 +209,7 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         self, request: pb2.RegReq, unused_context: ServicerContext
     ) -> pb2.RegRes:
         """Register agent in the controller."""
-        status, reason = await self.ctrl.handle_register(request.id)
+        status, reason = await self.ctrl.handle_register(request)
         return pb2.RegRes(status=status, reason=reason)
 
     async def heartbeat(
