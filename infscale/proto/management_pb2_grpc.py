@@ -53,6 +53,11 @@ class ManagementRouteStub(object):
         Args:
             channel: A grpc.Channel.
         """
+        self.job_setup = channel.unary_unary(
+                '/management.ManagementRoute/job_setup',
+                request_serializer=management__pb2.JobSetupReq.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
         self.register = channel.unary_unary(
                 '/management.ManagementRoute/register',
                 request_serializer=management__pb2.RegReq.SerializeToString,
@@ -79,6 +84,13 @@ class ManagementRouteServicer(object):
     """route for management between controller and agent
     agent is client and controller is server (servicer)
     """
+
+    def job_setup(self, request, context):
+        """agent sends available port numbers to the controller
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
 
     def register(self, request, context):
         """agent uses register rpc to register itself in the controller
@@ -111,6 +123,11 @@ class ManagementRouteServicer(object):
 
 def add_ManagementRouteServicer_to_server(servicer, server):
     rpc_method_handlers = {
+            'job_setup': grpc.unary_unary_rpc_method_handler(
+                    servicer.job_setup,
+                    request_deserializer=management__pb2.JobSetupReq.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
             'register': grpc.unary_unary_rpc_method_handler(
                     servicer.register,
                     request_deserializer=management__pb2.RegReq.FromString,
@@ -143,6 +160,33 @@ class ManagementRoute(object):
     """route for management between controller and agent
     agent is client and controller is server (servicer)
     """
+
+    @staticmethod
+    def job_setup(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/management.ManagementRoute/job_setup',
+            management__pb2.JobSetupReq.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
 
     @staticmethod
     def register(request,

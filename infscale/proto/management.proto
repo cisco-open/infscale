@@ -7,6 +7,8 @@ import "google/protobuf/empty.proto";
 // route for management between controller and agent
 // agent is client and controller is server (servicer)
 service ManagementRoute {
+  // agent sends available port numbers to the controller
+  rpc job_setup(JobSetupReq) returns (google.protobuf.Empty) {}
   // agent uses register rpc to register itself in the controller
   rpc register(RegReq) returns (RegRes) {}
   // agent sends heart beat to the controller to signal its liveness
@@ -24,7 +26,13 @@ message AgentID {
 message JobAction {
   string type = 1;
   string job_id = 2;
-  optional bytes manifest = 3;
+  optional bytes manifest = 3; 
+}
+
+message JobSetupReq {
+  repeated int32 ports = 1; // a list of available port numbers
+  string job_id = 2; 
+  string agent_id = 3;
 }
 
 message RegReq {

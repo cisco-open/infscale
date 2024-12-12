@@ -295,21 +295,22 @@ class Pipeline:
                 else:
                     continue
 
-                name, backend, addr, port = (
+                name, backend, addr, data_port, ctrl_port = (
                     wrk_info.name,
                     wrk_info.backend,
                     wrk_info.addr,
-                    wrk_info.port,
+                    wrk_info.data_port,
+                    wrk_info.ctrl_port,
                 )
 
                 world_size = len(wrk_info.peers) + 1
-                ctrl_ch = CtrlCh(my_rank, world_size, addr, port + 1)
+                ctrl_ch = CtrlCh(my_rank, world_size, addr, ctrl_port)
 
                 data = {
                     "name": name,
                     "size": world_size,
                     "addr": addr,
-                    "port": port,
+                    "port": data_port,
                     "backend": backend,
                     "channel": ctrl_ch,
                     "my_id": my_id,

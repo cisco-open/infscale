@@ -20,6 +20,7 @@ from enum import Enum
 from types import MappingProxyType
 from typing import Optional, Tuple
 
+from infscale.config import JobConfig
 from infscale.controller.ctrl_dtype import JobAction
 
 
@@ -56,7 +57,10 @@ class JobStateData:
     """JobStateData dataclass."""
 
     state: JobStateEnum
-    possible_actions: Optional[Tuple[JobAction, ...]]
+    config: JobConfig = None
+    num_new_workers: int = 0
+    new_config: JobConfig = None
+    ports: list[int] = None
 
 
 class JobState:
@@ -78,40 +82,84 @@ class JobState:
         """Set agent ID in job status dict."""
         self.job_status[agent_id] = dict()
 
-    def _is_new_job(self, job_id: str, job_action: JobAction) -> bool:
-        return self._get_job_agent_ids(job_id) is None and job_action == JobAction.START
-
     def job_exists(self, job_id: str) -> bool:
+        """Check whether job exists or not."""
         for jobs in self.job_status.values():
             if job_id in jobs:
                 return True
 
         return False
 
+    def get_config(self, agent_id: str, job_id: str) -> JobConfig:
+        """Get job config or raise ValueError."""
+        if not self._has_config(agent_id, job_id):
+            raise ValueError(f"no config available for job: {job_id}")
+
+        return self.job_status[agent_id][job_id].config
+
+    def process_cfg(self, agent_id: str, job_id: str, new_cfg: JobConfig) -> None:
+        """Process received config from controller."""
+        job_state = self.get_job_state(agent_id, job_id)
+
+        job_state.num_new_workers = self._get_new_workers_count(job_state.config, new_cfg)
+
+        if job_state.config is None:
+            job_state.config = new_cfg
+        else:
+            job_state.new_config = new_cfg
+
+    def _get_new_workers_count(self, config: JobConfig, new_cfg: JobConfig) -> int:
+        """Return the number of new workers between and old and new config."""
+        curr_workers = []
+        if config is not None:
+            curr_workers = [
+                w.name for w_list in config.flow_graph.values() for w in w_list
+            ]
+        new_workers = [w.name for w_list in new_cfg.flow_graph.values() for w in w_list]
+
+        return len(set(new_workers) - set(curr_workers))
+
+    def get_job_state(self, agent_id: str, job_id: str) -> JobStateData:
+        """Return the state of a job."""
+        return self.job_status[agent_id][job_id]
+
+    def set_ports(self, agent_id: str, job_id: str, ports: list[int]) -> None:
+        """Set ports for a job."""
+        state = self.get_job_state(agent_id, job_id)
+
+        state.ports = ports
+
+    def _has_config(self, agent_id: str, job_id: str) -> bool:
+        if agent_id not in self.job_status:
+            return False
+
+        if job_id not in self.job_status[agent_id]:
+            return False
+
+        state = self.get_job_state(agent_id, job_id)
+
+        return state.config is not None
+
     def set_job_state(
-        self, job_id: str, job_action: JobAction, job_state: JobStateEnum = None
+        self,
+        agent_id: str,
+        job_id: str,
+        job_state: JobStateEnum = JobStateEnum.READY,
     ) -> None:
         """Update job state."""
-        new_job = self._is_new_job(job_id, job_action)
+        agent_ids = self._get_job_agent_ids(job_id)
 
-        if new_job:
-            agent_id = self._get_available_agent_id()
-
-            if agent_id is None:
-                return
-
+        # new job
+        if agent_ids is None:
             self.job_status[agent_id][job_id] = JobStateData(
-                JobStateEnum.STARTING, JOB_ALLOWED_ACTIONS.get(JobStateEnum.STARTING)
+                job_state,
             )
 
             return
 
-        agent_ids = self._get_job_agent_ids(job_id)
-
         for agent_id in agent_ids:
-            self.job_status[agent_id][job_id] = JobStateData(
-                job_state, JOB_ALLOWED_ACTIONS.get(job_state)
-            )
+            state = self.get_job_state(agent_id, job_id)
+            state.state = job_state
 
     def _get_available_agent_id(self) -> str | None:
         """Find agent with less workload."""
@@ -127,7 +175,8 @@ class JobState:
             return True
 
         for agent_id in agent_ids:
-            if job_action in self.job_status[agent_id][job_id].possible_actions:
+            job_state = self.job_status[agent_id][job_id].state
+            if job_action in JOB_ALLOWED_ACTIONS.get(job_state):
                 return True
 
         return False

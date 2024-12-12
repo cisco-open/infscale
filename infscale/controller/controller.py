@@ -27,12 +27,11 @@ from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
 from infscale.config import JobConfig
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
-from infscale.controller.job_state import JobState
+from infscale.controller.job_state import JobState, JobStateEnum
 from infscale.controller.job_state2 import JobStateContext
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
@@ -64,6 +63,7 @@ class Controller:
         self.jobs_state = JobState()
 
         self.job_state: dict[str, JobStateContext] = dict()
+        self.job_setup_event = asyncio.Event()
 
     async def _start_server(self):
         server_options = [
@@ -157,48 +157,152 @@ class Controller:
                 detail=f"Action '{req.action}' on job '{job_id}' is not allowed",
             )
 
-        self.jobs_state.set_job_state(job_id, req.action)
-
-        agent_id = self.jobs_state._get_available_agent_id()
+        agent_id = self._get_agent_id(req.action, job_id)
 
         if agent_id is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No agent found",
             )
-        
-        await self._send_manifest_to_agent(agent_id, req)
 
         match req.action:
-            case JobAction.UPDATE | JobAction.START:
-                pass
+            case JobAction.START | JobAction.UPDATE:
+                job_state = (
+                    JobStateEnum.STARTING
+                    if req.action == JobAction.START
+                    else JobStateEnum.UPDATING
+                )
+                self.jobs_state.set_job_state(
+                    agent_id=agent_id,
+                    job_id=job_id,
+                    job_state=job_state,
+                )
+                self.jobs_state.process_cfg(agent_id, job_id, req.config)
+
+                # fetch port numbers from agent
+                await self._job_setup(agent_id, req.config)
+
+                await self._patch_job_cfg(agent_id, job_id)
+
+                # schedule config transfer to agent after job setup is done
+                await self._send_config_to_agent(agent_id, req)
 
             case JobAction.STOP:
+                self.jobs_state.set_job_state(
+                    agent_id=agent_id,
+                    job_id=job_id,
+                    job_state=JobStateEnum.STOPPING,
+                )
                 self.jobs_state.remove_job(job_id)
 
-    async def _send_manifest_to_agent(self, agent_id: str, action: JobActionModel) -> None:
-        """Send manifest to agent."""
+    def _get_agent_id(self, job_action: JobAction, job_id: str) -> list[str] | None:
+        """Return agent id for a job."""
+        if job_action == JobAction.START:
+            # TODO: add support for multiple agent ids
+            agent_id = self.jobs_state._get_available_agent_id()
+            return agent_id
+
+        if job_action == JobAction.UPDATE:
+            # TODO: add support for multiple agent ids
+            agent_ids = self.jobs_state._get_job_agent_ids(job_id)
+            return agent_ids[0] if agent_ids is not None else None
+
+    async def _job_setup(self, agent_id: str, config: JobConfig) -> None:
+        """Send job setup request to agent."""
+        job_state = self.jobs_state.get_job_state(agent_id, config.job_id)
+
+        if job_state.num_new_workers <= 0:  # no new workers to ask for ports
+            self.job_setup_event.set()
+
+            return
+
+        # we need two sets of ports for each worker for channel connection and multiworld connection
+        port_count_bytes = (job_state.num_new_workers * 2).to_bytes(1, byteorder="big")
+
         agent_context = self.contexts[agent_id]
         context = agent_context.get_grpc_ctx()
-        job_id = action.config.job_id if action.config else action.job_id
 
-        if action.config:
-            self._update_conn_info(action.config, agent_context.ip)
-            manifest = json.dumps(asdict(action.config)).encode("utf-8")
-            payload = pb2.JobAction(
-                type=action.action, job_id=job_id, manifest=manifest
-            )
-        else:
-            payload = pb2.JobAction(type=action.action, job_id=job_id)
+        payload = pb2.JobAction(
+            type=JobAction.SETUP, job_id=config.job_id, manifest=port_count_bytes
+        )
 
         await context.write(payload)
-    
-    def _update_conn_info(self, config: JobConfig, ip: str) -> JobConfig:
-        """Update connection info of flow_graph"""
-        for worker_list in config.flow_graph.values():
+
+    async def _send_config_to_agent(
+        self, agent_id: str, action: JobActionModel
+    ) -> None:
+        """Send config to agent."""
+        job_id = action.config.job_id if action.config else action.job_id
+
+        agent_context = self.contexts[agent_id]
+        context = agent_context.get_grpc_ctx()
+        config = self.jobs_state.get_config(agent_id, job_id)
+
+        manifest_bytes = json.dumps(asdict(config)).encode("utf-8")
+
+        payload = pb2.JobAction(
+            type=action.action, job_id=job_id, manifest=manifest_bytes
+        )
+
+        await context.write(payload)
+
+    def handle_job_ports(self, req: pb2.JobSetupReq) -> JobConfig:
+        """Patch config with connection info received from agent."""
+        self.jobs_state.set_ports(req.agent_id, req.job_id, req.ports)
+        self.job_setup_event.set()
+
+    async def _patch_job_cfg(
+        self,
+        agent_id: str,
+        job_id: str,
+    ) -> None:
+        """Patch config for updated job"""
+        await self.job_setup_event.wait()
+
+        job_state = self.jobs_state.get_job_state(agent_id, job_id)
+        config = job_state.config
+        new_config = job_state.new_config
+        ports = job_state.ports
+
+        port_iter = None
+        if ports is not None:
+            # there might be a case when new config has less number of workers
+            port_iter = iter(ports)
+
+        # step 1: get worker ports from the initial config
+        worker_ports = {}
+
+        if new_config is None:
+            new_config = config
+        else:
+            for worker_list in config.flow_graph.values():
+                for worker in worker_list:
+                    worker_name = worker.name
+                    worker_ports[worker_name] = {
+                        "data_port": worker.data_port,
+                        "ctrl_port": worker.ctrl_port,
+                    }
+
+        # step 2: patch new config with existing workers ports and assign ports to new ones
+        for worker_list in new_config.flow_graph.values():
             for worker in worker_list:
-                logger.debug(f"updating addr for worker '{worker.name}' to '{id}'")
-                worker.addr = ip
+                worker.addr = self.contexts[agent_id].ip
+                if worker.name in worker_ports:
+                    # keep existing ports
+                    worker.data_port = worker_ports[worker.name]["data_port"]
+                    worker.ctrl_port = worker_ports[worker.name]["ctrl_port"]
+                else:
+                    # assign new ports to new workers
+                    worker.data_port = next(port_iter)
+                    worker.ctrl_port = next(port_iter)
+
+        job_state.config = new_config
+        job_state.new_config = None
+        job_state.num_new_workers = 0
+        job_state.ports = None
+
+        # block patch until new config is received
+        self.job_setup_event.clear()
 
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):
@@ -207,6 +311,14 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     def __init__(self, ctrl: Controller):
         """Initialize controller servicer."""
         self.ctrl = ctrl
+
+    async def job_setup(
+        self, req: pb2.JobSetupReq, unused_context: ServicerContext
+    ) -> None:
+        """Handle job setup from agent."""
+        self.ctrl.handle_job_ports(req)
+
+        return empty_pb2.Empty()
 
     async def register(
         self, request: pb2.RegReq, unused_context: ServicerContext
@@ -246,4 +358,3 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         event = agent_context.get_grpc_ctx_event()
 
         await event.wait()
-

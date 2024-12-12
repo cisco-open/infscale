@@ -33,9 +33,10 @@ class ReqType(str, Enum):
 class JobAction(str, Enum):
     """Enum class for request type."""
 
-    START = "start"
-    STOP = "stop"
-    UPDATE = "update"
+    START = "start"   # CLI - Controller start job action
+    STOP = "stop"     # CLI - Controller stop job action
+    UPDATE = "update" # CLI - Controller update job action
+    SETUP = "setup"   # Controller - Agent setup job, assign port numbers to workers
 
 
 class JobActionModel(BaseModel):
