@@ -17,12 +17,12 @@ flow_graph:
     - name: w0
       port: 29500
       peers: [1-0]
-      backend: nccl
+      backend: gloo
   0-0:
     - name: w1
       port: 30500
       peers: [s-0]
-      backend: nccl
+      backend: gloo
   1-0:
     - name: w2
       port: 31500
@@ -36,7 +36,7 @@ dataset: # huggingface dataset
 
 workers:
   - id: s-0
-    device: cuda:0
+    device: cpu
     stage:
       start: -1
       end: -1
