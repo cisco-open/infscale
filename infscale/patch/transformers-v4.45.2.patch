@@ -1,7 +1,7 @@
-diff --git a/src/transformers/models/llama/modeling_llama.py b/src/transformers/models/llama/modeling_llama.py
+diff --git a/transformers/models/llama/modeling_llama.py b/transformers/models/llama/modeling_llama.py
 index 73b6bcd8b..18d8e4caa 100644
---- a/src/transformers/models/llama/modeling_llama.py
-+++ b/src/transformers/models/llama/modeling_llama.py
+--- a/transformers/models/llama/modeling_llama.py
++++ b/transformers/models/llama/modeling_llama.py
 @@ -45,6 +45,7 @@ from ...utils import (
      add_start_docstrings,
      add_start_docstrings_to_model_forward,
@@ -19,10 +19,10 @@ index 73b6bcd8b..18d8e4caa 100644
              return_legacy_cache = True
              if past_key_values is None:
                  past_key_values = DynamicCache()
-diff --git a/src/transformers/utils/fx.py b/src/transformers/utils/fx.py
+diff --git a/transformers/utils/fx.py b/transformers/utils/fx.py
 index c78b4c34c..bb674a3ae 100755
---- a/src/transformers/utils/fx.py
-+++ b/src/transformers/utils/fx.py
+--- a/transformers/utils/fx.py
++++ b/transformers/utils/fx.py
 @@ -1049,23 +1049,14 @@ class HFTracer(Tracer):
              inputs_dict[input_name] = torch.zeros(mask_shape, dtype=torch.long, device=device)
          elif "ids" in input_name:

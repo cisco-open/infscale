@@ -16,6 +16,7 @@ installed in your system.
 
 * [PyTorch](https://pypi.org/project/torch/2.4.0/) version: `2.4.0`
 * [PyMultiWorld](https://pypi.org/project/multiworld/) version: >= `0.2.1`
+* [Transformers](https://pypi.org/project/transformers/) version: `4.45.2`
 
 ## Installation
 
@@ -26,6 +27,17 @@ pip install .
 ```
 
 This will install dependencies as well as InfScale package.
+
+## Patch Transformers
+
+Locate the patch file for Transformers 4.52.2 by running `python -c "import site; print(site.getsitepackages())"`.
+The command will produce a list of site-packages paths of a Python environment (e.g., `['/home/user1/miniconda3/envs/pytorch-dev/lib/python3.10/site-packages']`).
+Let SITE_PACAKGES denote one of the paths. Then, run the following command:
+
+```bash
+cd SITE_PACKAGES
+patch -p1 < infscale/patch/transformers-v4.45.2.patch
+```
 
 ## Running development code
 
