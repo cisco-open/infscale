@@ -108,7 +108,7 @@ class ServeConfig:
                 )
                 self.flow_graph[k][i] = worker_info
 
-                if worker_info.backend == "nccl":
+                if self.stage.id == k and worker_info.backend == "nccl":
                     assert "cuda" in self.device, "nccl requires cuda device"
 
 
