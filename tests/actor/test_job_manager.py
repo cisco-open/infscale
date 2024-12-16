@@ -14,8 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from infscale.config import compare_configs
 import pytest
-from infscale.actor.job_manager import JobManager
 from tests.actor.conftest import job_config_diffs
 
 
@@ -30,8 +30,7 @@ def test_compare_configs(
     expected_start_ids,
     expected_updated_ids,
 ):
-    job_mgr = JobManager()
-    results = job_mgr.compare_configs(old_config, new_config)
+    results = compare_configs(old_config, new_config)
     start_ids, updated_ids, terminate_ids = results
 
     assert set(start_ids) == set(expected_start_ids)

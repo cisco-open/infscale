@@ -19,7 +19,7 @@
 from dataclasses import dataclass
 
 from infscale import get_logger
-from infscale.config import JobConfig, WorkerInfo
+from infscale.config import JobConfig, WorkerInfo, compare_configs
 from infscale.controller.ctrl_dtype import JobAction
 from infscale.controller.job_state import JobStateEnum
 
@@ -56,7 +56,7 @@ class JobManager:
         if config.job_id in self.jobs:
             curr_config = self.jobs[config.job_id].config
 
-        results = self.compare_configs(curr_config, config)
+        results = compare_configs(curr_config, config)
         # updating config for exsiting workers will be handled by each worker
         start_wrkrs, update_wrkrs, stop_wrkrs = results
 
@@ -77,74 +77,6 @@ class JobManager:
                 stop_wrkrs,
             )
             self.jobs[config.job_id] = job_data
-
-    def compare_configs(
-        self, curr_config: JobConfig, new_config: JobConfig
-    ) -> tuple[set[str], set[str], set[str]]:
-        """Compare two flow_graph dictionaries, and return the diffs."""
-        old_cfg_wrkrs = set(curr_config.flow_graph.keys()) if curr_config else set()
-        new_cfg_wrkrs = set(new_config.flow_graph.keys())
-
-        start_wrkrs = new_cfg_wrkrs - old_cfg_wrkrs
-        stop_wrkrs = old_cfg_wrkrs - new_cfg_wrkrs
-
-        update_wrkrs = set()
-
-        # select workers that will be affected by workers to be started
-        for w, wrkr_info_list in new_config.flow_graph.items():
-            for wrkr_info in wrkr_info_list:
-                peers = wrkr_info.peers
-
-                self._pick_workers(update_wrkrs, start_wrkrs, w, peers)
-
-        if curr_config is None:
-            return start_wrkrs, update_wrkrs, stop_wrkrs
-
-        # select workers that will be affected by workers to be stopped
-        for w, wrkr_info_list in curr_config.flow_graph.items():
-            for wrkr_info in wrkr_info_list:
-                peers = wrkr_info.peers
-
-                self._pick_workers(update_wrkrs, stop_wrkrs, w, peers)
-
-        return start_wrkrs, update_wrkrs, stop_wrkrs
-
-    def _pick_workers(
-        self,
-        res_set: set[str],
-        needles: set[str],
-        name: str,
-        peers: list[str],
-    ) -> None:
-        """Pick workers to update given needles and haystack.
-
-        The needles are workers to start or stop and the haystack is
-        name and peers.
-        """
-        if name in needles:  # in case name is in the needles
-            for peer in peers:
-                if peer in needles:
-                    # if peer is also in the needles,
-                    # the peer is not the subject of update
-                    # because it is a worker that we start or stop
-                    continue
-                res_set.add(peer)
-
-        else:  # in case name is not in the needles
-            for peer in peers:
-                if peer not in needles:
-                    continue
-
-                # if peer is in the needles,
-                # the peer is a worker that we start or stop
-                # so, name is a subect of update
-                # because name is affected by the peer
-                res_set.add(name)
-
-                # we don't need to check other peers
-                # because name is already affected by one peer
-                # so we come out of the for-loop
-                break
 
     def get_config(self, job_id: str) -> JobConfig | None:
         """Return a job config of given job name."""
