@@ -27,6 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install .
+          pip install pytest
 
       # step 4: run tests
       - name: Run tests with pytest
