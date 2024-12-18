@@ -33,6 +33,7 @@ from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
 from infscale.controller.job_state import JobState
+from infscale.controller.job_state2 import JobStateContext
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -61,6 +62,8 @@ class Controller:
         self.apiserver = ApiServer(self, apiport)
 
         self.jobs_state = JobState()
+
+        self.job_state: dict[str, JobStateContext] = dict()
 
     async def _start_server(self):
         server_options = [
