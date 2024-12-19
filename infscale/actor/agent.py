@@ -29,7 +29,7 @@ from infscale.actor.job_manager import JobManager
 from infscale.actor.job_msg import Message, MessageType, WorkerStatusMessage
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerInfo
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.controller.ctrl_dtype import JobAction
 from infscale.monitor.gpu import GpuMonitor
@@ -80,9 +80,11 @@ class Agent:
         logger = get_logger(f"{os.getpid()}", f"agent-{id}.log")
 
         self.id = id
+        self.ip_address = self._get_ip_address()
         self.endpoint = endpoint
         self.job_mgr = JobManager()
         self.worker_mgr = WorkerManager()
+        self.wrk_ports: dict[int, socket.socket] = dict()
 
         self.n_workers = torch.cuda.device_count()
 
@@ -118,9 +120,8 @@ class Agent:
         await self.stub.update(req)
 
     async def _init_controller_session(self) -> bool:
-        ip_address = self._get_ip_address()
         try:
-            reg_req = pb2.RegReq(id=self.id, ip=ip_address)  # register agent
+            reg_req = pb2.RegReq(id=self.id, ip=self.ip_address)  # register agent
             reg_res = await self.stub.register(reg_req)
         except grpc.aio.AioRpcError as e:
             logger.debug(f"can't register: {e}")
@@ -164,6 +165,39 @@ class Agent:
         ip_address = socket.gethostbyname(hostname)
         return ip_address
 
+    def _reserve_ports(self, port_count: int) -> list[str]:
+        """Reserve available ports based on number of workers."""
+        available_ports = []
+        while len(available_ports) < port_count:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                try:
+                    s.bind((self.ip_address, 0))
+                    port = s.getsockname()[1]
+                except OSError:
+                    pass
+                else:
+                    self.wrk_ports[port] = s
+                    available_ports.append(port)
+
+        return available_ports
+
+    def _release_ports(self, flow_graph: dict[str, list[WorkerInfo]]):
+        for wrkr_info_list in flow_graph.values():
+            for wrkr_info in wrkr_info_list:
+                data_port, ctrl_port = wrkr_info.data_port, wrkr_info.ctrl_port
+
+                if data_port in self.wrk_ports:
+                    s = self.wrk_ports[data_port]
+                    s.close()
+
+                    del self.wrk_ports[data_port]
+
+                if ctrl_port in self.wrk_ports:
+                    s = self.wrk_ports[ctrl_port]
+                    s.close()
+
+                    del self.wrk_ports[ctrl_port]
+
     def _handle_job_action(self, action: pb2.JobAction) -> None:
         """Handle job-related action."""
         match action.type:
@@ -173,6 +207,8 @@ class Agent:
 
                 self.job_mgr.process_config(config)
 
+                self._release_ports(config.flow_graph)
+
                 self._start_workers(config.job_id)
 
                 self._update_workers(config.job_id)
@@ -181,6 +217,19 @@ class Agent:
 
             case JobAction.STOP:
                 self.worker_mgr.terminate_workers(action.job_id)
+
+            case JobAction.SETUP:
+                port_count = int.from_bytes(action.manifest, byteorder="big")
+                ports = self._reserve_ports(port_count)
+
+                logger.debug(f"ports assigned: {ports} for {port_count / 2} workers")
+
+                req = pb2.JobSetupReq(
+                    ports=ports,
+                    job_id=action.job_id,
+                    agent_id=self.id,
+                )
+                self.stub.job_setup(req)
 
     async def heart_beat(self):
         """Send a heart beat message periodically."""
