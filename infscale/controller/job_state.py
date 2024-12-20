@@ -101,21 +101,20 @@ class JobState:
         """Process received config from controller."""
         job_state = self.get_job_state(agent_id, job_id)
 
-        job_state.num_new_workers = self._get_new_workers_count(job_state.config, new_cfg)
+        job_state.new_config = new_cfg
+        job_state.num_new_workers = self._count_new_workers(job_state)
 
-        if job_state.config is None:
-            job_state.config = new_cfg
-        else:
-            job_state.new_config = new_cfg
+    def _count_new_workers(self, job_state: JobStateData) -> int:
+        """Return the number of new workers in new config."""
+        old_cfg, new_cfg = job_state.config, job_state.new_config
 
-    def _get_new_workers_count(self, config: JobConfig, new_cfg: JobConfig) -> int:
-        """Return the number of new workers between and old and new config."""
         curr_workers = []
-        if config is not None:
-            curr_workers = [
-                w.name for w_list in config.flow_graph.values() for w in w_list
-            ]
-        new_workers = [w.name for w_list in new_cfg.flow_graph.values() for w in w_list]
+        if old_cfg is not None:
+            graph_values = old_cfg.flow_graph.values()
+            curr_workers = [w.name for w_list in graph_values for w in w_list]
+
+        graph_values = new_cfg.flow_graph.values()
+        new_workers = [w.name for w_list in graph_values for w in w_list]
 
         return len(set(new_workers) - set(curr_workers))
 

@@ -27,7 +27,8 @@ from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
 from infscale.config import JobConfig
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
+from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
+                                GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
@@ -256,7 +257,7 @@ class Controller:
         agent_id: str,
         job_id: str,
     ) -> None:
-        """Patch config for updated job"""
+        """Patch config for updated job."""
         await self.job_setup_event.wait()
 
         job_state = self.jobs_state.get_job_state(agent_id, job_id)
@@ -269,28 +270,21 @@ class Controller:
             # there might be a case when new config has less number of workers
             port_iter = iter(ports)
 
-        # step 1: get worker ports from the initial config
-        worker_ports = {}
-
-        if new_config is None:
-            new_config = config
-        else:
+        # step 1: save current workers from the old config
+        curr_workers = {}
+        if config is not None:
             for worker_list in config.flow_graph.values():
                 for worker in worker_list:
-                    worker_name = worker.name
-                    worker_ports[worker_name] = {
-                        "data_port": worker.data_port,
-                        "ctrl_port": worker.ctrl_port,
-                    }
+                    curr_workers[worker.name] = worker
 
         # step 2: patch new config with existing workers ports and assign ports to new ones
         for worker_list in new_config.flow_graph.values():
             for worker in worker_list:
                 worker.addr = self.contexts[agent_id].ip
-                if worker.name in worker_ports:
+                if worker.name in curr_workers:
                     # keep existing ports
-                    worker.data_port = worker_ports[worker.name]["data_port"]
-                    worker.ctrl_port = worker_ports[worker.name]["ctrl_port"]
+                    worker.data_port = curr_workers[worker.name].data_port
+                    worker.ctrl_port = curr_workers[worker.name].ctrl_port
                 else:
                     # assign new ports to new workers
                     worker.data_port = next(port_iter)
