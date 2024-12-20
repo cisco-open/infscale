@@ -121,7 +121,7 @@ class Router:
 
         for world_info in worlds_to_remove:
             # reset tx q related to a given world info
-            self.cleanup_tx_q(world_info)
+            self._cleanup_tx_q(world_info)
 
             name = world_info.name
             task = self._tasks.pop(name, None)
