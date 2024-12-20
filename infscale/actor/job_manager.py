@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from infscale import get_logger
 from infscale.config import JobConfig, WorkerInfo
 from infscale.controller.ctrl_dtype import JobAction
-from infscale.controller.job_state import JobStateEnum
+from infscale.controller.job_context import JobStateEnum
 
 logger = None
 
