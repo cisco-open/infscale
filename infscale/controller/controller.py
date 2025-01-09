@@ -22,18 +22,16 @@ from dataclasses import asdict
 from typing import Any, AsyncIterable, Union
 
 import grpc
-from fastapi import HTTPException, Request, status
+from fastapi import Request
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
 from infscale.config import JobConfig
-from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                GRPC_MAX_MESSAGE_LENGTH)
+from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
-from infscale.controller.job_state import JobState, JobStateEnum
-from infscale.controller.job_state2 import JobStateContext
+from infscale.controller.job_context import JobContext
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -57,13 +55,11 @@ class Controller:
 
         self.port = port
 
-        self.contexts: dict[str, AgentContext] = dict()
+        self.agent_contexts: dict[str, AgentContext] = dict()
+        self.job_contexts: dict[str, JobContext] = dict()
 
         self.apiserver = ApiServer(self, apiport)
 
-        self.jobs_state = JobState()
-
-        self.job_state: dict[str, JobStateContext] = dict()
         self.job_setup_event = asyncio.Event()
 
     async def _start_server(self):
@@ -91,13 +87,12 @@ class Controller:
     async def handle_register(self, req: pb2.RegReq) -> tuple[bool, str]:
         """Handle registration message."""
         logger.debug(f"recevied req = {req}")
-        if req.id in self.contexts:
+        if req.id in self.agent_contexts:
             return False, f"{req.id} already registered"
 
-        self.contexts[req.id] = AgentContext(self, req.id, req.ip)
+        self.agent_contexts[req.id] = AgentContext(self, req.id, req.ip)
         # since registration is done, let's keep agent context alive
-        self.contexts[req.id].keep_alive()
-        self.jobs_state.set_agent(req.id)
+        self.agent_contexts[req.id].keep_alive()
 
         logger.debug(f"successfully registered {req.id}")
 
@@ -105,11 +100,11 @@ class Controller:
 
     async def handle_heartbeat(self, id: str) -> None:
         """Handle heartbeat message."""
-        if id not in self.contexts:
+        if id not in self.agent_contexts:
             # nothing to do
             return
 
-        self.contexts[id].keep_alive()
+        self.agent_contexts[id].keep_alive()
 
     async def handle_status(self, request: pb2.Status) -> None:
         """Handle worker status message."""
@@ -125,13 +120,13 @@ class Controller:
 
     def reset_agent_context(self, id: str) -> None:
         """Remove agent context from contexts dictionary."""
-        if id not in self.contexts:
+        if id not in self.agent_contexts:
             # nothing to do
             return
 
-        context = self.contexts[id]
+        context = self.agent_contexts[id]
         context.reset()
-        del self.contexts[id]
+        del self.agent_contexts[id]
 
     async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""
@@ -143,84 +138,25 @@ class Controller:
 
         job_id = req.config.job_id if req.config else req.job_id
 
-        if not self.jobs_state.job_exists(job_id) and req.action in [
-            JobAction.STOP,
-            JobAction.UPDATE,
-        ]:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"job with id: '{job_id}' was not found",
-            )
+        if job_id not in self.job_contexts:
+            self.job_contexts[job_id] = JobContext(self, job_id)
 
-        if not self.jobs_state.can_update_job_state(job_id, req.action):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Action '{req.action}' on job '{job_id}' is not allowed",
-            )
-
-        agent_id = self._get_agent_id(req.action, job_id)
-
-        if agent_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No agent found",
-            )
-
-        match req.action:
-            case JobAction.START | JobAction.UPDATE:
-                job_state = (
-                    JobStateEnum.STARTING
-                    if req.action == JobAction.START
-                    else JobStateEnum.UPDATING
-                )
-                self.jobs_state.set_job_state(
-                    agent_id=agent_id,
-                    job_id=job_id,
-                    job_state=job_state,
-                )
-                self.jobs_state.process_cfg(agent_id, job_id, req.config)
-
-                # fetch port numbers from agent
-                await self._job_setup(agent_id, req.config)
-
-                await self._patch_job_cfg(agent_id, job_id)
-
-                # schedule config transfer to agent after job setup is done
-                await self._send_config_to_agent(agent_id, req)
-
-            case JobAction.STOP:
-                self.jobs_state.set_job_state(
-                    agent_id=agent_id,
-                    job_id=job_id,
-                    job_state=JobStateEnum.STOPPING,
-                )
-                self.jobs_state.remove_job(job_id)
-
-    def _get_agent_id(self, job_action: JobAction, job_id: str) -> list[str] | None:
-        """Return agent id for a job."""
-        if job_action == JobAction.START:
-            # TODO: add support for multiple agent ids
-            agent_id = self.jobs_state._get_available_agent_id()
-            return agent_id
-
-        if job_action == JobAction.UPDATE:
-            # TODO: add support for multiple agent ids
-            agent_ids = self.jobs_state._get_job_agent_ids(job_id)
-            return agent_ids[0] if agent_ids is not None else None
+        job_ctx = self.job_contexts.get(job_id)
+        await job_ctx.do(req)
 
     async def _job_setup(self, agent_id: str, config: JobConfig) -> None:
         """Send job setup request to agent."""
-        job_state = self.jobs_state.get_job_state(agent_id, config.job_id)
+        job_ctx = self.job_contexts.get(config.job_id)
 
-        if job_state.num_new_workers <= 0:  # no new workers to ask for ports
+        if job_ctx.num_new_workers <= 0:  # no new workers to ask for ports
             self.job_setup_event.set()
 
             return
 
         # we need two sets of ports for each worker for channel connection and multiworld connection
-        port_count_bytes = (job_state.num_new_workers * 2).to_bytes(1, byteorder="big")
+        port_count_bytes = (job_ctx.num_new_workers * 2).to_bytes(1, byteorder="big")
 
-        agent_context = self.contexts[agent_id]
+        agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
 
         payload = pb2.JobAction(
@@ -230,14 +166,13 @@ class Controller:
         await context.write(payload)
 
     async def _send_config_to_agent(
-        self, agent_id: str, action: JobActionModel
+        self, agent_id: str, job_id: str, action: JobActionModel
     ) -> None:
         """Send config to agent."""
-        job_id = action.config.job_id if action.config else action.job_id
 
-        agent_context = self.contexts[agent_id]
+        agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
-        config = self.jobs_state.get_config(agent_id, job_id)
+        config = self.job_contexts.get(job_id).config
 
         manifest_bytes = json.dumps(asdict(config)).encode("utf-8")
 
@@ -249,21 +184,22 @@ class Controller:
 
     def handle_job_ports(self, req: pb2.JobSetupReq) -> JobConfig:
         """Patch config with connection info received from agent."""
-        self.jobs_state.set_ports(req.agent_id, req.job_id, req.ports)
+        job_ctx = self.job_contexts.get(req.job_id)
+        job_ctx.set_ports(req.ports)
+
         self.job_setup_event.set()
 
     async def _patch_job_cfg(
         self,
         agent_id: str,
         job_id: str,
+        action: JobAction,
     ) -> None:
         """Patch config for updated job."""
         await self.job_setup_event.wait()
 
-        job_state = self.jobs_state.get_job_state(agent_id, job_id)
-        config = job_state.config
-        new_config = job_state.new_config
-        ports = job_state.ports
+        job_ctx = self.job_contexts.get(job_id)
+        config, new_config, ports = job_ctx.config, job_ctx.new_config, job_ctx.ports
 
         port_iter = None
         if ports is not None:
@@ -280,7 +216,7 @@ class Controller:
         # step 2: patch new config with existing workers ports and assign ports to new ones
         for worker_list in new_config.flow_graph.values():
             for worker in worker_list:
-                worker.addr = self.contexts[agent_id].ip
+                worker.addr = self.agent_contexts[agent_id].ip
                 if worker.name in curr_workers:
                     # keep existing ports
                     worker.data_port = curr_workers[worker.name].data_port
@@ -290,10 +226,10 @@ class Controller:
                     worker.data_port = next(port_iter)
                     worker.ctrl_port = next(port_iter)
 
-        job_state.config = new_config
-        job_state.new_config = None
-        job_state.num_new_workers = 0
-        job_state.ports = None
+        job_ctx.config = new_config
+        job_ctx.new_config = None
+        job_ctx.num_new_workers = 0
+        job_ctx.ports = None
 
         # block patch until new config is received
         self.job_setup_event.clear()
@@ -344,10 +280,10 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         # since fetch() is used for manifest "push", this function shouldn't be
         # returned. For that, we create an asyncio event and let the event wait
         # forever. The event will be released only when agent is unreachable.
-        if request.id not in self.ctrl.contexts:
+        if request.id not in self.ctrl.agent_contexts:
             logger.debug(f"{request.id} is not in controller'context")
             return
-        agent_context = self.ctrl.contexts[request.id]
+        agent_context = self.ctrl.agent_contexts[request.id]
         agent_context.set_grpc_ctx(context)
         event = agent_context.get_grpc_ctx_event()
 
