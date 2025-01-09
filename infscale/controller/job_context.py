@@ -15,12 +15,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
+import asyncio
 from enum import Enum
 from fastapi import HTTPException, status
 
+from infscale import get_logger
 from infscale.actor.job_msg import WorkerStatus
 from infscale.config import JobConfig
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel
+
+logger = None
 
 
 class InvalidJobStateAction(Exception):
@@ -33,7 +37,9 @@ class InvalidJobStateAction(Exception):
         self.action = action
         self.state = state
 
-        super().__init__(f"Job {job_id}: '{action}' action is not allowed in the '{state}' state.")
+        super().__init__(
+            f"Job {job_id}: '{action}' action is not allowed in the '{state}' state."
+        )
 
 
 class JobStateEnum(Enum):
@@ -54,7 +60,7 @@ class BaseJobState:
         self.context = context
         self.job_id = context.job_id
 
-    def start(self):
+    async def start(self, unused_req: JobActionModel):
         """Transition to STARTING state."""
         raise InvalidJobStateAction(self.job_id, "start", self.context.state_enum.value)
 
@@ -62,7 +68,7 @@ class BaseJobState:
         """Transition to STOPPING state."""
         raise InvalidJobStateAction(self.job_id, "stop", self.context.state_enum.value)
 
-    def update(self):
+    async def update(self, unused_req: JobActionModel):
         """Transition to UPDATING state."""
         raise InvalidJobStateAction(
             self.job_id, "update", self.context.state_enum.value
@@ -88,9 +94,15 @@ class BaseJobState:
 
 
 class ReadyState(BaseJobState):
-    def start(self):
+    async def start(self, req: JobActionModel):
         """Transition to STARTING state."""
-        print("Starting job...")
+        agent_id = self.context._get_ctrl_agent_id()
+
+        self.context.set_agent_ids([agent_id])
+        self.context.process_cfg(req.config)
+
+        await self.context.prepare_config(agent_id, self.job_id, req)
+        
         self.context.set_state(JobStateEnum.STARTING)
 
 
@@ -101,14 +113,13 @@ class RunningState(BaseJobState):
         """Transition to STOPPING state."""
         self.context.set_state(JobStateEnum.STOPPING)
 
-    def update(self):
+    async def update(self, unused_req: JobActionModel):
         """Transition to UPDATING state."""
         self.context.set_state(JobStateEnum.UPDATING)
 
 
 class StartingState(BaseJobState):
     """StartingState class."""
-
     def stop(self):
         """Transition to STOPPING state."""
         print("Stopping job...")
@@ -116,10 +127,11 @@ class StartingState(BaseJobState):
 
     def cond_running(self):
         """Handle the transition to running."""
-        self.context.set_state(JobStateEnum.RUNNING)
+        if self.context._all_wrk_running():
+            self.context.set_state(JobStateEnum.RUNNING)
 
     # TODO: remove update from StartingState after job status update is made using workers messages
-    def update(self):
+    async def update(self, unused_req: JobActionModel):
         """Transition to UPDATING state."""
         self.context.set_state(JobStateEnum.UPDATING)
 
@@ -127,7 +139,7 @@ class StartingState(BaseJobState):
 class StoppedState(BaseJobState):
     """StoppedState class."""
 
-    def start(self):
+    async def start(self, unused_req: JobActionModel):
         """Transition to STARTING state."""
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -167,17 +179,34 @@ class JobContext:
         self.ports = None
         self.num_new_workers = 0
         self.wrk_status: dict[str, WorkerStatus] = {}
+        self.transition_fn_q = asyncio.Queue()
+        _ = asyncio.create_task(self._handle_state_transition())
+
+        global logger
+        logger = get_logger()
+
+    async def _handle_state_transition(self) -> None:
+        while True:
+            state_fn = await self.transition_fn_q.get()
+
+            if state_fn is None:
+                continue
+
+            try:
+                state_fn()
+            except InvalidJobStateAction:
+                continue
 
     def set_agent_ids(self, agent_ids: list[str]) -> None:
         """Set a list of agents"""
         self.agent_ids = agent_ids
 
     def set_ports(self, ports: list[int]) -> None:
-        """Set port numbers for workers"""
+        """Set port numbers for workers."""
         self.ports = ports
 
     def set_new_workers_num(self, wrk_count: int) -> None:
-        """Set new number of workers"""
+        """Set new number of workers."""
         self.num_new_workers = wrk_count
 
     def set_state(self, state_enum):
@@ -185,9 +214,20 @@ class JobContext:
         self.state_enum = state_enum
         self.state = self._get_state_class(state_enum)(self)
 
-    def set_wrk_status(self, wrk_id, status: WorkerStatus) -> None:
-        """Set worker status"""
+        logger.info(f"current state for {self.job_id} is {self.state_enum}")
+
+    async def set_wrk_status(self, wrk_id, status: WorkerStatus) -> None:
+        """Set worker status."""
         self.wrk_status[wrk_id] = status
+
+        await self.transition_fn_q.put(self.cond_running)
+
+    def _all_wrk_running(self) -> bool:
+        """Check if all workers are running."""
+        return all(
+            value == WorkerStatus.RUNNING.name.lower()
+            for value in self.wrk_status.values()
+        ) and len(self.config.workers) == len(self.wrk_status.keys())
 
     def process_cfg(self, new_cfg: JobConfig) -> None:
         """Process received config from controller."""
@@ -197,12 +237,14 @@ class JobContext:
         self.num_new_workers = self._get_new_workers_count(self.config, new_cfg)
         self.new_config = new_cfg
 
-    async def prepare_config(self, agent_id: str, job_id: str, req: JobActionModel) -> None:
+    async def prepare_config(
+        self, agent_id: str, job_id: str, req: JobActionModel
+    ) -> None:
         # fetch port numbers from agent
         await self.ctrl._job_setup(agent_id, req.config)
 
         # update job config
-        await self.ctrl._patch_job_cfg(agent_id, job_id, req.action)
+        await self.ctrl._patch_job_cfg(agent_id, job_id)
 
         # schedule config transfer to agent after job setup is done
         await self.ctrl._send_config_to_agent(agent_id, job_id, req)
@@ -229,7 +271,7 @@ class JobContext:
             JobStateEnum.UPDATING: UpdatingState,
         }
         return state_mapping[state_enum]
-    
+
     def _get_ctrl_agent_id(self) -> list[str] | None:
         agent_ids = list(self.ctrl.agent_contexts.keys())
 
@@ -255,38 +297,36 @@ class JobContext:
         """Handle specific action"""
         match req.action:
             case JobAction.START:
-                agent_id = self._get_ctrl_agent_id()
-                self.set_agent_ids([agent_id])
-                await self.start(agent_id, req)
+                await self.start(req)
 
             case JobAction.UPDATE:
-                agent_id = self._get_ctx_agent_id()
-                await self.update(agent_id, req)
+                await self.update(req)
 
             case JobAction.STOP:
                 self.stop()
             case _:
-                raise InvalidJobStateAction(self.job_id, req.action, self.state_enum.value)
+                raise InvalidJobStateAction(
+                    self.job_id, req.action, self.state_enum.value
+                )
 
-    async def start(self, agent_id: str, req: JobActionModel):
+    async def start(self, req: JobActionModel):
         """Transition to STARTING state."""
-        self.process_cfg(req.config)
-        await self.prepare_config(agent_id, self.job_id, req)
-        self.state.start()
+        await self.state.start(req)
 
     def stop(self):
         """Transition to STOPPING state."""
         self.state.stop()
 
-    async def update(self, agent_id: str, req: JobActionModel):
+    async def update(self, req: JobActionModel):
         """Transition to UPDATING state."""
+        agent_id = self._get_ctx_agent_id()
+
         self.process_cfg(req.config)
         await self.prepare_config(agent_id, self.job_id, req)
         self.state.update()
 
     def cond_running(self):
         """Handle the transition to running."""
-        # TODO: handle running condition later
         self.state.cond_running()
 
     def cond_updated(self):

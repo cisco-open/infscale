@@ -210,8 +210,6 @@ class Pipeline:
         logger.info("start to receive responses")
         seqno = -1
         idx = 0
-        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
-        self.wcomm.send(msg)
         while max_count == -1 or max_count > idx:
             logger.debug("waiting for response")
             outputs, seqno = await router.recv()
@@ -236,6 +234,8 @@ class Pipeline:
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
         max_count = self.dataset.num_of_batches()
+        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
+        self.wcomm.send(msg)
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))
@@ -246,6 +246,8 @@ class Pipeline:
 
     async def _run_worker(self):
         logger.debug("start to run worker")
+        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
+        self.wcomm.send(msg)
         while True:
             inputs, seqno = await self.router.recv()
 
