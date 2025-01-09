@@ -22,9 +22,15 @@ from multiprocessing import connection
 
 import torch.multiprocessing as mp
 from infscale import get_logger
-from infscale.actor.job_msg import Message, MessageType, WorkerStatus, WorkerStatusMessage
+from infscale.actor.job_msg import (
+    Message,
+    MessageType,
+    WorkerStatus,
+    WorkerStatusMessage,
+)
 
 logger = None
+
 
 @dataclass
 class WorkerMetaData:
@@ -77,23 +83,6 @@ class WorkerManager:
 
         return results
 
-    def _cleanup(
-        self, job_id: str, by_worker_id: bool = False, worker_ids=set()
-    ) -> None:
-        """Clean up worker meta data information for a given job.
-
-        If by_worker_id is true, then worker data in the worker_ids set
-        are cleaned up.
-        """
-        for k, v in list(self._workers.items()):
-            if v.job_id != job_id:
-                continue
-
-            if by_worker_id and v.id not in worker_ids:
-                continue
-
-            del self._workers[k]
-
     def send(self, worker: WorkerMetaData, message: Message) -> None:
         """Send message to worker."""
         worker.pipe.send(message)
@@ -112,7 +101,7 @@ class WorkerManager:
                 message = worker.pipe.recv()
                 self._handle_message(message, worker, fd)
             except EOFError:
-                self._terminate_worker(worker)
+                self._signal_terminate_wrkr(worker)
 
     def _handle_message(
         self, message: Message, worker: WorkerMetaData, fd: int
@@ -131,7 +120,7 @@ class WorkerManager:
 
         match message.content:
             case WorkerStatus.DONE:
-                self.terminate_workers(message.job_id)
+                self._signal_terminate_wrkrs(message.job_id)
 
             case WorkerStatus.STARTED:
                 pass
@@ -140,23 +129,28 @@ class WorkerManager:
                 pass
 
             case WorkerStatus.TERMINATED:
-                pass
+                loop = asyncio.get_event_loop()
+                wrk = self._workers[fd]
+                loop.remove_reader(wrk.pipe.fileno())
+                wrk.pipe.close()
+
+                del self._workers[fd]
 
             case WorkerStatus.FAILED:
                 pass
 
     def _update_worker_status(self, message: Message, fd: int) -> None:
         """Update Worker status."""
-        wrk_id = self._workers[fd].id
-
-        _ = asyncio.create_task(self.status_q.put(WorkerStatusMessage(wrk_id, message.job_id, message.content)))
+        wrk = self._workers[fd]
+        msg = WorkerStatusMessage(wrk.id, message.job_id, message.content)
+        _ = asyncio.create_task(self.status_q.put(msg))
 
         self._workers[fd].status = message.content
 
-    def terminate_workers(
+    def _signal_terminate_wrkrs(
         self, job_id: str, by_worker_id: bool = False, worker_ids=set()
     ) -> None:
-        """Terminate workers of a given job id.
+        """Signal workers that need to be terminated for a given job id.
 
         If by_worker_id is true, then workers in the worker_ids set
         are terminated.
@@ -169,10 +163,8 @@ class WorkerManager:
             if by_worker_id and worker.id not in worker_ids:
                 continue
 
-            self._terminate_worker(worker)
+            self._signal_terminate_wrkr(worker)
             terminated = True
-
-        self._cleanup(job_id, by_worker_id, worker_ids)
 
         if not terminated:
             # no worker is termianted; so no need to log below
@@ -183,19 +175,14 @@ class WorkerManager:
         else:
             logger.info(f"all workers for job {job_id} terminated")
 
-    def _terminate_worker(self, worker: WorkerMetaData) -> None:
-        """Terminate a worker."""
-        loop = asyncio.get_event_loop()
-
+    def _signal_terminate_wrkr(self, worker: WorkerMetaData) -> None:
+        """Signal a worker that needs to be terminated."""
         valid = [WorkerStatus.STARTED, WorkerStatus.READY, WorkerStatus.RUNNING]
         if worker.status in valid:
             worker.status = WorkerStatus.TERMINATED
 
             msg = Message(MessageType.TERMINATE, "", worker.job_id)
             self.send(worker, msg)
-
-            loop.remove_reader(worker.pipe.fileno())
-            worker.pipe.close()
 
     def _print_message(self, content: str, process_id: int) -> None:
         """Print received messages."""

@@ -65,7 +65,7 @@ class BaseJobState:
         """Transition to STARTING state."""
         raise InvalidJobStateAction(self.job_id, "start", self.context.state_enum.value)
 
-    def stop(self):
+    async def stop(self):
         """Transition to STOPPING state."""
         raise InvalidJobStateAction(self.job_id, "stop", self.context.state_enum.value)
 
@@ -99,6 +99,7 @@ class BaseJobState:
             self.job_id, "complete", self.context.state_enum.value
         )
 
+
 class ReadyState(BaseJobState):
     async def start(self):
         """Transition to STARTING state."""
@@ -109,15 +110,20 @@ class ReadyState(BaseJobState):
         self.context.process_cfg(req.config)
 
         await self.context.prepare_config(agent_id, self.job_id, req)
-        
+
         self.context.set_state(JobStateEnum.STARTING)
 
 
 class RunningState(BaseJobState):
     """RunningState class."""
 
-    def stop(self):
+    async def stop(self):
         """Transition to STOPPING state."""
+        agent_id = self.context._get_ctx_agent_id()
+        await self.context.ctrl._send_action_to_agent(
+            agent_id, self.job_id, self.context.req
+        )
+
         self.context.set_state(JobStateEnum.STOPPING)
 
     async def update(self):
@@ -127,9 +133,14 @@ class RunningState(BaseJobState):
 
 class StartingState(BaseJobState):
     """StartingState class."""
-    def stop(self):
+
+    async def stop(self):
         """Transition to STOPPING state."""
-        print("Stopping job...")
+        agent_id = self.context._get_ctx_agent_id()
+        await self.context.ctrl._send_action_to_agent(
+            agent_id, self.job_id, self.context.req
+        )
+
         self.context.set_state(JobStateEnum.STOPPING)
 
     def cond_running(self):
@@ -156,15 +167,20 @@ class StoppingState(BaseJobState):
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        self.context.set_state(JobStateEnum.STOPPED)
+        if self.context._all_wrk_terminated():
+            self.context.set_state(JobStateEnum.STOPPED)
 
 
 class UpdatingState(BaseJobState):
     """StoppingState class."""
 
-    def stop(self):
+    async def stop(self):
         """Transition to STOPPING state."""
-        print("Stopping job...")
+        agent_id = self.context._get_ctx_agent_id()
+        await self.context._send_action_to_agent(
+            agent_id, self.job_id, self.context.req
+        )
+
         self.context.set_state(JobStateEnum.STOPPING)
 
     def cond_updated(self):
@@ -174,6 +190,7 @@ class UpdatingState(BaseJobState):
 
 class CompleteState(BaseJobState):
     """CompleteState class."""
+
     async def start(self):
         """Transition to STARTING state."""
         self.context.set_state(JobStateEnum.STARTING)
@@ -235,20 +252,29 @@ class JobContext:
         """Set worker status."""
         self.wrk_status[wrk_id] = status
 
-        await self.transition_fn_q.put(self.cond_running)
+        if status == WorkerStatus.RUNNING.name.lower():
+            await self.transition_fn_q.put(self.cond_running)
+        elif status == WorkerStatus.TERMINATED.name.lower():
+            await self.transition_fn_q.put(self.cond_stopped)
 
     def _all_wrk_running(self) -> bool:
         """Check if all workers are running."""
+        return self._check_all_wrkrs(WorkerStatus.RUNNING)
+
+    def _all_wrk_terminated(self) -> bool:
+        """Check if all workers are terminated."""
+        return self._check_all_wrkrs(WorkerStatus.TERMINATED)
+
+    def _check_all_wrkrs(self, wrk_status: WorkerStatus) -> bool:
+        """Check if all workers have the same status."""
         return all(
-            value == WorkerStatus.RUNNING.name.lower()
-            for value in self.wrk_status.values()
+            value == wrk_status.name.lower() for value in self.wrk_status.values()
         ) and len(self.config.workers) == len(self.wrk_status.keys())
 
     def process_cfg(self, new_cfg: JobConfig) -> None:
         """Process received config from controller."""
         if new_cfg is None:
             return
-
         self.num_new_workers = self._get_new_workers_count(self.config, new_cfg)
         self.new_config = new_cfg
 
@@ -321,7 +347,7 @@ class JobContext:
                 await self.update()
 
             case JobAction.STOP:
-                self.stop()
+                await self.stop()
             case _:
                 raise InvalidJobStateAction(
                     self.job_id, req.action, self.state_enum.value
@@ -331,9 +357,9 @@ class JobContext:
         """Transition to STARTING state."""
         await self.state.start()
 
-    def stop(self):
+    async def stop(self):
         """Transition to STOPPING state."""
-        self.state.stop()
+        await self.state.stop()
 
     async def update(self):
         """Transition to UPDATING state."""
@@ -354,7 +380,6 @@ class JobContext:
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        # TODO: handle stopped condition later
         self.state.cond_stopped()
 
     def cond_complete(self):

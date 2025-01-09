@@ -216,7 +216,7 @@ class Agent:
                 self._stop_workers(config.job_id)
 
             case JobAction.STOP:
-                self.worker_mgr.terminate_workers(action.job_id)
+                self.worker_mgr._signal_terminate_wrkrs(action.job_id)
 
             case JobAction.SETUP:
                 port_count = int.from_bytes(action.manifest, byteorder="big")
@@ -292,7 +292,7 @@ class Agent:
 
     def _stop_workers(self, job_id: str) -> None:
         stop_wrkrs = self.job_mgr.get_workers(job_id, JobAction.STOP)
-        self.worker_mgr.terminate_workers(job_id, True, stop_wrkrs)
+        self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs)
 
     async def report(self):
         """Report status about resources and workers to controller."""

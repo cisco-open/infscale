@@ -123,7 +123,11 @@ class Controller:
         if not worker_status.status:
             return
 
-        job_id, status, wrk_id = worker_status.job_id, worker_status.status, worker_status.worker_id
+        job_id, status, wrk_id = (
+            worker_status.job_id,
+            worker_status.status,
+            worker_status.worker_id,
+        )
         job_ctx = self.job_contexts.get(job_id)
 
         await job_ctx.set_wrk_status(wrk_id, status)
@@ -189,6 +193,18 @@ class Controller:
         payload = pb2.JobAction(
             type=action.action, job_id=job_id, manifest=manifest_bytes
         )
+
+        await context.write(payload)
+
+    async def _send_action_to_agent(
+        self, agent_id: str, job_id: str, action: JobActionModel
+    ) -> None:
+        """Send job action to agent."""
+
+        agent_context = self.agent_contexts[agent_id]
+        context = agent_context.get_grpc_ctx()
+
+        payload = pb2.JobAction(type=action.action, job_id=job_id)
 
         await context.write(payload)
 

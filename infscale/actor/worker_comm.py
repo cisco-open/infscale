@@ -21,7 +21,7 @@ import sys
 from multiprocessing import connection
 
 from infscale import get_logger
-from infscale.actor.job_msg import Message, MessageType
+from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.config import ServeConfig
 
 logger = None
@@ -30,12 +30,13 @@ logger = None
 class WorkerCommunicator:
     """WorkerCommunicator class."""
 
-    def __init__(self, pipe: connection.Connection):
+    def __init__(self, pipe: connection.Connection, job_id: str):
         """Initialize an instance."""
         global logger
         logger = get_logger()
 
         self.pipe = pipe
+        self.job_id = job_id
         self.config_q = asyncio.Queue()
 
     def send(self, message: Message) -> None:
@@ -76,5 +77,8 @@ class WorkerCommunicator:
 
             case MessageType.TERMINATE:
                 # TODO: do the clean-up / caching before termination
+                self.send(
+                    Message(MessageType.STATUS, WorkerStatus.TERMINATED, self.job_id)
+                )
                 logger.info("worker is terminated")
                 sys.exit()

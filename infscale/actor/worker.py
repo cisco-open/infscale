@@ -35,7 +35,7 @@ class Worker:
         logger = get_logger(f"{os.getpid()}", f"job-{job_id}/worker-{wrk_id}.log")
 
         self.local_rank = local_rank
-        self.wcomm = WorkerCommunicator(conn)
+        self.wcomm = WorkerCommunicator(conn, job_id)
 
     def run(self) -> None:
         """Run worker."""
