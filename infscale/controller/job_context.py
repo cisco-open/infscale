@@ -45,6 +45,7 @@ class JobStateEnum(Enum):
     STOPPED = "stopped"
     STOPPING = "stopping"
     UPDATING = "updating"
+    COMPLETE = "complete"
 
 
 class BaseJobState:
@@ -86,6 +87,11 @@ class BaseJobState:
             self.job_id, "stopping", self.context.state_enum.value
         )
 
+    def cond_complete(self):
+        """Handle the transition to complete."""
+        raise InvalidJobStateAction(
+            self.job_id, "complete", self.context.state_enum.value
+        )
 
 class ReadyState(BaseJobState):
     def start(self):
@@ -151,6 +157,13 @@ class UpdatingState(BaseJobState):
     def cond_updated(self):
         """Handle the transition to running."""
         self.context.set_state(JobStateEnum.RUNNING)
+
+
+class CompleteState(BaseJobState):
+    """CompleteState class."""
+    def start(self):
+        """Transition to STARTING state."""
+        self.job.set_state(JobStateEnum.STARTING)
 
 
 class JobContext:
@@ -227,6 +240,7 @@ class JobContext:
             JobStateEnum.STOPPED: StoppedState,
             JobStateEnum.STOPPING: StoppingState,
             JobStateEnum.UPDATING: UpdatingState,
+            JobStateEnum.COMPLETE: CompleteState,
         }
         return state_mapping[state_enum]
     
@@ -298,3 +312,7 @@ class JobContext:
         """Handle the transition to stopped."""
         # TODO: handle stopped condition later
         self.state.cond_stopped()
+
+    def cond_complete(self):
+        """Handle the transition to complete."""
+        self.state.cond_complete()
