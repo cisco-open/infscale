@@ -61,7 +61,7 @@ class BaseJobState:
         self.context = context
         self.job_id = context.job_id
 
-    async def start(self, unused_req: JobActionModel):
+    async def start(self):
         """Transition to STARTING state."""
         raise InvalidJobStateAction(self.job_id, "start", self.context.state_enum.value)
 
@@ -69,7 +69,7 @@ class BaseJobState:
         """Transition to STOPPING state."""
         raise InvalidJobStateAction(self.job_id, "stop", self.context.state_enum.value)
 
-    async def update(self, unused_req: JobActionModel):
+    async def update(self):
         """Transition to UPDATING state."""
         raise InvalidJobStateAction(
             self.job_id, "update", self.context.state_enum.value
@@ -100,9 +100,10 @@ class BaseJobState:
         )
 
 class ReadyState(BaseJobState):
-    async def start(self, req: JobActionModel):
+    async def start(self):
         """Transition to STARTING state."""
         agent_id = self.context._get_ctrl_agent_id()
+        req = self.context.req
 
         self.context.set_agent_ids([agent_id])
         self.context.process_cfg(req.config)
@@ -119,7 +120,7 @@ class RunningState(BaseJobState):
         """Transition to STOPPING state."""
         self.context.set_state(JobStateEnum.STOPPING)
 
-    async def update(self, unused_req: JobActionModel):
+    async def update(self):
         """Transition to UPDATING state."""
         self.context.set_state(JobStateEnum.UPDATING)
 
@@ -137,7 +138,7 @@ class StartingState(BaseJobState):
             self.context.set_state(JobStateEnum.RUNNING)
 
     # TODO: remove update from StartingState after job status update is made using workers messages
-    async def update(self, unused_req: JobActionModel):
+    async def update(self):
         """Transition to UPDATING state."""
         self.context.set_state(JobStateEnum.UPDATING)
 
@@ -145,7 +146,7 @@ class StartingState(BaseJobState):
 class StoppedState(BaseJobState):
     """StoppedState class."""
 
-    async def start(self, unused_req: JobActionModel):
+    async def start(self):
         """Transition to STARTING state."""
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -173,9 +174,9 @@ class UpdatingState(BaseJobState):
 
 class CompleteState(BaseJobState):
     """CompleteState class."""
-    def start(self):
+    async def start(self):
         """Transition to STARTING state."""
-        self.job.set_state(JobStateEnum.STARTING)
+        self.context.set_state(JobStateEnum.STARTING)
 
 
 class JobContext:
@@ -187,6 +188,7 @@ class JobContext:
         self.state = ReadyState(self)
         self.state_enum = JobStateEnum.READY
         self.agent_ids = []
+        self.req: JobActionModel = None
         self.config = None
         self.new_config = None
         self.ports = None
@@ -309,12 +311,14 @@ class JobContext:
 
     async def do(self, req: JobActionModel):
         """Handle specific action"""
+        self.req = req
+
         match req.action:
             case JobAction.START:
-                await self.start(req)
+                await self.start()
 
             case JobAction.UPDATE:
-                await self.update(req)
+                await self.update()
 
             case JobAction.STOP:
                 self.stop()
@@ -323,20 +327,20 @@ class JobContext:
                     self.job_id, req.action, self.state_enum.value
                 )
 
-    async def start(self, req: JobActionModel):
+    async def start(self):
         """Transition to STARTING state."""
-        await self.state.start(req)
+        await self.state.start()
 
     def stop(self):
         """Transition to STOPPING state."""
         self.state.stop()
 
-    async def update(self, req: JobActionModel):
+    async def update(self):
         """Transition to UPDATING state."""
         agent_id = self._get_ctx_agent_id()
 
-        self.process_cfg(req.config)
-        await self.prepare_config(agent_id, self.job_id, req)
+        self.process_cfg(self.req.config)
+        await self.prepare_config(agent_id, self.job_id, self.req)
         self.state.update()
 
     def cond_running(self):
