@@ -128,6 +128,11 @@ class RunningState(BaseJobState):
 
     async def update(self):
         """Transition to UPDATING state."""
+        agent_id = self.context._get_ctx_agent_id()
+
+        self.context.process_cfg(req.config)
+        await self.context.prepare_config(agent_id, self.job_id, req)
+
         self.context.set_state(JobStateEnum.UPDATING)
 
 
@@ -147,11 +152,6 @@ class StartingState(BaseJobState):
         """Handle the transition to running."""
         if self.context._all_wrk_running():
             self.context.set_state(JobStateEnum.RUNNING)
-
-    # TODO: remove update from StartingState after job status update is made using workers messages
-    async def update(self):
-        """Transition to UPDATING state."""
-        self.context.set_state(JobStateEnum.UPDATING)
 
 
 class StoppedState(BaseJobState):
@@ -256,6 +256,7 @@ class JobContext:
             await self.transition_fn_q.put(self.cond_running)
         elif status == WorkerStatus.TERMINATED.name.lower():
             await self.transition_fn_q.put(self.cond_stopped)
+        await self.transition_fn_q.put(self.cond_updated)
 
     def _all_wrk_running(self) -> bool:
         """Check if all workers are running."""
@@ -363,11 +364,7 @@ class JobContext:
 
     async def update(self):
         """Transition to UPDATING state."""
-        agent_id = self._get_ctx_agent_id()
-
-        self.process_cfg(self.req.config)
-        await self.prepare_config(agent_id, self.job_id, self.req)
-        self.state.update()
+        await self.state.update()
 
     def cond_running(self):
         """Handle the transition to running."""

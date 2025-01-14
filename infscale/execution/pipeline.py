@@ -196,6 +196,9 @@ class Pipeline:
             # send batch to the first stage
             await router.send(seqno, batch, 0)
             seqno += 1
+
+            msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
+            self.wcomm.send(msg)
         logger.info("_server_send task done")
 
     async def _server_recv(self, router: Router, max_count: int = -1):
@@ -234,8 +237,6 @@ class Pipeline:
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
         max_count = self.dataset.num_of_batches()
-        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
-        self.wcomm.send(msg)
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))
@@ -246,8 +247,6 @@ class Pipeline:
 
     async def _run_worker(self):
         logger.debug("start to run worker")
-        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
-        self.wcomm.send(msg)
         while True:
             inputs, seqno = await self.router.recv()
 
@@ -255,6 +254,9 @@ class Pipeline:
                 outputs, next_layer = self.stage.predict(seqno, **inputs)
 
             await self.router.send(seqno, outputs, next_layer)
+
+            msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
+            self.wcomm.send(msg)
 
     async def handle_config(self) -> None:
         """Handle a config sent by the controller."""
