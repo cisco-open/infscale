@@ -39,6 +39,14 @@ class WorkerStatus(Enum):
     TERMINATED = "terminated"
     FAILED = "failed"
 
+class JobStatus(Enum):
+    """WorkerStatus enum"""
+    RUNNING = "running"
+    UPDATED = "updated"
+    STOPPED = "stopped"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 
 @dataclass
 class Message:

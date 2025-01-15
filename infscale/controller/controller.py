@@ -118,6 +118,11 @@ class Controller:
 
         # TODO: use gpu and vram status to schedule deployment
 
+    def handle_job_status(self, request: pb2.JobStatus) -> None:
+        """Handle job status message."""
+        # TODO: handle job status later
+        logger.info(f"got job status update {request.status}")
+
     async def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
         """Set worker status within job state."""
         if not worker_status.status:
@@ -291,6 +296,14 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     ) -> None:
         """Handle update message for worker status."""
         await self.ctrl.handle_status(request)
+
+        return empty_pb2.Empty()
+
+    async def job_status(
+        self, request: pb2.JobStatus, unused_context: ServicerContext
+    ) -> None:
+        """Handle update message for job status."""
+        self.ctrl.handle_job_status(request)
 
         return empty_pb2.Empty()
 

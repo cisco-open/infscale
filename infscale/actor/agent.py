@@ -26,7 +26,7 @@ import torch
 import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager
-from infscale.actor.job_msg import Message, MessageType, WorkerStatusMessage
+from infscale.actor.job_msg import JobStatus, Message, MessageType, WorkerStatusMessage
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig, WorkerInfo
@@ -108,6 +108,23 @@ class Agent:
                 continue
 
             await self.update_worker_status(status)
+            await self.update_job_status(status)
+
+    async def update_job_status(self, message: WorkerStatusMessage) -> None:
+        job_status = self._get_job_status()
+        
+        if job_status is None:
+            return
+
+        job_status = {
+            "agent_id": self.id,
+            "job_id": message.job_id,
+            "status": job_status.name.lower()
+        }
+
+        req = pb2.JobStatus(**job_status)
+        await self.stub.job_status(req)
+
 
     async def update_worker_status(self, message: WorkerStatusMessage) -> None:
         worker_status = {
@@ -118,6 +135,10 @@ class Agent:
 
         req = pb2.Status(worker_status=worker_status)
         await self.stub.update(req)
+
+    def _get_job_status(self) -> JobStatus | None:
+        """Return job status string based on workers statuses or None"""
+        return None
 
     async def _init_controller_session(self) -> bool:
         try:

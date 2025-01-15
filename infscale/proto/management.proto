@@ -17,6 +17,8 @@ service ManagementRoute {
   rpc update(Status) returns (google.protobuf.Empty) {}
   // agent calls fetch rpc to get job action messages
   rpc fetch(AgentID) returns (stream JobAction) {}
+  // agent calls job_status rpc to provide status of a job
+  rpc job_status(JobStatus) returns (google.protobuf.Empty) {}
 }
 
 message AgentID {
@@ -54,6 +56,13 @@ message Status {
   repeated CpuStat cpu_stats = 4;
   RamStat ram_stat = 5;
   WorkerStatus worker_status = 6;
+}
+
+// job status contains the status of a job
+message JobStatus {
+  string job_id = 1; // job id
+  string agent_id = 2; // agent id
+  string status = 3; // job status
 }
 
 // gpustat contains status information about GPU
