@@ -72,6 +72,15 @@ class WorkerManager:
 
         return worker
 
+    def get_workers_by_job_id(self, job_id: str) -> dict[str, WorkerMetaData]:
+        """Return workers that match job_id."""
+        results = {}
+        for v in self._workers.values():   
+            if v.job_id == job_id:
+                results[v.id] = v
+
+        return results
+
     def get_workers(
         self, job_id: str, worker_ids: set[str]
     ) -> dict[str, WorkerMetaData]:
@@ -121,9 +130,6 @@ class WorkerManager:
         match message.content:
             case WorkerStatus.DONE:
                 self._signal_terminate_wrkrs(message.job_id)
-
-            case WorkerStatus.STARTED:
-                pass
 
             case WorkerStatus.RUNNING:
                 pass
@@ -177,7 +183,7 @@ class WorkerManager:
 
     def _signal_terminate_wrkr(self, worker: WorkerMetaData) -> None:
         """Signal a worker that needs to be terminated."""
-        valid = [WorkerStatus.STARTED, WorkerStatus.READY, WorkerStatus.RUNNING]
+        valid = [WorkerStatus.READY, WorkerStatus.RUNNING]
         if worker.status in valid:
             worker.status = WorkerStatus.TERMINATED
 

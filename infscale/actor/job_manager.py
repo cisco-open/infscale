@@ -19,7 +19,8 @@
 from dataclasses import dataclass
 
 from infscale import get_logger
-from infscale.config import JobConfig, WorkerInfo
+from infscale.actor.job_msg import JobStatus
+from infscale.config import JobConfig
 from infscale.controller.ctrl_dtype import JobAction
 from infscale.controller.job_context import JobStateEnum
 
@@ -36,6 +37,7 @@ class JobMetaData:
     start_wrkrs: set[str]  # workers to start
     update_wrkrs: set[str]  # workers to update
     stop_wrkrs: set[str]  # workers to stop
+    status: JobStatus = None
 
 
 class JobManager:
@@ -47,6 +49,9 @@ class JobManager:
         logger = get_logger()
 
         self.jobs: dict[str, JobMetaData] = {}
+
+    def get_job_data(self, job_id) -> JobMetaData:
+        return self.jobs[job_id]
 
     def process_config(self, config: JobConfig) -> None:
         """Process a config."""
@@ -145,6 +150,14 @@ class JobManager:
                 # because name is already affected by one peer
                 # so we come out of the for-loop
                 break
+
+    def set_status(self, job_id: str, status: JobStatus) -> None:
+        """Set job status."""
+        self.jobs[job_id].status = status
+
+    def get_status(self, job_id: str) -> JobStatus | None:
+        """Return job status."""
+        return self.jobs[job_id].status
 
     def get_config(self, job_id: str) -> JobConfig | None:
         """Return a job config of given job name."""
