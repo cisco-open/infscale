@@ -177,7 +177,7 @@ class UpdatingState(BaseJobState):
     async def stop(self):
         """Transition to STOPPING state."""
         agent_id = self.context._get_ctx_agent_id()
-        await self.context._send_action_to_agent(
+        await self.context.ctrl._send_action_to_agent(
             agent_id, self.job_id, self.context.req
         )
 
@@ -367,7 +367,7 @@ class JobContext:
 
         self.process_cfg(self.req.config)
         await self.prepare_config(agent_id, self.job_id, self.req)
-        self.state.update()
+        await self.state.update()
 
     def cond_running(self):
         """Handle the transition to running."""

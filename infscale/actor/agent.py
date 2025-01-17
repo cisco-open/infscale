@@ -26,7 +26,13 @@ import torch
 import torch.multiprocessing as mp
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager
-from infscale.actor.job_msg import JobStatus, Message, MessageType, WorkerStatusMessage
+from infscale.actor.job_msg import (
+    JobStatus,
+    Message,
+    MessageType,
+    WorkerStatus,
+    WorkerStatusMessage,
+)
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig, WorkerInfo
@@ -106,27 +112,32 @@ class Agent:
             status = await self.worker_mgr.status_q.get()
             if status is None:
                 continue
-
             await self.update_worker_status(status)
             await self.update_job_status(status)
 
     async def update_job_status(self, message: WorkerStatusMessage) -> None:
-        job_status = self._get_job_status()
+        """Send message with updated job status."""
+        job_id = message.job_id
+        job_status = self._get_latest_job_status(job_id)
+        curr_status = self.job_mgr.get_status(job_id)
         
-        if job_status is None:
+        # job status might be none when none of the conditions are met
+        if job_status is None or job_status == curr_status:
             return
+
+        self.job_mgr.set_status(job_id, job_status)
 
         job_status = {
             "agent_id": self.id,
-            "job_id": message.job_id,
-            "status": job_status.name.lower()
+            "job_id": job_id,
+            "status": job_status.name.lower(),
         }
 
         req = pb2.JobStatus(**job_status)
         await self.stub.job_status(req)
 
-
     async def update_worker_status(self, message: WorkerStatusMessage) -> None:
+        """Send message with updated worker status."""
         worker_status = {
             "job_id": message.job_id,
             "status": message.status.name.lower(),
@@ -136,9 +147,51 @@ class Agent:
         req = pb2.Status(worker_status=worker_status)
         await self.stub.update(req)
 
-    def _get_job_status(self) -> JobStatus | None:
-        """Return job status string based on workers statuses or None"""
+    def _get_latest_job_status(self, job_id: str) -> JobStatus | None:
+        """Return latest job status string based on workers statuses or None."""
+        if self._all_wrk_terminated(job_id):
+            return JobStatus.STOPPED
+
+        if self._check_updated_workers(job_id):
+            return JobStatus.UPDATED
+
+        if self._all_wrk_running(job_id):
+            return JobStatus.RUNNING
+        
+        if self._is_job_completed(job_id):
+            return JobStatus.COMPLETED
+
         return None
+
+    def _all_wrk_running(self, job_id: str) -> bool:
+        """Check if all workers are running."""
+        workers = self.worker_mgr.get_workers_by_job_id(job_id)
+        config = self.job_mgr.get_config(job_id)
+
+        running_workers = [w for w in workers.values() if w.status == WorkerStatus.RUNNING]
+    
+        return len(running_workers) == len(config.workers)
+
+    def _all_wrk_terminated(self, job_id: str) -> bool:
+        """Check if all workers are terminated."""
+        workers = self.worker_mgr.get_workers_by_job_id(job_id)
+
+        return len(workers) == 0
+
+    def _is_job_completed(self, job_id: str) -> bool:
+        """Check if a job is completed."""
+        workers = self.worker_mgr.get_workers_by_job_id(job_id)
+
+        any_done = any(w.status == WorkerStatus.DONE for w in workers.values())
+            
+        # serving server is 'done' and the others terminated
+        return any_done
+
+    def _check_updated_workers(self, job_id: str) -> bool:
+        """Check if updated workers are running."""
+        job_data = self.job_mgr.get_job_data(job_id)
+
+        return len(job_data.update_wrkrs) and self._all_wrk_running(job_id)
 
     async def _init_controller_session(self) -> bool:
         try:

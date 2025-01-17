@@ -33,7 +33,6 @@ class WorkerStatus(Enum):
     """WorkerStatus enum"""
 
     READY = "ready"
-    STARTED = "started"
     RUNNING = "running"
     DONE = "done"
     TERMINATED = "terminated"

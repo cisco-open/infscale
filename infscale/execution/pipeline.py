@@ -94,6 +94,10 @@ class Pipeline:
             return
 
         logger.debug(f"done initializing multiworld {name}")
+            
+    def _send_status_message(self, status: WorkerStatus) -> None:
+        msg = Message(MessageType.STATUS, status, self.spec.job_id)
+        self.wcomm.send(msg)
 
     async def _configure_control_channel(self, world_info: WorldInfo) -> None:
         await world_info.channel.setup()
@@ -224,8 +228,8 @@ class Pipeline:
         print(
             f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
         )
-        msg = Message(MessageType.STATUS, WorkerStatus.DONE, self.spec.job_id)
-        self.wcomm.send(msg)
+
+        self._send_status_message(WorkerStatus.DONE)
 
         logger.info("_server_recv task done")
 
@@ -234,8 +238,6 @@ class Pipeline:
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
         max_count = self.dataset.num_of_batches()
-        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
-        self.wcomm.send(msg)
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))
@@ -246,8 +248,6 @@ class Pipeline:
 
     async def _run_worker(self):
         logger.debug("start to run worker")
-        msg = Message(MessageType.STATUS, WorkerStatus.RUNNING, self.spec.job_id)
-        self.wcomm.send(msg)
         while True:
             inputs, seqno = await self.router.recv()
 
@@ -273,8 +273,7 @@ class Pipeline:
 
             self.cfg_event.set()
 
-            msg = Message(MessageType.STATUS, WorkerStatus.STARTED, self.spec.job_id)
-            self.wcomm.send(msg)
+            self._send_status_message(WorkerStatus.RUNNING)
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}
