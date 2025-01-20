@@ -37,7 +37,7 @@ class JobMetaData:
     start_wrkrs: set[str]  # workers to start
     update_wrkrs: set[str]  # workers to update
     stop_wrkrs: set[str]  # workers to stop
-    status: JobStatus = None
+    status: JobStatus = JobStatus.UNKNOWN
 
 
 class JobManager:
@@ -49,6 +49,10 @@ class JobManager:
         logger = get_logger()
 
         self.jobs: dict[str, JobMetaData] = {}
+
+    def cleanup(self, job_id: str) -> None:
+        """Remove job related data."""
+        del self.jobs[job_id]
 
     def get_job_data(self, job_id) -> JobMetaData:
         return self.jobs[job_id]
@@ -157,7 +161,12 @@ class JobManager:
 
     def get_status(self, job_id: str) -> JobStatus | None:
         """Return job status."""
-        return self.jobs[job_id].status
+        if job_id in self.jobs:
+            return self.jobs[job_id].status
+
+        # job already stopped or completed
+        return None
+    
 
     def get_config(self, job_id: str) -> JobConfig | None:
         """Return a job config of given job name."""

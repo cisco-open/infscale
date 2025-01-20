@@ -45,6 +45,7 @@ class JobStatus(Enum):
     STOPPED = "stopped"
     COMPLETED = "completed"
     FAILED = "failed"
+    UNKNOWN = "unknown"
 
 
 @dataclass

@@ -161,6 +161,14 @@ class StoppedState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
+        agent_id = self.context._get_ctrl_agent_id()
+        req = self.context.req
+
+        self.context.set_agent_ids([agent_id])
+        self.context.process_cfg(req.config)
+
+        await self.context.prepare_config(agent_id, self.job_id, req)
+
         self.context.set_state(JobStateEnum.STARTING)
 
 
@@ -194,6 +202,14 @@ class CompleteState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
+        agent_id = self.context._get_ctrl_agent_id()
+        req = self.context.req
+
+        self.context.set_agent_ids([agent_id])
+        self.context.process_cfg(req.config)
+
+        await self.context.prepare_config(agent_id, self.job_id, req)
+
         self.context.set_state(JobStateEnum.STARTING)
 
 

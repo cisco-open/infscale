@@ -139,6 +139,12 @@ class Controller:
 
         job_ctx.set_wrk_status(wrk_id, status)
 
+    def _cleanup_job_ctx(self, agent_id: str) -> None:
+        """Cleanup job context by agent id."""
+        for k, v in list(self.job_contexts.items()):
+            if agent_id in v.agent_ids:
+                del self.job_contexts[k]
+
     def reset_agent_context(self, id: str) -> None:
         """Remove agent context from contexts dictionary."""
         if id not in self.agent_contexts:
@@ -148,6 +154,7 @@ class Controller:
         context = self.agent_contexts[id]
         context.reset()
         del self.agent_contexts[id]
+        self._cleanup_job_ctx(id)
 
     async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""

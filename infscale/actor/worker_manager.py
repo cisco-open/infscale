@@ -72,10 +72,16 @@ class WorkerManager:
 
         return worker
 
+    def cleanup(self, job_id: str) -> None:
+        """Remove worker related data."""
+        for k, v in list(self._workers.items()):
+            if job_id == v.job_id:
+                del self._workers[k]
+
     def get_workers_by_job_id(self, job_id: str) -> dict[str, WorkerMetaData]:
         """Return workers that match job_id."""
         results = {}
-        for v in self._workers.values():   
+        for v in self._workers.values():
             if v.job_id == job_id:
                 results[v.id] = v
 

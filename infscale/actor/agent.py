@@ -118,14 +118,21 @@ class Agent:
     async def update_job_status(self, message: WorkerStatusMessage) -> None:
         """Send message with updated job status."""
         job_id = message.job_id
-        job_status = self._get_latest_job_status(job_id)
         curr_status = self.job_mgr.get_status(job_id)
         
+        # None means that the job is completed / stopped
+        if curr_status is None:
+            return
+
+        job_status = self._get_latest_job_status(job_id)
+        
         # job status might be none when none of the conditions are met
-        if job_status is None or job_status == curr_status:
+        if job_status == JobStatus.UNKNOWN or job_status == curr_status:
             return
 
         self.job_mgr.set_status(job_id, job_status)
+
+        self._cleanup(job_id, job_status)           
 
         job_status = {
             "agent_id": self.id,
@@ -147,8 +154,14 @@ class Agent:
         req = pb2.Status(worker_status=worker_status)
         await self.stub.update(req)
 
-    def _get_latest_job_status(self, job_id: str) -> JobStatus | None:
-        """Return latest job status string based on workers statuses or None."""
+    def _cleanup(self, job_id: str, job_status: JobStatus) -> None:
+        """Remove job and worker related data b job id."""
+        if job_status in [JobStatus.COMPLETED, JobStatus.STOPPED]:
+            self.worker_mgr.cleanup(job_id)
+            self.job_mgr.cleanup(job_id)
+
+    def _get_latest_job_status(self, job_id: str) -> JobStatus:
+        """Return latest job status string based on workers statuses."""
         if self._all_wrk_terminated(job_id):
             return JobStatus.STOPPED
 
@@ -161,7 +174,7 @@ class Agent:
         if self._is_job_completed(job_id):
             return JobStatus.COMPLETED
 
-        return None
+        return JobStatus.UNKNOWN
 
     def _all_wrk_running(self, job_id: str) -> bool:
         """Check if all workers are running."""
