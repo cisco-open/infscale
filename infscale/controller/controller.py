@@ -114,16 +114,18 @@ class Controller:
         vram_stats = GpuMonitor.proto_to_stats(request.vram_stats)
         logger.debug(f"vram_stats = {vram_stats}")
 
-        await self.handle_wrk_status(request.worker_status)
+        self.handle_wrk_status(request.worker_status)
 
         # TODO: use gpu and vram status to schedule deployment
 
     def handle_job_status(self, request: pb2.JobStatus) -> None:
         """Handle job status message."""
-        # TODO: handle job status later
-        logger.info(f"got job status update {request.status}")
+        job_id, status, agent_id = request.job_id, request.status, request.agent_id
 
-    async def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
+        job_ctx = self.job_contexts.get(job_id)
+        job_ctx.handle_job_status(status, agent_id)
+
+    def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
         """Set worker status within job state."""
         if not worker_status.status:
             return
@@ -135,7 +137,7 @@ class Controller:
         )
         job_ctx = self.job_contexts.get(job_id)
 
-        await job_ctx.set_wrk_status(wrk_id, status)
+        job_ctx.set_wrk_status(wrk_id, status)
 
     def reset_agent_context(self, id: str) -> None:
         """Remove agent context from contexts dictionary."""

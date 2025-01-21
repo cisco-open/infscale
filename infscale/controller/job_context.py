@@ -15,12 +15,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
-import asyncio
 from enum import Enum
 from fastapi import HTTPException, status
 
 from infscale import get_logger
-from infscale.actor.job_msg import WorkerStatus
+from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel
 
@@ -130,6 +129,10 @@ class RunningState(BaseJobState):
         """Transition to UPDATING state."""
         self.context.set_state(JobStateEnum.UPDATING)
 
+    def cond_complete(self):
+        """Handle the transition to complete."""
+        self.context.set_state(JobStateEnum.COMPLETE)
+
 
 class StartingState(BaseJobState):
     """StartingState class."""
@@ -145,8 +148,7 @@ class StartingState(BaseJobState):
 
     def cond_running(self):
         """Handle the transition to running."""
-        if self.context._all_wrk_running():
-            self.context.set_state(JobStateEnum.RUNNING)
+        self.context.set_state(JobStateEnum.RUNNING)
 
     # TODO: remove update from StartingState after job status update is made using workers messages
     async def update(self):
@@ -167,8 +169,7 @@ class StoppingState(BaseJobState):
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        if self.context._all_wrk_terminated():
-            self.context.set_state(JobStateEnum.STOPPED)
+        self.context.set_state(JobStateEnum.STOPPED)
 
 
 class UpdatingState(BaseJobState):
@@ -204,34 +205,25 @@ class JobContext:
         self.job_id = job_id
         self.state = ReadyState(self)
         self.state_enum = JobStateEnum.READY
-        self.agent_ids = []
+        self.agent_ids: dict[str, JobStatus | None] = {}
         self.req: JobActionModel = None
         self.config = None
         self.new_config = None
         self.ports = None
         self.num_new_workers = 0
         self.wrk_status: dict[str, WorkerStatus] = {}
-        self.transition_fn_q = asyncio.Queue()
-        _ = asyncio.create_task(self._handle_state_transition())
 
         global logger
         logger = get_logger()
 
-    async def _handle_state_transition(self) -> None:
-        while True:
-            state_fn = await self.transition_fn_q.get()
-
-            if state_fn is None:
-                continue
-
-            try:
-                state_fn()
-            except InvalidJobStateAction:
-                continue
-
     def set_agent_ids(self, agent_ids: list[str]) -> None:
-        """Set a list of agents"""
-        self.agent_ids = agent_ids
+        """Set a list of agents."""
+        for id in agent_ids:
+            self.agent_ids[id] = None
+
+    def _set_job_status_on_agent(self, agent_id: str, job_status: JobStatus) -> None:
+        """Set job status on agent id."""
+        self.agent_ids[agent_id] = job_status
 
     def set_ports(self, ports: list[int]) -> None:
         """Set port numbers for workers."""
@@ -245,31 +237,40 @@ class JobContext:
         """Transition the job to a new state."""
         self.state_enum = state_enum
         self.state = self._get_state_class(state_enum)(self)
-
         logger.info(f"current state for {self.job_id} is {self.state_enum}")
 
-    async def set_wrk_status(self, wrk_id, status: WorkerStatus) -> None:
+    def handle_job_status(self, status: str, agent_id: str) -> None:
+        """Handle job status received from the agent."""
+        try:
+            status_enum = JobStatus(status)
+            self.agent_ids[agent_id] = status_enum
+            self._do_cond(status_enum)
+        except InvalidJobStateAction as e:
+            logger.warning(e)
+        except ValueError:
+            logger.warning(f"'{status}' is not a valid JobStatus")
+
+    def _do_cond(self, status: JobStatus) -> None:
+        """Handle job status by calling conditional action."""
+        match status:
+            case JobStatus.RUNNING:
+                self.cond_running()
+            case JobStatus.COMPLETED:
+                self.cond_complete()
+            case JobStatus.STOPPED:
+                self.cond_stopped()
+            case JobStatus.UPDATED:
+                self.cond_updated()
+            case _:
+                logger.warning(f"unsupported job status: '{status}'")
+
+    def set_wrk_status(self, wrk_id, status: str) -> None:
         """Set worker status."""
-        self.wrk_status[wrk_id] = status
-
-        if status == WorkerStatus.RUNNING.name.lower():
-            await self.transition_fn_q.put(self.cond_running)
-        elif status == WorkerStatus.TERMINATED.name.lower():
-            await self.transition_fn_q.put(self.cond_stopped)
-
-    def _all_wrk_running(self) -> bool:
-        """Check if all workers are running."""
-        return self._check_all_wrkrs(WorkerStatus.RUNNING)
-
-    def _all_wrk_terminated(self) -> bool:
-        """Check if all workers are terminated."""
-        return self._check_all_wrkrs(WorkerStatus.TERMINATED)
-
-    def _check_all_wrkrs(self, wrk_status: WorkerStatus) -> bool:
-        """Check if all workers have the same status."""
-        return all(
-            value == wrk_status.name.lower() for value in self.wrk_status.values()
-        ) and len(self.config.workers) == len(self.wrk_status.keys())
+        try:
+            status_enum = WorkerStatus(status)
+            self.wrk_status[wrk_id] = status_enum
+        except ValueError:
+            logger.warning(f"'{status}' is not a valid WorkerStatus")
 
     def process_cfg(self, new_cfg: JobConfig) -> None:
         """Process received config from controller."""
@@ -323,12 +324,15 @@ class JobContext:
         return agent_ids[0]
 
     def _get_ctx_agent_id(self) -> list[str] | None:
+        """Return current agent id."""
         self._check_agent_ids(self.agent_ids)
 
+        agent_id = next(iter(self.agent_ids))
         # TODO: add support for multiple agent ids
-        return self.agent_ids[0]
+        return agent_id
 
     def _check_agent_ids(self, agent_ids: list[str]) -> None:
+        """Check available agent ids or raise exception."""
         if len(agent_ids) == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -353,6 +357,10 @@ class JobContext:
                     self.job_id, req.action, self.state_enum.value
                 )
 
+    def _check_job_status_on_all_agents(self, job_status: JobStatus) -> bool:
+        """Return true or false if all agents have the same job status."""
+        return all(status == job_status for status in self.agent_ids.values())
+
     async def start(self):
         """Transition to STARTING state."""
         await self.state.start()
@@ -371,17 +379,29 @@ class JobContext:
 
     def cond_running(self):
         """Handle the transition to running."""
-        self.state.cond_running()
+        all_agents_running = self._check_job_status_on_all_agents(JobStatus.RUNNING)
+
+        if all_agents_running:
+            self.state.cond_running()
 
     def cond_updated(self):
         """Handle the transition to running."""
         # TODO: handle updated condition later
-        self.state.cond_updated()
+        all_agents_running = self._check_job_status_on_all_agents(JobStatus.UPDATED)
+
+        if all_agents_running:
+            self.state.cond_updated()
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        self.state.cond_stopped()
+        all_agents_stopped = self._check_job_status_on_all_agents(JobStatus.STOPPED)
+
+        if all_agents_stopped:
+            self.state.cond_stopped()
 
     def cond_complete(self):
         """Handle the transition to complete."""
-        self.state.cond_complete()
+        all_agents_completed = self._check_job_status_on_all_agents(JobStatus.COMPLETED)
+
+        if all_agents_completed:
+            self.state.cond_complete()
