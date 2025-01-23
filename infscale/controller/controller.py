@@ -27,11 +27,17 @@ from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
 from infscale.config import JobConfig
-from infscale.constants import APISERVER_PORT, CONTROLLER_PORT, GRPC_MAX_MESSAGE_LENGTH
+from infscale.constants import (
+    APISERVER_PORT,
+    CONTROLLER_PORT,
+    DEFAULT_DEPLOYMENT_POLICY,
+    GRPC_MAX_MESSAGE_LENGTH,
+)
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
 from infscale.controller.job_context import JobContext
+from infscale.controller.deployment.policy import DeploymentPolicyEnum, DeploymentPolicyFactory
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -48,6 +54,7 @@ class Controller:
         self,
         port: int = CONTROLLER_PORT,
         apiport: int = APISERVER_PORT,
+        policy: str = DEFAULT_DEPLOYMENT_POLICY,
     ):
         """Initialize an instance."""
         global logger
@@ -59,6 +66,19 @@ class Controller:
         self.job_contexts: dict[str, JobContext] = dict()
 
         self.apiserver = ApiServer(self, apiport)
+
+        policy_fact = DeploymentPolicyFactory()
+
+        try:
+            policy_enum = DeploymentPolicyEnum(policy)
+            self.deploy_policy = policy_fact.get_deployment(policy_enum)
+        except ValueError:
+            logger.warning(
+                f"'{policy_enum}' is not a valid deployment policy, continuing with {DeploymentPolicyEnum.EVEN}"
+            )
+            self.deploy_policy = policy_fact.get_deployment(
+                DeploymentPolicyEnum.EVEN
+            )
 
         self.job_setup_event = asyncio.Event()
 
@@ -229,7 +249,7 @@ class Controller:
 
         self.job_setup_event.set()
 
-    async def _patch_job_cfg(self,agent_id: str, job_id: str) -> None:
+    async def _patch_job_cfg(self, agent_id: str, job_id: str) -> None:
         """Patch config for updated job."""
         await self.job_setup_event.wait()
 

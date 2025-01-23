@@ -21,7 +21,7 @@ import requests
 import yaml
 from infscale.actor.agent import Agent
 from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
-                                CONTROLLER_PORT, LOCALHOST)
+                                CONTROLLER_PORT, DEFAULT_DEPLOYMENT_POLICY, LOCALHOST)
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel
 
@@ -35,10 +35,11 @@ def start():
 @start.command()
 @click.option("--port", default=CONTROLLER_PORT, help="port number")
 @click.option("--apiport", default=APISERVER_PORT, help="port number for api server")
-def controller(port: int, apiport: int):
+@click.option("--policy", default=DEFAULT_DEPLOYMENT_POLICY, help="deployment policy")
+def controller(port: int, apiport: int, policy: str):
     """Run controller."""
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(ctrl.Controller(port=port, apiport=apiport).run())
+    loop.run_until_complete(ctrl.Controller(port=port, apiport=apiport, policy=policy).run())
 
 
 @start.command()
