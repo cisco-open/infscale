@@ -14,3 +14,12 @@ infscale.egg-info
 
 # yapf backup file
 yapf*.py
+
+# saved logs
+*.log
+
+# generated figure
+*.png
+
+# dataset
+data/
