@@ -67,6 +67,8 @@ class Pipeline:
         self.tx_allow_evt = asyncio.Event()
         self.tx_allow_evt.set()
 
+        self.seqno_process_count = {}
+
     async def _configure_multiworld(self, world_info: WorldInfo) -> None:
         (name, world_size, addr, port, backend, my_rank) = (
             world_info.name,
@@ -250,9 +252,20 @@ class Pipeline:
         logger.debug("start to run worker")
         while True:
             inputs, seqno = await self.router.recv()
+            
+            if seqno not in self.seqno_process_count:
+                self.seqno_process_count[seqno] = 0
+            self.seqno_process_count[seqno] += 1
 
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            
             with torch.inference_mode():
+                start.record()
                 outputs, next_layer = self.stage.predict(seqno, **inputs)
+                end.record()
+                torch.cuda.synchronize()
+                logger.profile(f"[COMPUTE] seqno {seqno} | stage {self.stage.id} | count: {self.seqno_process_count[seqno]} | time: {start.elapsed_time(end)} ms")
 
             await self.router.send(seqno, outputs, next_layer)
 

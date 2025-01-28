@@ -39,12 +39,12 @@ workers:
       start: -1
       end: -1
   - id: 0-0
-    device: cuda:1
+    device: cuda:0
     stage:
       start: 0
       end: 25
   - id: 1-0
-    device: cuda:3
+    device: cuda:1
     stage:
       start: 26
       end: 51

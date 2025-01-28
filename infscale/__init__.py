@@ -21,18 +21,42 @@ import os
 import sys
 from pathlib import Path
 from infscale.version import VERSION as __version__  # noqa: F401
+from datetime import datetime
 
+# Add custom PROFILE level
+PROFILE_LEVEL = 25  # Between INFO (20) and WARNING (30)
+logging.addLevelName(PROFILE_LEVEL, 'PROFILE')
+setattr(logging, 'PROFILE', PROFILE_LEVEL)
+
+def profile(self, message, *args, **kwargs):
+    self.log(PROFILE_LEVEL, message, *args, **kwargs)
+logging.Logger.profile = profile
+
+# Get log level from env var, default to WARNING
 level = getattr(logging, os.getenv("INFSCALE_LOG_LEVEL", "WARNING"))
 
 format = "%(process)d | %(asctime)s | %(filename)s:%(lineno)d | %(levelname)s | %(threadName)s | %(funcName)s | %(message)s"
 
-logging.basicConfig(level=level, format=format, stream=sys.stdout)
+# Create timestamp for log file
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+default_log_file = f"infscale_{timestamp}.log"
 
+# Set up basic logging to current directory's log folder
+LOG_DIR = Path.cwd() / "log"  # Changed from HOME_LOG_DIR to use current working directory
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+log_file_path = LOG_DIR / default_log_file
 
-HOME_LOG_DIR = Path(os.getenv("HOME")) / ".infscale" / "log"
-HOME_LOG_DIR.mkdir(parents=True, exist_ok=True)
+# Configure root logger
+logging.basicConfig(
+    level=level,
+    format=format,
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(log_file_path)
+    ]
+)
+
 logger_registry: dict[str | int, logging.Logger] = dict()
-
 
 def get_logger(
     key: str = f"{os.getpid()}",
@@ -41,30 +65,10 @@ def get_logger(
     """Get a logger with a given key.
 
     If the logger doesn't exist, one will be created.
+    All loggers will use the same log file configured at startup for easy parsing.
     """
     if key not in logger_registry:
-        _create_logger(key, log_file_path)
+        logger = logging.getLogger(key)
+        logger_registry[key] = logger
 
-    logger = logger_registry[key]
-
-    return logger
-
-
-def _create_logger(key: str | int, log_file_path: str = None) -> None:
-    """Create a logger with a given key."""
-    if key in logger_registry:
-        raise ValueError(f"Logger '{key}' already exists.")
-
-    logger = logging.getLogger(key)
-
-    if log_file_path:
-        log_file_path = HOME_LOG_DIR / log_file_path
-        log_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-        file_handler = logging.FileHandler(log_file_path)
-        file_handler.setLevel(level)
-        file_handler.setFormatter(logging.Formatter(format))
-
-        logger.addHandler(file_handler)
-
-    logger_registry[key] = logger
+    return logger_registry[key]
