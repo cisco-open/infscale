@@ -41,8 +41,11 @@ dev = [
     "python-lsp-server",
 ]
 
-[tool.setuptools]
-packages = ["infscale"]
+# [tool.setuptools]
+# packages = ["infscale"]
+
+[tool.setuptools.package-data]
+"infscale" = ["patch/*.patch"]
 
 [tool.setuptools.dynamic]
 version = {attr = "infscale.__version__"}
