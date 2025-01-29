@@ -355,7 +355,7 @@ class Pipeline:
         self.modelir = ModelIR(mmd)
 
     def _prepare_worker(self) -> None:
-        if self.spec.stage.is_server:
+        if self.spec.is_server:
             logger.info("I am server and leader")
             self.dataset = self.dataset
             self._predict_fn = self.modelir.predict_fn
@@ -368,7 +368,7 @@ class Pipeline:
         _ = asyncio.create_task(self.handle_config())
         await self.cfg_event.wait()
 
-        if self.spec.stage.is_server:
+        if self.spec.is_server:
             await self._run_server()
         else:
             await self._run_worker()

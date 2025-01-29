@@ -30,7 +30,14 @@ class StageConfig:
     start: int  # start layer number
     end: int  # end layer number
     id: str  # <stage number>-<replica number>
-    is_server: bool = False
+
+
+@dataclass
+class StageData:
+    """Class for keeping stage data for worker."""
+
+    start: int  # start layer number
+    end: int  # end layer number
 
 
 @dataclass
@@ -55,6 +62,17 @@ class WorkerInfo:
     ctrl_port: int = 30001
     addr: str = "127.0.0.1"
     backend: str = "gloo"
+
+
+@dataclass
+class WorkerData:
+    """Specification about worker data."""
+
+    id: str
+    device: str
+    stage: StageData
+    is_server: bool = False
+    deploy: bool = True
 
 
 @dataclass
@@ -85,6 +103,8 @@ class ServeConfig:
 
     # maximum number of requests in flight at any given point in time
     max_inflight: int = 1
+
+    is_server: bool = False
 
     def __post_init__(self):
         """Convert stage dict into stage object."""
@@ -117,7 +137,7 @@ class ServeConfig:
 class JobConfig:
     """Class for job config."""
 
-    workers: list
+    workers: list[WorkerData]
     name: str
     model: str
     flow_graph: dict[str, list[WorkerInfo]]
@@ -136,6 +156,9 @@ class JobConfig:
                     item if isinstance(item, WorkerInfo) else WorkerInfo(**item)
                 )
                 self.flow_graph[k][i] = worker_info
+        
+        for j, w in enumerate(self.workers):
+            self.workers[j] = w if isinstance(w, WorkerData) else WorkerData(**w)
 
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
@@ -144,9 +167,9 @@ class JobConfig:
         logger = get_logger()
 
         workers_stage_info = {}
-        for worker in self.workers:
-            wid = worker["id"]
-            stage = worker["stage"]
+        for w in self.workers:
+            wid = w.id
+            stage = w.stage
             workers_stage_info[wid] = {**stage, "id": wid}
 
         if self.max_inflight <= 0:
@@ -154,19 +177,23 @@ class JobConfig:
             self.max_inflight = 1
 
         for item in self.workers:
+            if not item.deploy:
+                continue
+
             config = {
                 "name": self.name,
                 "model": self.model,
                 "flow_graph": self.flow_graph,
-                "stage": {**item["stage"], "id": item["id"]},
+                "stage": {**item.stage, "id": item.id},
                 "dataset": self.dataset,
                 "nfaults": self.nfaults,
                 "micro_batch_size": self.micro_batch_size,
                 "fwd_policy": self.fwd_policy,
-                "device": item["device"],
+                "device": item.device,
                 "workers_stage_info": workers_stage_info,
                 "job_id": self.job_id,
                 "max_inflight": self.max_inflight,
+                "is_server": item.is_server,
             }
             serve_configs.append(ServeConfig(**config))
 
