@@ -231,11 +231,11 @@ class Controller:
         await context.write(payload)
 
     async def _send_action_to_agent(
-        self, agent_id: str, job_id: str, action: JobActionModel
+        self, agent_ids: list[str], job_id: str, action: JobActionModel
     ) -> None:
         """Send job action to agent."""
-
-        agent_context = self.agent_contexts[agent_id]
+        # TODO: handle multiple agent ids later.
+        agent_context = self.agent_contexts[agent_ids[0]]
         context = agent_context.get_grpc_ctx()
 
         payload = pb2.JobAction(type=action.action, job_id=job_id)
@@ -245,7 +245,7 @@ class Controller:
     def handle_job_ports(self, req: pb2.JobSetupReq) -> JobConfig:
         """Patch config with connection info received from agent."""
         job_ctx = self.job_contexts.get(req.job_id)
-        job_ctx.set_ports(req.ports)
+        job_ctx.set_ports(req.ports, req.agent_id)
 
         self.job_setup_event.set()
 
