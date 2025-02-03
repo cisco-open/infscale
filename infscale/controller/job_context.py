@@ -16,14 +16,14 @@
 
 from __future__ import annotations
 import asyncio
-from dataclasses import dataclass
 from enum import Enum
+from itertools import islice
 from typing import TYPE_CHECKING
 from fastapi import HTTPException, status
 
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerData
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel
 
 if TYPE_CHECKING:
@@ -37,13 +37,14 @@ class AgentMetaData:
 
     def __init__(
         self,
+        id: str = None,
         job_status: JobStatus = None,
         config: JobConfig = None,
         new_config: JobConfig = None,
         num_new_workers: int = 0,
         ports: list[int] = None,
     ):
-
+        self.id = id
         self.job_status = job_status
         self.config = config
         self.new_config = new_config
@@ -128,13 +129,22 @@ class BaseJobState:
 class ReadyState(BaseJobState):
     async def start(self):
         """Transition to STARTING state."""
-        agent_ids = self.context._get_ctrl_agent_ids()
         req = self.context.req
+        num_of_workers = len(req.config.workers)
+        agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
+
+        assert len(agent_ids) == 1, f"expected one agent_id, but got {len(agent_ids)}."
 
         self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids, req.config)
+        self.context.process_cfg(agent_ids)
 
-        await self.context.prepare_config(agent_ids, self.job_id, req)
+        tasks = []
+
+        for agent_id in agent_ids:
+            task = asyncio.create_task(self.context.prepare_config(agent_id))
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -145,9 +155,16 @@ class RunningState(BaseJobState):
     async def stop(self):
         """Transition to STOPPING state."""
         agent_ids = self.context._get_ctx_agent_ids()
-        await self.context.ctrl._send_action_to_agent(
-            agent_ids, self.job_id, self.context.req
-        )
+
+        tasks = []
+
+        for agent_id in agent_ids:
+            task = self.context.ctrl._send_action_to_agent(
+                agent_id, self.job_id, self.context.req
+            )
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
         self.context.set_state(JobStateEnum.STOPPING)
 
@@ -155,8 +172,15 @@ class RunningState(BaseJobState):
         """Transition to UPDATING state."""
         agent_ids = self.context._get_ctx_agent_ids()
 
-        self.context.process_cfg(agent_ids, self.context.req.config)
-        await self.context.prepare_config(agent_ids, self.job_id, self.context.req)
+        self.context.process_cfg(agent_ids)
+
+        tasks = []
+
+        for agent_id in agent_ids:
+            task = asyncio.create_task(self.context.prepare_config(agent_id))
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
         self.context.set_state(JobStateEnum.UPDATING)
 
@@ -171,9 +195,16 @@ class StartingState(BaseJobState):
     async def stop(self):
         """Transition to STOPPING state."""
         agent_ids = self.context._get_ctx_agent_ids()
-        await self.context.ctrl._send_action_to_agent(
-            agent_ids, self.job_id, self.context.req
-        )
+
+        tasks = []
+
+        for agent_id in agent_ids:
+            task = self.context.ctrl._send_action_to_agent(
+                agent_id, self.job_id, self.context.req
+            )
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
         self.context.set_state(JobStateEnum.STOPPING)
 
@@ -187,13 +218,23 @@ class StoppedState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        agent_ids = self.context._get_ctrl_agent_ids()
         req = self.context.req
+        num_of_workers = len(req.config.workers)
+
+        agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
+
+        assert len(agent_ids) == 1, f"expected one agent_id, but got {len(agent_ids)}."
 
         self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids, req.config)
+        self.context.process_cfg(agent_ids)
 
-        await self.context.prepare_config(agent_ids, self.job_id, req)
+        tasks = []
+
+        for agent_id in agent_ids:
+            task = asyncio.create_task(self.context.prepare_config(agent_id))
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -212,9 +253,16 @@ class UpdatingState(BaseJobState):
     async def stop(self):
         """Transition to STOPPING state."""
         agent_ids = self.context._get_ctx_agent_ids()
-        await self.context.ctrl._send_action_to_agent(
-            agent_ids, self.job_id, self.context.req
-        )
+
+        tasks = []
+
+        for agent_id in agent_ids:
+            task = self.context.ctrl._send_action_to_agent(
+                agent_id, self.job_id, self.context.req
+            )
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
         self.context.set_state(JobStateEnum.STOPPING)
 
@@ -228,13 +276,23 @@ class CompleteState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        agent_ids = self.context._get_ctrl_agent_ids()
         req = self.context.req
+        num_of_workers = len(req.config.workers)
+
+        agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
+
+        assert len(agent_ids) == 1, f"expected one agent_id, but got {len(agent_ids)}."
 
         self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids, req.config)
+        self.context.process_cfg(agent_ids)
 
-        await self.context.prepare_config(agent_ids, self.job_id, req)
+        tasks = []
+
+        for agent_id in agent_ids:
+            task = asyncio.create_task(self.context.prepare_config(agent_id))
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -248,12 +306,7 @@ class JobContext:
         self.state = ReadyState(self)
         self.state_enum = JobStateEnum.READY
         self.agent_data: dict[str, AgentMetaData] = {}
-        self.agent_ids: dict[str, JobStatus | None] = {}
         self.req: JobActionModel = None
-        self.config = None
-        self.new_config = None
-        self.ports = None
-        self.num_new_workers = 0
         self.wrk_status: dict[str, WorkerStatus] = {}
 
         global logger
@@ -262,22 +315,21 @@ class JobContext:
     def set_agent_ids(self, agent_ids: list[str]) -> None:
         """Set a list of agents."""
         for id in agent_ids:
-            self.agent_ids[id] = None
-            self.agent_data[id] = AgentMetaData()
+            self.agent_data[id] = AgentMetaData(id=id)
+
+    def get_agent_data(self, agent_id: str) -> AgentMetaData:
+        """Return agent metadata"""
+        return self.agent_data[agent_id]
 
     def _set_job_status_on_agent(self, agent_id: str, job_status: JobStatus) -> None:
         """Set job status on agent id."""
-        self.agent_ids[agent_id] = job_status
         self.agent_data[agent_id].job_status = job_status
 
-    def set_ports(self, ports: list[int], agent_id: str) -> None:
+    def set_ports(self, agent_id: str, ports: list[int]) -> None:
         """Set port numbers for workers."""
-        self.ports = ports
-        self.agent_data[agent_id].ports = ports
-
-    def set_new_workers_num(self, wrk_count: int) -> None:
-        """Set new number of workers."""
-        self.num_new_workers = wrk_count
+        agent_data = self.agent_data[agent_id]
+        agent_data.ports = ports
+        agent_data.job_setup_event.set()
 
     def set_state(self, state_enum):
         """Transition the job to a new state."""
@@ -289,7 +341,6 @@ class JobContext:
         """Handle job status received from the agent."""
         try:
             status_enum = JobStatus(status)
-            self.agent_ids[agent_id] = status_enum
             self.agent_data[agent_id].job_status = status_enum
             self._do_cond(status_enum)
         except InvalidJobStateAction as e:
@@ -319,21 +370,14 @@ class JobContext:
         except ValueError:
             logger.warning(f"'{status}' is not a valid WorkerStatus")
 
-    def process_cfg(self, agent_ids: list[str], new_cfg: JobConfig) -> None:
+    def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller."""
-        if new_cfg is None:
-            return
+        agent_cfg = self.ctrl.deploy_policy.split(agent_ids, self.req.config)
 
-        agent_cfg = self.ctrl.deploy_policy.split(agent_ids, new_cfg)
-
-        # add updated config to each agent
         self._update_agent_data(agent_cfg)
 
-        self.num_new_workers = self._get_new_workers_count(self.config, new_cfg)
-        self.new_config = new_cfg
-
     def _update_agent_data(self, agent_cfg: dict[str, JobConfig]) -> None:
-        """Update agent data."""
+        """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
             agent_data = self.agent_data[agent_id]
             agent_data.new_config = new_cfg
@@ -341,31 +385,42 @@ class JobContext:
                 agent_data.config, new_cfg
             )
 
-    async def prepare_config(
-        self, agent_ids: list[str], job_id: str, req: JobActionModel
-    ) -> None:
+    async def prepare_config(self, agent_id: list[str]) -> None:
         """Prepare config for deploy."""
-        # TODO: handle multiple agent ids later.
-        agent_id = agent_ids[0]
+        agent_data = self.agent_data[agent_id]
         # fetch port numbers from agent
-        await self.ctrl._job_setup(agent_id, req.config)
+        await self.ctrl._job_setup(agent_data)
 
         # update job config
-        await self.ctrl._patch_job_cfg(agent_id, job_id)
+        await self.ctrl._patch_job_cfg(agent_data)
 
         # schedule config transfer to agent after job setup is done
-        await self.ctrl._send_config_to_agent(agent_id, job_id, req)
+        await self.ctrl._send_config_to_agent(agent_data, self.req)
 
     def _get_new_workers_count(self, config: JobConfig, new_cfg: JobConfig) -> int:
         """Return the number of new workers between and old and new config."""
         curr_workers = []
         if config is not None:
-            curr_workers = [
-                w.name for w_list in config.flow_graph.values() for w in w_list
-            ]
-        new_workers = [w.name for w_list in new_cfg.flow_graph.values() for w in w_list]
+            curr_workers = self._get_deploy_worker_names(config)
 
+        new_workers = self._get_deploy_worker_names(new_cfg)
         return len(set(new_workers) - set(curr_workers))
+
+    def _get_deploy_worker_names(self, config: JobConfig) -> list[str]:
+        """Return a list of worker names to be deployed."""
+        worker_ids = self._get_deploy_worker_ids(config.workers)
+        worker_names = [
+            w.name
+            for wid, w_list in config.flow_graph.items()
+            for w in w_list
+            if wid in worker_ids
+        ]
+
+        return worker_names
+
+    def _get_deploy_worker_ids(self, workers: list[WorkerData]) -> list[str]:
+        """Return a list of worker ids to be deployed."""
+        return [w.id for w in workers if w.deploy]
 
     def _get_state_class(self, state_enum):
         """Map a JobStateEnum to its corresponding state class."""
@@ -380,9 +435,14 @@ class JobContext:
         }
         return state_mapping[state_enum]
 
-    def _get_ctrl_agent_ids(self) -> list[str]:
-        """Return available agent ids from controller."""
-        agent_ids = list(self.ctrl.agent_contexts.keys())
+    def _get_ctrl_agent_ids(self, num_of_workers: int) -> list[str]:
+        """Return available agent id from controller."""
+        available_agents = list(self.ctrl.agent_contexts.keys())
+
+        if len(available_agents) > num_of_workers:
+            agent_ids = list(islice(available_agents, num_of_workers))
+        else:
+            agent_ids = available_agents
 
         self._check_agent_ids(agent_ids)
 
@@ -390,7 +450,7 @@ class JobContext:
 
     def _get_ctx_agent_ids(self) -> list[str]:
         """Return current agent ids."""
-        agent_ids = list(self.agent_ids.keys())
+        agent_ids = list(self.agent_data.keys())
         self._check_agent_ids(agent_ids)
 
         return agent_ids
@@ -423,7 +483,9 @@ class JobContext:
 
     def _check_job_status_on_all_agents(self, job_status: JobStatus) -> bool:
         """Return true or false if all agents have the same job status."""
-        return all(status == job_status for status in self.agent_ids.values())
+        return all(
+            data.job_status == job_status for data in list(self.agent_data.values())
+        )
 
     async def start(self):
         """Transition to STARTING state."""
@@ -446,7 +508,6 @@ class JobContext:
 
     def cond_updated(self):
         """Handle the transition to running."""
-        # TODO: handle updated condition later
         all_agents_running = self._check_job_status_on_all_agents(JobStatus.UPDATED)
 
         if all_agents_running:

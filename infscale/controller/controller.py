@@ -26,7 +26,7 @@ from fastapi import Request
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerData
 from infscale.constants import (
     APISERVER_PORT,
     CONTROLLER_PORT,
@@ -36,8 +36,11 @@ from infscale.constants import (
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
-from infscale.controller.job_context import JobContext
-from infscale.controller.deployment.policy import DeploymentPolicyEnum, DeploymentPolicyFactory
+from infscale.controller.job_context import AgentMetaData, JobContext
+from infscale.controller.deployment.policy import (
+    DeploymentPolicyEnum,
+    DeploymentPolicyFactory,
+)
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -76,11 +79,7 @@ class Controller:
             logger.warning(
                 f"'{policy_enum}' is not a valid deployment policy, continuing with {DeploymentPolicyEnum.EVEN}"
             )
-            self.deploy_policy = policy_fact.get_deployment(
-                DeploymentPolicyEnum.EVEN
-            )
-
-        self.job_setup_event = asyncio.Event()
+            self.deploy_policy = policy_fact.get_deployment(DeploymentPolicyEnum.EVEN)
 
     async def _start_server(self):
         server_options = [
@@ -192,17 +191,22 @@ class Controller:
         job_ctx = self.job_contexts.get(job_id)
         await job_ctx.do(req)
 
-    async def _job_setup(self, agent_id: str, config: JobConfig) -> None:
+    async def _job_setup(self, agent_data: AgentMetaData) -> None:
         """Send job setup request to agent."""
-        job_ctx = self.job_contexts.get(config.job_id)
+        agent_id, config, num_new_workers, job_setup_event = (
+            agent_data.id,
+            agent_data.new_config,
+            agent_data.num_new_workers,
+            agent_data.job_setup_event,
+        )
 
-        if job_ctx.num_new_workers <= 0:  # no new workers to ask for ports
-            self.job_setup_event.set()
+        if num_new_workers <= 0:  # no new workers to ask for ports
+            job_setup_event.set()
 
             return
 
         # we need two sets of ports for each worker for channel connection and multiworld connection
-        port_count_bytes = (job_ctx.num_new_workers * 2).to_bytes(1, byteorder="big")
+        port_count_bytes = (num_new_workers * 2).to_bytes(1, byteorder="big")
 
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
@@ -214,28 +218,26 @@ class Controller:
         await context.write(payload)
 
     async def _send_config_to_agent(
-        self, agent_id: str, job_id: str, action: JobActionModel
+        self, agent_data: AgentMetaData, action: JobActionModel
     ) -> None:
         """Send config to agent."""
-
+        agent_id, config = agent_data.id, agent_data.config
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
-        config = self.job_contexts.get(job_id).config
 
         manifest_bytes = json.dumps(asdict(config)).encode("utf-8")
 
         payload = pb2.JobAction(
-            type=action.action, job_id=job_id, manifest=manifest_bytes
+            type=action.action, job_id=action.job_id, manifest=manifest_bytes
         )
 
         await context.write(payload)
 
     async def _send_action_to_agent(
-        self, agent_ids: list[str], job_id: str, action: JobActionModel
+        self, agent_id: str, job_id: str, action: JobActionModel
     ) -> None:
         """Send job action to agent."""
-        # TODO: handle multiple agent ids later.
-        agent_context = self.agent_contexts[agent_ids[0]]
+        agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
 
         payload = pb2.JobAction(type=action.action, job_id=job_id)
@@ -245,16 +247,24 @@ class Controller:
     def handle_job_ports(self, req: pb2.JobSetupReq) -> JobConfig:
         """Patch config with connection info received from agent."""
         job_ctx = self.job_contexts.get(req.job_id)
-        job_ctx.set_ports(req.ports, req.agent_id)
+        job_ctx.set_ports(req.agent_id, req.ports)
 
-        self.job_setup_event.set()
+    def _get_deploy_worker_ids(self, workers: list[WorkerData]) -> list[str]:
+        """Return a list of worker ids to be deployed."""
+        return [w.id for w in workers if w.deploy]
 
-    async def _patch_job_cfg(self, agent_id: str, job_id: str) -> None:
+    async def _patch_job_cfg(self, agent_data: AgentMetaData) -> None:
         """Patch config for updated job."""
-        await self.job_setup_event.wait()
+        job_setup_event = agent_data.job_setup_event
+        await job_setup_event.wait()
+        agent_id, config, new_config, ports = (
+            agent_data.id,
+            agent_data.config,
+            agent_data.new_config,
+            agent_data.ports,
+        )
 
-        job_ctx = self.job_contexts.get(job_id)
-        config, new_config, ports = job_ctx.config, job_ctx.new_config, job_ctx.ports
+        deploy_worker_ids = self._get_deploy_worker_ids(new_config.workers)
 
         port_iter = None
         if ports is not None:
@@ -269,8 +279,11 @@ class Controller:
                     curr_workers[worker.name] = worker
 
         # step 2: patch new config with existing workers ports and assign ports to new ones
-        for worker_list in new_config.flow_graph.values():
+        for wid, worker_list in new_config.flow_graph.items():
             for worker in worker_list:
+                if wid not in deploy_worker_ids:
+                    continue
+
                 worker.addr = self.agent_contexts[agent_id].ip
                 if worker.name in curr_workers:
                     # keep existing ports
@@ -281,13 +294,13 @@ class Controller:
                     worker.data_port = next(port_iter)
                     worker.ctrl_port = next(port_iter)
 
-        job_ctx.config = new_config
-        job_ctx.new_config = None
-        job_ctx.num_new_workers = 0
-        job_ctx.ports = None
+        agent_data.config = new_config
+        agent_data.new_config = None
+        agent_data.num_new_workers = 0
+        agent_data.ports = None
 
         # block patch until new config is received
-        self.job_setup_event.clear()
+        agent_data.job_setup_event.clear()
 
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):
