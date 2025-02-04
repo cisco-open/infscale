@@ -1,0 +1,1 @@
+python gpu_log_parser.py --log_file gpu_log/gpu_utilization_20250203_215205.log --start_time 0 --gpus 1,2

@@ -241,7 +241,7 @@ class Pipeline:
             f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
         )
 
-        logger.profile(f"[TOTAL LATENCY] num_batches: {idx} | total time: {end_time - start_time} ms")
+        logger.profile(f"[TOTAL LATENCY] num_batches: {idx} | total time: {end_time - start_time} s")
 
         self._send_status_message(WorkerStatus.DONE)
 

@@ -15,8 +15,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import asyncio
-
 import click
+import atexit
 import requests
 import yaml
 from infscale.actor.agent import Agent
@@ -24,6 +24,7 @@ from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
                                 CONTROLLER_PORT, DEFAULT_DEPLOYMENT_POLICY, LOCALHOST)
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel
+from infscale.monitor.gpu_profiler import GPUProfiler
 
 
 @click.group()
@@ -50,8 +51,12 @@ def agent(host: str, port: int, id: str):
     """Run agent."""
     endpoint = f"{host}:{port}"
 
-    # Don't use the following code asyncio.run()
-    # see https://github.com/grpc/grpc/issues/32480 for more details
+    # Start the GPU profiler when the agent starts.
+    profiler = GPUProfiler()
+    profiler.start()
+
+    # Register profiler.stop() to be called automatically when the process exits.
+    atexit.register(profiler.stop)
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(
