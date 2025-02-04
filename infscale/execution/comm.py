@@ -18,6 +18,9 @@
 import torch
 from infscale.execution.control import MSG_MODE_ACK, Channel, ControlMessage
 from multiworld.communicator import WorldCommunicator
+from infscale import get_logger
+
+logger = None
 
 
 class TensorSender:
@@ -38,6 +41,11 @@ class TensorSender:
         self.rank = rank  # destination's rank
         self.device = device
 
+        global logger
+        logger = get_logger()
+
+        self.seqno_process_count = {}
+
     async def send(self, tensors: dict[str, torch.Tensor], seqno: int) -> None:
         """Send tensors to destination rank.
 
@@ -49,8 +57,19 @@ class TensorSender:
         # we coordinate send/recv via control channel
         _ = await self.channel.sync(self.rank, seqno=seqno, tensors=tensors)
 
+        start = torch.cuda.Event(enable_timing=True)
+        end = torch.cuda.Event(enable_timing=True)
+
+        if seqno not in self.seqno_process_count:
+            self.seqno_process_count[seqno] = 0
+        self.seqno_process_count[seqno] += 1
+
+        start.record()
         for _, tensor in tensors.items():
             await self.communicator.send(tensor, self.rank, self.world_name)
+        end.record()
+        torch.cuda.synchronize()
+        logger.profile(f"[SEND] seqno {seqno} | world {self.world_name} | count: {self.seqno_process_count[seqno]} | time: {start.elapsed_time(end)} ms")
 
     def is_broken(self) -> bool:
         """Check if world is broken or not."""

@@ -68,6 +68,7 @@ class Pipeline:
         self.tx_allow_evt.set()
 
         self.seqno_process_count = {}
+        self.seqno_send_start_time = {}
 
     async def _configure_multiworld(self, world_info: WorldInfo) -> None:
         (name, world_size, addr, port, backend, my_rank) = (
@@ -199,6 +200,10 @@ class Pipeline:
             await self._wait_tx_permission()
 
             logger.info(f"sending batch {seqno}")
+
+            assert seqno not in self.seqno_send_start_time
+            self.seqno_send_start_time[seqno] = time.perf_counter()
+
             # send batch to the first stage
             await router.send(seqno, batch, 0)
             seqno += 1
@@ -222,6 +227,11 @@ class Pipeline:
             results = self._predict_fn(outputs)
             logger.info(f"response for {seqno}: {results}")
 
+            assert seqno in self.seqno_send_start_time
+            send_time = self.seqno_send_start_time[seqno]
+            recv_time = time.perf_counter()
+            logger.profile(f"[LATENCY] seqno {seqno} | time: {recv_time - send_time} ms")
+
             await self._check_n_enable_tx_permission()
 
             idx += 1
@@ -230,6 +240,8 @@ class Pipeline:
         print(
             f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
         )
+
+        logger.profile(f"[TOTAL LATENCY] num_batches: {idx} | total time: {end_time - start_time} ms")
 
         self._send_status_message(WorkerStatus.DONE)
 
