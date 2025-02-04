@@ -151,8 +151,8 @@ class Stage(nn.Module):
 
         logger.debug("run llm first stage")
         logger.debug(
-            f"input_ids's size: {input_ids.size()} ",
-            f"attention_mask's size: {attention_mask.size()}",
+            f"input_ids's size: {input_ids.size()} "
+            + f"attention_mask's size: {attention_mask.size()}"
         )
 
         outputs = self.forward(**inputs, use_cache=True, past_key_values=cache)

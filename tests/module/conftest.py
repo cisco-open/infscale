@@ -32,7 +32,7 @@ datasets = [
     # ("wikitext", "wikitext-2-raw-v1", "test"),
     # ("tiny_shakespeare", "", "test"),
     # ("wikitext", "wikitext-2-raw-v1", "test"),
-    ("Maysee/tiny-imagenet", "", "valid"),
+    ("zh-plus/tiny-imagenet", "", "valid"),
     ("cifar10", "", "test"),
 ]
 
