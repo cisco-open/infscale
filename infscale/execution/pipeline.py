@@ -232,7 +232,7 @@ class Pipeline:
             assert seqno in self.seqno_send_start_time
             send_time = self.seqno_send_start_time[seqno]
             recv_time = time.perf_counter()
-            logger.profile(f"[LATENCY] seqno {seqno} | time: {recv_time - send_time} ms")
+            logger.profile(f"[LATENCY] seqno {seqno} | time: {recv_time - send_time} s")
 
             await self._check_n_enable_tx_permission()
 
