@@ -38,6 +38,8 @@ logger = None
 # a global variable to store start time of the first request
 start_time = None
 
+MAX_COUNT = 100 # For testing, we run 100 batches
+
 
 class Pipeline:
     """Pipeline class."""
@@ -194,7 +196,7 @@ class Pipeline:
         start_time = time.perf_counter()
         while True:
             batch = self.dataset.next_batch(self.device)
-            if batch is None:
+            if batch is None or seqno >= MAX_COUNT:
                 break
 
             await self._wait_tx_permission()
@@ -251,7 +253,7 @@ class Pipeline:
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
-        max_count = self.dataset.num_of_batches()
+        max_count = MAX_COUNT # self.dataset.num_of_batches()
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))

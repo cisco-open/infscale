@@ -23,5 +23,4 @@ yapf*.py
 
 # dataset
 data/
-examples/resnet_profiling/batch_size_128_2stage_2gpu_cuda.yaml
-examples/resnet_profiling/batch_size_128_1stage_2gpu_cuda.yaml
+examples/resnet_profiling/*

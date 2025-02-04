@@ -36,7 +36,9 @@ from torchvision.transforms import (CenterCrop, Compose, Normalize, Resize,
 from transformers import AutoImageProcessor, AutoTokenizer
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.tokenization_utils import PreTrainedTokenizerBase
+from infscale import get_logger
 
+import tqdm
 
 class HuggingFaceDataset:
     """
@@ -108,34 +110,60 @@ class HuggingFaceDataset:
         self.data_iter = None
         self.model_group = mmd.model_group
 
+       
+
     def set_micro_batch_size(self, micro_batch_size: int) -> None:
         """Set micro batch size."""
         self.micro_batch_size = micro_batch_size
+        
+        if self.data_iter is None:
+            dataloader = DataLoader(
+                self.dataset,
+                self.micro_batch_size,
+                collate_fn=self.data_collator,
+                drop_last=True,
+            )
+            self.data_iter = iter(dataloader)
+
+        self.batches = []
+        for batch in tqdm.tqdm(self.data_iter):
+            self.batches.append(batch)
+
+        self.batch_idx = 0
+        self.batch_idx_max = len(self.batches)
 
     def next_batch(self, device: torch.device) -> Union[Tensor, None]:
         """Return next data tensor.
 
         Once all the data is consumed, it returns None.
         """
-        if self.data_iter is None:
-            dataloader = DataLoader(
-                self.dataset,
-                self.micro_batch_size,
-                collate_fn=self.data_collator,
-            )
-            self.data_iter = iter(dataloader)
+        batch = self.batches[self.batch_idx].copy()
+        self.batch_idx += 1
 
-        try:
-            batch = next(self.data_iter)
-        except StopIteration:
-            self.data_iter = None
-            return None
+        if self.batch_idx >= self.batch_idx_max:
+            self.batch_idx = 0
 
         # send batch to a right device
         for k in batch.keys():
             batch[k] = batch[k].to(device)
 
         return batch
+
+    def _generate_random_batch(self, batch_template: dict) -> dict:
+        """Generate a random batch with the same shape as the template batch.
+        
+        For floating point tensors, it uses a normal distribution.
+        For integer tensors, it uses random integers in the range [0, 100).
+        """
+        random_batch = {}
+        for key, tensor in batch_template.items():
+            if torch.is_floating_point(tensor):
+                # Generate random values with the same shape and dtype
+                random_batch[key] = torch.randn(tensor.shape, dtype=tensor.dtype)
+            else:
+                # For integer tensors, change the range as needed.
+                random_batch[key] = torch.randint(low=0, high=100, size=tensor.shape, dtype=tensor.dtype)
+        return random_batch
 
     def num_of_batches(self) -> int:
         """Return the number of batches from dataset.
