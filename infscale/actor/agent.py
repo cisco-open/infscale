@@ -182,8 +182,11 @@ class Agent:
         config = self.job_mgr.get_config(job_id)
 
         running_workers = [w for w in workers.values() if w.status == WorkerStatus.RUNNING]
-    
-        return len(running_workers) == len(config.workers)
+
+        # we need the deployed worker count from the config
+        deployed_wrkrs = [worker for worker in config.workers if worker.deploy]
+
+        return len(running_workers) == len(deployed_wrkrs)
 
     def _all_wrk_terminated(self, job_id: str) -> bool:
         """Check if all workers are terminated."""
