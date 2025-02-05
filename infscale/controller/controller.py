@@ -161,7 +161,7 @@ class Controller:
     def _cleanup_job_ctx(self, agent_id: str) -> None:
         """Cleanup job context by agent id."""
         for k, v in list(self.job_contexts.items()):
-            if agent_id in v.agent_ids:
+            if agent_id in v.agent_info:
                 del self.job_contexts[k]
 
     def reset_agent_context(self, id: str) -> None:
@@ -252,55 +252,6 @@ class Controller:
     def _get_deploy_worker_ids(self, workers: list[WorkerData]) -> list[str]:
         """Return a list of worker ids to be deployed."""
         return [w.id for w in workers if w.deploy]
-
-    async def _patch_job_cfg(self, agent_data: AgentMetaData) -> None:
-        """Patch config for updated job."""
-        job_setup_event = agent_data.job_setup_event
-        await job_setup_event.wait()
-        agent_id, config, new_config, ports = (
-            agent_data.id,
-            agent_data.config,
-            agent_data.new_config,
-            agent_data.ports,
-        )
-
-        deploy_worker_ids = self._get_deploy_worker_ids(new_config.workers)
-
-        port_iter = None
-        if ports is not None:
-            # there might be a case when new config has less number of workers
-            port_iter = iter(ports)
-
-        # step 1: save current workers from the old config
-        curr_workers = {}
-        if config is not None:
-            for worker_list in config.flow_graph.values():
-                for worker in worker_list:
-                    curr_workers[worker.name] = worker
-
-        # step 2: patch new config with existing workers ports and assign ports to new ones
-        for wid, worker_list in new_config.flow_graph.items():
-            for worker in worker_list:
-                if wid not in deploy_worker_ids:
-                    continue
-
-                worker.addr = self.agent_contexts[agent_id].ip
-                if worker.name in curr_workers:
-                    # keep existing ports
-                    worker.data_port = curr_workers[worker.name].data_port
-                    worker.ctrl_port = curr_workers[worker.name].ctrl_port
-                else:
-                    # assign new ports to new workers
-                    worker.data_port = next(port_iter)
-                    worker.ctrl_port = next(port_iter)
-
-        agent_data.config = new_config
-        agent_data.new_config = None
-        agent_data.num_new_workers = 0
-        agent_data.ports = None
-
-        # block patch until new config is received
-        agent_data.job_setup_event.clear()
 
 
 class ControllerServicer(pb2_grpc.ManagementRouteServicer):

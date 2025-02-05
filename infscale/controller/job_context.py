@@ -18,12 +18,12 @@ from __future__ import annotations
 import asyncio
 from enum import Enum
 from itertools import islice
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 from fastapi import HTTPException, status
 
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
-from infscale.config import JobConfig, WorkerData
+from infscale.config import JobConfig, WorkerData, WorkerInfo
 from infscale.controller.ctrl_dtype import JobAction, JobActionModel
 
 if TYPE_CHECKING:
@@ -51,6 +51,8 @@ class AgentMetaData:
         self.num_new_workers = num_new_workers
         self.ports = ports
         self.job_setup_event = asyncio.Event()
+        self.ready_to_config = False
+        self.wids_to_deploy: list[str] = []
 
 
 class InvalidJobStateAction(Exception):
@@ -132,8 +134,6 @@ class ReadyState(BaseJobState):
         req = self.context.req
         num_of_workers = len(req.config.workers)
         agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
-
-        assert len(agent_ids) == 1, f"expected one agent_id, but got {len(agent_ids)}."
 
         self.context.set_agent_ids(agent_ids)
         self.context.process_cfg(agent_ids)
@@ -223,8 +223,6 @@ class StoppedState(BaseJobState):
 
         agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
 
-        assert len(agent_ids) == 1, f"expected one agent_id, but got {len(agent_ids)}."
-
         self.context.set_agent_ids(agent_ids)
         self.context.process_cfg(agent_ids)
 
@@ -281,8 +279,6 @@ class CompleteState(BaseJobState):
 
         agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
 
-        assert len(agent_ids) == 1, f"expected one agent_id, but got {len(agent_ids)}."
-
         self.context.set_agent_ids(agent_ids)
         self.context.process_cfg(agent_ids)
 
@@ -305,9 +301,11 @@ class JobContext:
         self.job_id = job_id
         self.state = ReadyState(self)
         self.state_enum = JobStateEnum.READY
-        self.agent_data: dict[str, AgentMetaData] = {}
+        self.agent_info: dict[str, AgentMetaData] = {}
         self.req: JobActionModel = None
         self.wrk_status: dict[str, WorkerStatus] = {}
+        # event to update the config after all agents added ports and ip address
+        self.agents_setup_event = asyncio.Event()
 
         global logger
         logger = get_logger()
@@ -315,19 +313,19 @@ class JobContext:
     def set_agent_ids(self, agent_ids: list[str]) -> None:
         """Set a list of agents."""
         for id in agent_ids:
-            self.agent_data[id] = AgentMetaData(id=id)
+            self.agent_info[id] = AgentMetaData(id=id)
 
     def get_agent_data(self, agent_id: str) -> AgentMetaData:
         """Return agent metadata"""
-        return self.agent_data[agent_id]
+        return self.agent_info[agent_id]
 
     def _set_job_status_on_agent(self, agent_id: str, job_status: JobStatus) -> None:
         """Set job status on agent id."""
-        self.agent_data[agent_id].job_status = job_status
+        self.agent_info[agent_id].job_status = job_status
 
     def set_ports(self, agent_id: str, ports: list[int]) -> None:
         """Set port numbers for workers."""
-        agent_data = self.agent_data[agent_id]
+        agent_data = self.agent_info[agent_id]
         agent_data.ports = ports
         agent_data.job_setup_event.set()
 
@@ -341,7 +339,7 @@ class JobContext:
         """Handle job status received from the agent."""
         try:
             status_enum = JobStatus(status)
-            self.agent_data[agent_id].job_status = status_enum
+            self.agent_info[agent_id].job_status = status_enum
             self._do_cond(status_enum)
         except InvalidJobStateAction as e:
             logger.warning(e)
@@ -379,23 +377,106 @@ class JobContext:
     def _update_agent_data(self, agent_cfg: dict[str, JobConfig]) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
-            agent_data = self.agent_data[agent_id]
+            agent_data = self.agent_info[agent_id]
             agent_data.new_config = new_cfg
             agent_data.num_new_workers = self._get_new_workers_count(
                 agent_data.config, new_cfg
             )
+            agent_data.wids_to_deploy = self._get_deploy_worker_ids(new_cfg.workers)
 
-    async def prepare_config(self, agent_id: list[str]) -> None:
+    async def prepare_config(self, agent_id: str) -> None:
         """Prepare config for deploy."""
-        agent_data = self.agent_data[agent_id]
+        agent_data = self.agent_info[agent_id]
+
         # fetch port numbers from agent
         await self.ctrl._job_setup(agent_data)
 
+        await agent_data.job_setup_event.wait()
+
+        # agent is ready to perform setup
+        agent_data.ready_to_config = True
+        if any(info.ready_to_config == False for info in self.agent_info.values()):
+            await self.agents_setup_event.wait()
+    
+        # all agents have their conn data available, release the agent setup event
+        self.agents_setup_event.set()
+
         # update job config
-        await self.ctrl._patch_job_cfg(agent_data)
+        await self._patch_job_cfg(agent_data)
+
+        agent_data.ready_to_config = False
 
         # schedule config transfer to agent after job setup is done
         await self.ctrl._send_config_to_agent(agent_data, self.req)
+
+        # block agent setup event until new config is received
+        self.agents_setup_event.clear()
+
+    async def _patch_job_cfg(self, agent_data: AgentMetaData) -> None:
+        """Patch config for updated job."""
+        agent_id, config, new_config, port_iter = (
+            agent_data.id,
+            agent_data.config,
+            agent_data.new_config,
+            agent_data.ports,
+        )
+
+        curr_workers: dict[str, WorkerInfo] = {}
+        if config is not None:
+            for worker_list in config.flow_graph.values():
+                for worker in worker_list:
+                    curr_workers[worker.name] = worker
+
+        worker_agent_map = self._get_worker_agent_map(new_config)
+        agent_port_map = self._get_agent_port_map()
+
+        # step 2: patch new config with existing workers ports and assign ports to new ones
+        for worker_list in new_config.flow_graph.values():
+            for worker in worker_list:
+                if worker.name in curr_workers:
+                    # keep existing ports
+                    worker.addr = curr_workers[worker.name].addr
+                    worker.data_port = curr_workers[worker.name].data_port
+                    worker.ctrl_port = curr_workers[worker.name].ctrl_port
+                else:
+                    agent_info = worker_agent_map[worker.name]
+                    port_iter = agent_port_map[agent_info.id]
+                    addr = self.ctrl.agent_contexts[agent_info.id].ip
+    
+                    # assign new ports to new workers
+                    worker.addr = addr
+                    worker.data_port = next(port_iter)
+                    worker.ctrl_port = next(port_iter)
+
+        agent_data.config = new_config
+        agent_data.new_config = None
+        agent_data.num_new_workers = 0
+
+        agent_data.job_setup_event.clear()
+
+    def _get_agent_port_map(self) -> dict[str, Iterator[int]]:
+        """Create map between agent id and available ports."""
+        agent_ports = {}
+
+        for info in self.agent_info.values():
+            agent_ports[info.id] = iter(info.ports)
+
+        return agent_ports
+
+    def _get_worker_agent_map(self, config: JobConfig) -> dict[str, AgentMetaData]:
+        """Create map between worker id and agent for deploy."""
+        worker_agent_data = {}
+
+        for wid, worker_list in config.flow_graph.items():
+            for w in worker_list:
+                agent_for_deploy = self._get_agent_by_worker_id(wid)
+                worker_agent_data[w.name] = agent_for_deploy
+
+        return worker_agent_data
+
+    def _get_agent_by_worker_id(self, wid: str) -> AgentMetaData:
+        """Return agent that will deploy given worker id."""
+        return next((info for info in self.agent_info.values() if wid in info.wids_to_deploy), None)
 
     def _get_new_workers_count(self, config: JobConfig, new_cfg: JobConfig) -> int:
         """Return the number of new workers between and old and new config."""
@@ -450,7 +531,7 @@ class JobContext:
 
     def _get_ctx_agent_ids(self) -> list[str]:
         """Return current agent ids."""
-        agent_ids = list(self.agent_data.keys())
+        agent_ids = list(self.agent_info.keys())
         self._check_agent_ids(agent_ids)
 
         return agent_ids
@@ -484,7 +565,7 @@ class JobContext:
     def _check_job_status_on_all_agents(self, job_status: JobStatus) -> bool:
         """Return true or false if all agents have the same job status."""
         return all(
-            data.job_status == job_status for data in list(self.agent_data.values())
+            info.job_status == job_status for info in list(self.agent_info.values())
         )
 
     async def start(self):
