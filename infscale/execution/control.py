@@ -33,6 +33,9 @@ MSG_SIZE = 10000
 MSG_MODE_SEND = "send"
 MSG_MODE_ACK = "ack"
 
+WAIT_DURATION = 3  # 3 seconds
+NUM_OF_RETRIES = 100  # in total, wait for 5 minutes to set up a control channel
+
 
 @dataclass
 class MetaData:
@@ -91,12 +94,17 @@ class Channel:
 
     async def _setup_client(self, setup_done: asyncio.Event) -> None:
         logger.info(f"setting up a client: {self.addr}:{self.port}")
-        for i in range(3):
+        for i in range(NUM_OF_RETRIES):
             try:
                 reader, writer = await asyncio.open_connection(self.addr, self.port)
             except Exception as e:
-                logger.warning(f"try {i+1}: exception occurred: {e}")
-                await asyncio.sleep(3)
+                if i + 1 == NUM_OF_RETRIES:
+                    logger.warn(f"max number ({i+1}) of tries reached")
+                    raise e
+
+                logger.info(f"({i+1}): exception occurred: {e}; retrying...")
+                await asyncio.sleep(WAIT_DURATION)
+        logger.info("done with setting up a client")
 
         # send my rank to rank 0
         message = f"{self.rank}"

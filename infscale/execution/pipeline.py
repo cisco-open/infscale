@@ -94,7 +94,7 @@ class Pipeline:
             return
 
         logger.debug(f"done initializing multiworld {name}")
-            
+
     def _send_status_message(self, status: WorkerStatus) -> None:
         msg = Message(MessageType.STATUS, status, self.spec.job_id)
         self.wcomm.send(msg)
@@ -125,9 +125,9 @@ class Pipeline:
 
         # handle new worlds
         tasks = []
-        # 1. set up multiworld
+        # 1. set up control channel
         for world_info in worlds_to_add:
-            task = self._configure_multiworld(world_info)
+            task = self._configure_control_channel(world_info)
             tasks.append(task)
 
         # TODO: this doesn't handle partial success
@@ -135,9 +135,9 @@ class Pipeline:
         await asyncio.gather(*tasks)
 
         tasks = []
-        # 2. set up control channel
+        # 2. set up multiworld
         for world_info in worlds_to_add:
-            task = self._configure_control_channel(world_info)
+            task = self._configure_multiworld(world_info)
             tasks.append(task)
 
         # TODO: this doesn't handle partial success
