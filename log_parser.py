@@ -20,36 +20,56 @@ def parse_log(file_path: str, output_path: str):
     compute_stats = {} # key: stage (e.g., '0-0'), value: list of times in ms.
     latency_list = []  # list of latency times (converted to ms).
     total_latency = None  # total latency in seconds.
+    
+    # New: Add warmup statistics
+    warmup_stats = []  # list of warmup times in ms
 
     # Regular expressions to extract values.
-    pattern_send = re.compile(r"\[SEND\].*?world\s+(\w+).*?time:\s*([\d\.]+)\s*ms")
-    pattern_compute = re.compile(r"\[COMPUTE\].*?stage\s+(\S+).*?time:\s*([\d\.]+)\s*ms")
+    pattern_send = re.compile(r"\[SEND\].*?seqno\s+(-?\d+).*?world\s+(\w+).*?time:\s*([\d\.]+)\s*ms")
+    pattern_compute = re.compile(r"\[COMPUTE\].*?seqno\s+(-?\d+).*?stage\s+(\S+).*?time:\s*([\d\.]+)\s*ms")
     # For latency, regardless of the unit, we'll treat the number as seconds.
-    pattern_latency = re.compile(r"\[LATENCY\].*?time:\s*([\d\.]+)\s*(s|ms)")
+    pattern_latency = re.compile(r"\[LATENCY\].*?seqno\s+(-?\d+).*?time:\s*([\d\.]+)\s*(s|ms)")
     pattern_total = re.compile(r"\[TOTAL LATENCY\].*?total time:\s*([\d\.]+)\s*s")
+    pattern_warmup = re.compile(r"\[WARMUP\].*?seqno\s+(\d+).*?time:\s*([\d\.]+)\s*s")
 
     with open(file_path, "r") as f:
         for line in f:
+            match = pattern_warmup.search(line)
+            if match:
+                seqno = int(match.group(1))
+                time_s = float(match.group(2))
+                warmup_stats.append(time_s * 1000)  # Convert to ms
+                continue
+
             # Process [SEND] lines.
             match = pattern_send.search(line)
             if match:
-                world = match.group(1)
-                time_ms = float(match.group(2))  # Already in ms.
+                seqno = int(match.group(1))
+                if seqno == -1:  # Skip warmup entries
+                    continue
+                world = match.group(2)
+                time_ms = float(match.group(3))
                 send_stats.setdefault(world, []).append(time_ms)
                 continue
 
             # Process [COMPUTE] lines.
             match = pattern_compute.search(line)
             if match:
-                stage = match.group(1)
-                time_ms = float(match.group(2))  # Already in ms.
+                seqno = int(match.group(1))
+                if seqno == -1:  # Skip warmup entries
+                    continue
+                stage = match.group(2)
+                time_ms = float(match.group(3))  # Already in ms.
                 compute_stats.setdefault(stage, []).append(time_ms)
                 continue
 
             # Process [LATENCY] lines.
             match = pattern_latency.search(line)
             if match:
-                time_val = float(match.group(1))
+                seqno = int(match.group(1))
+                if seqno == -1:  # Skip warmup entries
+                    continue
+                time_val = float(match.group(2))
                 # Even if the unit is misprinted as "ms", treat the value as seconds.
                 time_ms = time_val * 1000  # convert seconds to ms.
                 latency_list.append(time_ms)
@@ -62,30 +82,32 @@ def parse_log(file_path: str, output_path: str):
                 continue
 
     def filter_outliers(values):
-        """
-        Excludes outliers from a list of numbers using the IQR method.
-        Outliers are values outside the range:
-             [Q1 - 1.5*IQR, Q3 + 1.5*IQR],
-        where IQR = Q3 - Q1.
-        If the list has fewer than 4 values, no filtering is applied.
-        """
-        if len(values) < 4:
-            return values
-        sorted_vals = sorted(values)
-        n = len(sorted_vals)
-        # Split data into lower and upper halves.
-        if n % 2 == 0:
-            lower_half = sorted_vals[:n//2]
-            upper_half = sorted_vals[n//2:]
-        else:
-            lower_half = sorted_vals[:n//2]
-            upper_half = sorted_vals[n//2+1:]
-        q1 = statistics.median(lower_half)
-        q3 = statistics.median(upper_half)
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
-        return [v for v in values if lower_bound <= v <= upper_bound]
+        # """
+        # Excludes outliers from a list of numbers using the IQR method.
+        # Outliers are values outside the range:
+        #      [Q1 - 1.5*IQR, Q3 + 1.5*IQR],
+        # where IQR = Q3 - Q1.
+        # If the list has fewer than 4 values, no filtering is applied.
+        # """
+        # if len(values) < 4:
+        #     return values
+        # sorted_vals = sorted(values)
+        # n = len(sorted_vals)
+        # # Split data into lower and upper halves.
+        # if n % 2 == 0:
+        #     lower_half = sorted_vals[:n//2]
+        #     upper_half = sorted_vals[n//2:]
+        # else:
+        #     lower_half = sorted_vals[:n//2]
+        #     upper_half = sorted_vals[n//2+1:]
+        # q1 = statistics.median(lower_half)
+        # q3 = statistics.median(upper_half)
+        # iqr = q3 - q1
+        # lower_bound = q1 - 10 * iqr
+        # upper_bound = q3 + 10 * iqr
+        # return [v for v in values if lower_bound <= v <= upper_bound]
+
+        return values   # Due to the warmup, we don't filter outliers
 
     def compute_summary(values):
         """
@@ -97,9 +119,22 @@ def parse_log(file_path: str, output_path: str):
     # Prepare output
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w') as out_f:
+        # Print WARMUP statistics
+        print("WARMUP statistics (ms):", file=out_f)
+        if warmup_stats:
+            avg, min_t, max_t, median_t = compute_summary(warmup_stats)
+            print(f"  ({len(warmup_stats)} entries): "
+                  f"avg = {avg:.3f} ms, min = {min_t:.3f} ms, max = {max_t:.3f} ms, median = {median_t:.3f} ms",
+                  file=out_f)
+        else:
+            print("  No WARMUP entries found.", file=out_f)
+        
+        print("", file=out_f)  # Empty line for separation
+
         # Print SEND statistics (excluding outliers).
         print("SEND statistics (ms) [excluding outliers]:", file=out_f)
-        for world, times in send_stats.items():
+        for world in sorted(send_stats.keys(), key=lambda x: int(x[1:])):  # Sort by number after 'w'
+            times = send_stats[world]
             filtered_times = filter_outliers(times)
             if not filtered_times:
                 filtered_times = times
@@ -110,7 +145,8 @@ def parse_log(file_path: str, output_path: str):
 
         # Print COMPUTE statistics (excluding outliers).
         print("\nCOMPUTE statistics (ms) [excluding outliers]:", file=out_f)
-        for stage, times in compute_stats.items():
+        for stage in sorted(compute_stats.keys(), key=lambda x: tuple(map(int, x.split('-')))):  # Sort by numeric components
+            times = compute_stats[stage]
             filtered_times = filter_outliers(times)
             if not filtered_times:
                 filtered_times = times

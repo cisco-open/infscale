@@ -38,9 +38,6 @@ logger = None
 # a global variable to store start time of the first request
 start_time = None
 
-MAX_COUNT = 100 # For testing, we run 100 batches
-
-
 class Pipeline:
     """Pipeline class."""
 
@@ -188,7 +185,7 @@ class Pipeline:
         if self.n_inflight < self.max_inflight:
             self.tx_allow_evt.set()
 
-    async def _server_send(self, router: Router):
+    async def _server_send(self, router: Router, max_count: int = -1):
         global start_time
 
         logger.info("start to send requests")
@@ -196,7 +193,7 @@ class Pipeline:
         start_time = time.perf_counter()
         while True:
             batch = self.dataset.next_batch(self.device)
-            if batch is None or seqno >= MAX_COUNT:
+            if batch is None or seqno >= max_count:
                 break
 
             await self._wait_tx_permission()
@@ -253,10 +250,34 @@ class Pipeline:
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
-        max_count = MAX_COUNT # self.dataset.num_of_batches()
+        max_count = self.spec.max_count  # total number of actual batches to run
 
-        # send and recv asynchronously
-        send_task = asyncio.create_task(self._server_send(self.router))
+        # Warmup phase:
+        # Get the warmup iteration count from the spec (default to 3 if not provided)
+        warmup_count = self.spec.warmup
+        warmup_batch_prototype = self.dataset.next_batch(self.device)
+        if warmup_count > 0:
+            warmup_batch = warmup_batch_prototype.copy()
+            if warmup_batch is not None:
+                print(f"Starting warmup phase with {warmup_count} iterations")
+                for i in range(warmup_count):
+                    logger.info(f"Warmup: sending duplicate {i}")
+                    warmup_start_time = time.perf_counter()
+                    # Use a special seqno (e.g., -1) so these warmup messages do not interfere with actual batch seqno
+                    await self.router.send(-1, warmup_batch, 0)
+                    warmup_output, warmup_seqno = await self.router.recv()
+                    warmup_end_time = time.perf_counter()
+                    logger.profile(f"[WARMUP] seqno {i} | time: {warmup_end_time - warmup_start_time} s")
+                print("Warmup phase completed")
+            else:
+                logger.warning("No warmup batch found, skipping warmup phase")
+        else:
+            logger.warning("No warmup phase configured")
+
+        print(f"Starting actual inference requests with {max_count} batches")
+
+        # Launch the sending and receiving tasks concurrently for the actual run
+        send_task = asyncio.create_task(self._server_send(self.router, max_count))
         recv_task = asyncio.create_task(self._server_recv(self.router, max_count))
 
         await asyncio.gather(*[send_task, recv_task])

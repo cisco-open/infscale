@@ -106,6 +106,12 @@ class ServeConfig:
 
     is_server: bool = False
 
+    # warmup phase
+    warmup: int = 10
+
+    # max_number_of_batches for testing
+    max_count: int = 200
+
     def __post_init__(self):
         """Convert stage dict into stage object."""
         # TODO - remove isinstance check when the config file is being sent through the api call
@@ -147,6 +153,12 @@ class JobConfig:
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
+
+    # warmup phase
+    warmup: int = 10
+
+    # max_number_of_batches for testing
+    max_count: int = 200
 
     def __post_init__(self) -> None:
         """Handle post init class variables."""
@@ -194,6 +206,8 @@ class JobConfig:
                 "job_id": self.job_id,
                 "max_inflight": self.max_inflight,
                 "is_server": item.is_server,
+                "warmup": self.warmup,
+                "max_count": self.max_count,
             }
             serve_configs.append(ServeConfig(**config))
 
