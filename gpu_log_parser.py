@@ -63,7 +63,7 @@ def parse_gpu_log(file_path):
     time_seconds = [(ts - base_time).total_seconds() for ts in time_stamps]
     return time_seconds, gpu_utils
 
-def plot_gpu_utilization(times, gpu_utils, log_file_name, start_time_sec=0, time_limit=None, gpus_to_plot=[0,1,2,3]):
+def plot_gpu_utilization(times, gpu_utils, log_file_name, start_time_sec=0, end_time=None, gpus_to_plot=[0,1,2,3]):
     """
     Plot GPU utilization based on the parsed log data.
 
@@ -72,23 +72,23 @@ def plot_gpu_utilization(times, gpu_utils, log_file_name, start_time_sec=0, time
       gpu_utils (list of lists): GPU utilization data for each GPU.
       log_file_name (str): Original log file name (used for naming the output directory).
       start_time_sec (float): Start time in seconds for plotting.
-      time_limit (float): End time in seconds for plotting. If None, the end of the log is used.
+      end_time (float): End time in seconds for plotting. If None, the end of the log is used.
       gpus_to_plot (list): List of GPU indices to be plotted.
     """
     if len(times) == 0:
         print("No data to plot.")
         return
 
-    if time_limit is None:
-        time_limit = times[-1]
+    if end_time is None:
+        end_time = times[-1]
 
     # Determine the indices corresponding to the specified time window.
     start_idx = next((i for i, t in enumerate(times) if t >= start_time_sec), 0)
-    end_idx = next((i for i, t in enumerate(times) if t > time_limit), len(times))
+    end_idx = next((i for i, t in enumerate(times) if t > end_time), len(times))
 
     # Create output directory for plots
     log_base_name = os.path.splitext(os.path.basename(log_file_name))[0]
-    output_dir = f'output/{log_base_name}_{start_time_sec}s_to_{time_limit}s'
+    output_dir = f'output/{log_base_name}_{start_time_sec}s_to_{end_time}s'
     os.makedirs(output_dir, exist_ok=True)
 
     colors = ['blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray']
@@ -120,7 +120,7 @@ def plot_gpu_utilization(times, gpu_utils, log_file_name, start_time_sec=0, time
     plt.title(f'GPU Utilization\nTotal Avg: {total_avg:.2f}%, Max: {total_max:.2f}%, Min: {total_min:.2f}%')
     plt.grid(True, alpha=0.3)
     plt.legend()
-    plt.xlim(start_time_sec, time_limit)
+    plt.xlim(start_time_sec, end_time)
     plt.ylim(-5, 105)
     combined_plot_file = os.path.join(output_dir, 'gpu_utilization_combined.png')
     plt.savefig(combined_plot_file)
@@ -143,7 +143,7 @@ def plot_gpu_utilization(times, gpu_utils, log_file_name, start_time_sec=0, time
             plt.ylabel('GPU Utilization (%)')
             plt.title(f'GPU {i} Utilization\nAvg: {avg_val:.2f}%, Max: {max_val:.2f}%, Min: {min_val:.2f}%')
             plt.grid(True, alpha=0.3)
-            plt.xlim(start_time_sec, time_limit)
+            plt.xlim(start_time_sec, end_time)
             plt.ylim(-5, 105)
             individual_plot_file = os.path.join(output_dir, f'gpu{i}_utilization.png')
             plt.savefig(individual_plot_file)
@@ -167,7 +167,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parse GPU log file and plot GPU utilization")
     parser.add_argument("--log_file", type=str, required=True, help="Path to the GPU log file")
     parser.add_argument("--start_time", type=float, default=0, help="Start time (in seconds) for plotting")
-    parser.add_argument("--time_limit", type=float, default=None, help="End time (in seconds) for plotting")
+    parser.add_argument("--end_time", type=float, default=None, help="End time (in seconds) for plotting")
     parser.add_argument("--gpus", type=str, default="0,1,2,3", help="Comma-separated list of GPU indices to plot (e.g. '0,3')")
     args = parser.parse_args()
 
@@ -181,5 +181,5 @@ if __name__ == "__main__":
         plot_gpu_utilization(times, gpu_utils,
                                log_file_name=args.log_file,
                                start_time_sec=args.start_time,
-                               time_limit=args.time_limit,
+                               end_time=args.end_time,
                                gpus_to_plot=gpus_to_plot) 
