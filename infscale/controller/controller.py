@@ -300,6 +300,15 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
 
         return empty_pb2.Empty()
 
+    async def put_resource_stat(
+        self, request: pb2.ResourceStats, unused_context: ServicerContext
+    ) -> None:
+        """Handle update message for job status."""
+        # TODO: use agent resources later
+        logger.info(f'got agent resources {request}')
+
+        return empty_pb2.Empty()
+
     async def command(
         self, request: pb2.AgentID, context: ServicerContext
     ) -> AsyncIterable[pb2.Action]:

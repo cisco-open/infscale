@@ -24,24 +24,21 @@ import socket
 import grpc
 import torch
 import torch.multiprocessing as mp
+from multiprocess.connection import Pipe
+
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager
-from infscale.actor.job_msg import (
-    JobStatus,
-    Message,
-    MessageType,
-    WorkerStatus,
-    WorkerStatusMessage,
-)
+from infscale.actor.job_msg import (JobStatus, Message, MessageType,
+                                    WorkerStatus, WorkerStatusMessage)
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig, WorkerInfo
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.controller.ctrl_dtype import CommandAction
-from infscale.monitor.gpu import GpuMonitor
+from infscale.monitor.cpu import CpuMonitor, CPUStats, DRAMStats
+from infscale.monitor.gpu import GpuMonitor, GpuStat, VramStat
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
-from multiprocess.connection import Pipe
 
 logger = None
 
@@ -106,6 +103,7 @@ class Agent:
         self.stub = pb2_grpc.ManagementRouteStub(self.channel)
 
         self.gpu_monitor = GpuMonitor()
+        self.cpu_monitor = CpuMonitor()
 
     async def _get_worker_status(self) -> None:
         while True:
@@ -321,6 +319,22 @@ class Agent:
                 )
                 self.stub.job_setup(req)
 
+            case CommandAction.RESOURCE_STAT:
+                cpu_stats, dram_stats, gpu_stats, vram_stats = self._get_resource_stats()
+    
+                cpu_stats_msg, dram_stats_msg = CpuMonitor.stats_to_proto(cpu_stats, dram_stats)
+                gpu_stats_msg = GpuMonitor.stats_to_proto(gpu_stats)
+                vram_stats_msg = GpuMonitor.stats_to_proto(vram_stats)
+
+                msg = pb2.ResourceStats()
+                msg.gpu_stats.extend(gpu_stats_msg)
+                msg.vram_stats.extend(vram_stats_msg)
+
+                msg.id = self.id
+                msg.cpu_stats = cpu_stats_msg
+                msg.dram_stats = dram_stats_msg
+                self.stub.put_resource_stat(req)
+
     async def heart_beat(self):
         """Send a heart beat message periodically."""
         agent_id = pb2.AgentID(id=self.id)
@@ -391,13 +405,20 @@ class Agent:
             gpu_msg_list = GpuMonitor.stats_to_proto(gpu_stats)
             vram_msg_list = GpuMonitor.stats_to_proto(vram_stats)
 
-            status_msg = pb2.Status()
+            status_msg = pb2.ResourceStats()
             status_msg.id = self.id
             status_msg.gpu_stats.extend(gpu_msg_list)
             status_msg.vram_stats.extend(vram_msg_list)
             # TODO: set cpu stat and ram stat into status message
 
             self.stub.update(status_msg)
+
+    def _get_resource_stats(self) -> tuple[CPUStats, DRAMStats, list[GpuStat] | None, list[VramStat] | None]:
+        """Return CPU, DRAM and GPU statistics."""
+        gpu_stats, vram_stats = self.gpu_monitor.get_metrics()
+        cpu_stats, dram_stats = self.cpu_monitor.get_metrics()
+
+        return cpu_stats, dram_stats, gpu_stats, vram_stats
 
     def monitor(self):
         """Monitor workers and resources."""

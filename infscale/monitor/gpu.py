@@ -26,9 +26,15 @@ from google._upb._message import RepeatedCompositeContainer
 from google.protobuf.json_format import MessageToJson, Parse
 from infscale import get_logger
 from infscale.proto import management_pb2 as pb2
-from pynvml import (nvmlDeviceGetComputeRunningProcesses, nvmlDeviceGetCount,
-                    nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo,
-                    nvmlDeviceGetName, nvmlDeviceGetUtilizationRates, nvmlInit)
+from pynvml import (
+    nvmlDeviceGetComputeRunningProcesses,
+    nvmlDeviceGetCount,
+    nvmlDeviceGetHandleByIndex,
+    nvmlDeviceGetMemoryInfo,
+    nvmlDeviceGetName,
+    nvmlDeviceGetUtilizationRates,
+    nvmlInit,
+)
 
 DEFAULT_INTERVAL = 10  # 10 seconds
 
@@ -75,6 +81,15 @@ class GpuMonitor:
         global logger
         logger = get_logger()
 
+        self.gpu_available = False
+        try:
+            nvmlInit()
+            self.gpu_available = True
+            logger.debug("GPU successfully initialized.")
+        except Exception as e:
+            logger.warning("Failed to initialize NVML. No GPU available.")
+            logger.debug(f"Exception: {e}")
+
         self.interval = interval
 
         self.mon_event = asyncio.Event()
@@ -82,6 +97,15 @@ class GpuMonitor:
         #       values to smoothe out jitter due to instantaneous values
         self.computes = list()
         self.mems = list()
+
+    def get_metrics(self) -> tuple[list[GpuStat], list[VramStat]]:
+        if not self.gpu_available:
+            logger.info("no GPU available, skipping metrics collection.")
+            return [], []
+
+        mems, computes = self._get_gpu_stats()
+
+        return mems, computes
 
     async def metrics(self) -> tuple[list[GpuStat], list[VramStat]]:
         """Return statistics on GPU resources."""
@@ -99,46 +123,12 @@ class GpuMonitor:
         it's not a per-application metric.
         vram usage is also an aggregated metric, not a per-application metric.
         """
-        try:
-            nvmlInit()
-        except Exception as e:
-            logger.debug("failed to initialize gpustat.nvml.pynvml")
-            logger.debug(f"exception: {e}")
+        if not self.gpu_available:
+            logger.info("no GPU available, skipping metrics collection.")
             return
 
         while True:
-            count = nvmlDeviceGetCount()
-            mems = [None] * count
-            computes = [None] * count
-            for i in range(count):
-                try:
-                    handle = nvmlDeviceGetHandleByIndex(i)
-
-                    # gpu memory information
-                    mem_info = nvmlDeviceGetMemoryInfo(handle)
-                    # device name
-                    name = nvmlDeviceGetName(handle)
-                    # GPU utilization
-                    util = nvmlDeviceGetUtilizationRates(handle).gpu
-                    # processes running on gpu
-                    processes = nvmlDeviceGetComputeRunningProcesses(handle)
-                except Exception as e:
-                    # TODO: need to catch more specific exception
-                    #       Exception is too generic
-                    logger.debug(f"failed to retrieve info for GPU {i}")
-                    logger.debug(f"exception: {e}")
-                    continue
-
-                mems[i] = VramStat(i, mem_info.total, mem_info.used)
-
-                dev_type = GpuType.UNKNOWN
-                for t in GpuType:
-                    if str(t) in name:
-                        dev_type = t
-                        break
-
-                used = len(processes) > 0
-                computes[i] = GpuStat(i, dev_type, used, util)
+            mems, computes = self._get_gpu_stats()
 
             self.mems = mems
             self.computes = computes
@@ -148,6 +138,43 @@ class GpuMonitor:
             self.mon_event.clear()
 
             await asyncio.sleep(self.interval)
+
+    def _get_gpu_stats(self) -> tuple[list[GpuStat], list[VramStat]]:
+        """Return GPU resources."""
+        count = nvmlDeviceGetCount()
+        mems = [None] * count
+        computes = [None] * count
+        for i in range(count):
+            try:
+                handle = nvmlDeviceGetHandleByIndex(i)
+
+                # gpu memory information
+                mem_info = nvmlDeviceGetMemoryInfo(handle)
+                # device name
+                name = nvmlDeviceGetName(handle)
+                # GPU utilization
+                util = nvmlDeviceGetUtilizationRates(handle).gpu
+                # processes running on gpu
+                processes = nvmlDeviceGetComputeRunningProcesses(handle)
+            except Exception as e:
+                # TODO: need to catch more specific exception
+                #       Exception is too generic
+                logger.debug(f"failed to retrieve info for GPU {i}")
+                logger.debug(f"exception: {e}")
+                continue
+
+            mems[i] = VramStat(i, mem_info.total, mem_info.used)
+
+            dev_type = GpuType.UNKNOWN
+            for t in GpuType:
+                if str(t) in name:
+                    dev_type = t
+                    break
+
+            used = len(processes) > 0
+            computes[i] = GpuStat(i, dev_type, used, util)
+
+        return mems, computes
 
     @staticmethod
     def stats_to_proto(

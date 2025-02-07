@@ -83,6 +83,11 @@ class ManagementRouteStub(object):
                 request_serializer=management__pb2.JobStatus.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
+        self.put_resource_stat = channel.unary_unary(
+                '/management.ManagementRoute/put_resource_stat',
+                request_serializer=management__pb2.ResourceStats.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class ManagementRouteServicer(object):
@@ -132,6 +137,13 @@ class ManagementRouteServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def put_resource_stat(self, request, context):
+        """agent calls put_resource_stat rpc to provide resource stats
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ManagementRouteServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -163,6 +175,11 @@ def add_ManagementRouteServicer_to_server(servicer, server):
             'job_status': grpc.unary_unary_rpc_method_handler(
                     servicer.job_status,
                     request_deserializer=management__pb2.JobStatus.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'put_resource_stat': grpc.unary_unary_rpc_method_handler(
+                    servicer.put_resource_stat,
+                    request_deserializer=management__pb2.ResourceStats.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
     }
@@ -329,6 +346,33 @@ class ManagementRoute(object):
             target,
             '/management.ManagementRoute/job_status',
             management__pb2.JobStatus.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def put_resource_stat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/management.ManagementRoute/put_resource_stat',
+            management__pb2.ResourceStats.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,

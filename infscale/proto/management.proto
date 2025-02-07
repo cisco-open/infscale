@@ -19,6 +19,8 @@ service ManagementRoute {
   rpc command(AgentID) returns (stream Action) {}
   // agent calls job_status rpc to provide status of a job
   rpc job_status(JobStatus) returns (google.protobuf.Empty) {}
+  // agent calls put_resource_stat rpc to provide resource stats
+  rpc put_resource_stat(ResourceStats) returns (google.protobuf.Empty) {}
 }
 
 message AgentID {
@@ -48,13 +50,21 @@ message RegRes {
   string reason = 2; // reason string in case of failure
 }
 
+message ResourceStats {
+  string id = 1; // agent's id
+  repeated GpuStat gpu_stats = 2;
+  repeated VramStat vram_stats = 3;
+  CpuStats cpu_stats = 4;
+  DramStats dram_stats = 5;
+}
+
 // status contains details about resources and workers managed by an agent
 message Status {
   string id = 1; // agent's id
   repeated GpuStat gpu_stats = 2;
   repeated VramStat vram_stats = 3;
-  repeated CpuStat cpu_stats = 4;
-  RamStat ram_stat = 5;
+  CpuStats cpu_stats = 4;
+  DramStats ram_stat = 5;
   WorkerStatus worker_status = 6;
 }
 
@@ -80,16 +90,18 @@ message VramStat {
   int64 total = 3;
 }
 
-// cpustat contains status information about CPU
-message CpuStat {
-  int32 id = 1; // CPU identifier; CPU: 0..n-1: pinned cpu id; -1: any CPU
-  bool used = 2; // specify whether the resource is used or not
-  int32 util = 3; // utilization of the resource
+// CpuStats contains status information about CPU
+message CpuStats {
+  int32 total_cpus = 1; // total CPUs
+  float max_frequency = 2; // max clock speed
+  float current_frequency = 3; // current clock speed
+  float min_frequency = 4; // min clock speed
+  float load = 5; // overall CPU load as a percentage
 }
 
 // ramstat contains status information about RAM
-message RamStat {
-  int64 used = 1; // this would be an average value
+message DramStats {
+  int64 used = 1;
   int64 total = 2;
 }
 
