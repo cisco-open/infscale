@@ -15,9 +15,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """Router class."""
+from __future__ import annotations
 import asyncio
 from collections import deque
+from typing import TYPE_CHECKING
 
+from infscale.actor.job_msg import WorkerStatus
 import torch
 from infscale import get_logger
 from infscale.config import ServeConfig
@@ -26,6 +29,9 @@ from infscale.execution.world import WorldInfo
 from infscale.fwding import random, rr, shortest, static
 from multiworld.manager import WorldManager
 from torch import Tensor
+
+if TYPE_CHECKING:
+    from infscale.execution.pipeline import Pipeline
 
 DEFAULT_QUEUE_SIZE = 3
 DEFAULT_SLEEP_TIME = 0.1  # 100ms
@@ -38,12 +44,13 @@ logger = None
 class Router:
     """Router class."""
 
-    def __init__(self, world_manager: WorldManager):
+    def __init__(self, pipeline: Pipeline):
         """Initialize Router instance."""
         global logger
         logger = get_logger()
 
-        self.world_manager = world_manager
+        self.pipeline = pipeline
+        self.world_manager = pipeline.world_manager
 
         self._rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
         self._tx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
@@ -162,6 +169,8 @@ class Router:
             await self.__rx_q.put((tensors, seqno))
             logger.debug(f"put tensors of seqno {seqno} into __rx_q")
 
+        self.pipeline._send_status_message(WorkerStatus.DONE)
+
         logger.warn(f"done with recv task for {world_info.name}")
 
     def _find_tx_q(self, world_info: WorldInfo) -> asyncio.Queue:
@@ -221,6 +230,8 @@ class Router:
                 logger.warn(f"{world_info.name} error: {e}")
                 break
             logger.debug(f"sent tensors of seqno {seqno}")
+
+        self.pipeline._send_status_message(WorkerStatus.DONE)
 
         # remove tx queue for the world
         self._cleanup_tx_q(world_info)

@@ -52,7 +52,7 @@ class Pipeline:
 
         self.stage: Stage = None
         self.world_manager = WorldManager()
-        self.router = Router(self.world_manager)
+        self.router = Router(self)
         self.wcomm = wcomm
         self.spec: ServeConfig = None
         self.device = None
