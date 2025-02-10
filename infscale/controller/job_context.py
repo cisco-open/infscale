@@ -24,7 +24,7 @@ from fastapi import HTTPException, status
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorkerInfo
-from infscale.controller.ctrl_dtype import JobAction, JobActionModel
+from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
@@ -159,7 +159,7 @@ class RunningState(BaseJobState):
         tasks = []
 
         for agent_id in agent_ids:
-            task = self.context.ctrl._send_action_to_agent(
+            task = self.context.ctrl._send_command_to_agent(
                 agent_id, self.job_id, self.context.req
             )
             tasks.append(task)
@@ -199,7 +199,7 @@ class StartingState(BaseJobState):
         tasks = []
 
         for agent_id in agent_ids:
-            task = self.context.ctrl._send_action_to_agent(
+            task = self.context.ctrl._send_command_to_agent(
                 agent_id, self.job_id, self.context.req
             )
             tasks.append(task)
@@ -255,7 +255,7 @@ class UpdatingState(BaseJobState):
         tasks = []
 
         for agent_id in agent_ids:
-            task = self.context.ctrl._send_action_to_agent(
+            task = self.context.ctrl._send_command_to_agent(
                 agent_id, self.job_id, self.context.req
             )
             tasks.append(task)
@@ -302,7 +302,7 @@ class JobContext:
         self.state = ReadyState(self)
         self.state_enum = JobStateEnum.READY
         self.agent_info: dict[str, AgentMetaData] = {}
-        self.req: JobActionModel = None
+        self.req: CommandActionModel = None
         self.wrk_status: dict[str, WorkerStatus] = {}
         # event to update the config after all agents added ports and ip address
         self.agents_setup_event = asyncio.Event()
@@ -544,18 +544,18 @@ class JobContext:
                 detail="No agent found",
             )
 
-    async def do(self, req: JobActionModel):
+    async def do(self, req: CommandActionModel):
         """Handle specific action"""
         self.req = req
 
         match req.action:
-            case JobAction.START:
+            case CommandAction.START:
                 await self.start()
 
-            case JobAction.UPDATE:
+            case CommandAction.UPDATE:
                 await self.update()
 
-            case JobAction.STOP:
+            case CommandAction.STOP:
                 await self.stop()
             case _:
                 raise InvalidJobStateAction(

@@ -35,7 +35,7 @@ from infscale.constants import (
 )
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
-from infscale.controller.ctrl_dtype import JobAction, JobActionModel, ReqType
+from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
 from infscale.controller.job_context import AgentMetaData, JobContext
 from infscale.controller.deployment.policy import (
     DeploymentPolicyEnum,
@@ -47,7 +47,7 @@ from infscale.proto import management_pb2_grpc as pb2_grpc
 
 logger = None
 
-CtrlRequest = Union[Request | JobActionModel]
+CtrlRequest = Union[Request | CommandActionModel]
 
 
 class Controller:
@@ -211,14 +211,14 @@ class Controller:
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
 
-        payload = pb2.JobAction(
-            type=JobAction.SETUP, job_id=config.job_id, manifest=port_count_bytes
+        payload = pb2.Action(
+            type=CommandAction.SETUP, job_id=config.job_id, manifest=port_count_bytes
         )
 
         await context.write(payload)
 
     async def _send_config_to_agent(
-        self, agent_data: AgentMetaData, action: JobActionModel
+        self, agent_data: AgentMetaData, action: CommandActionModel
     ) -> None:
         """Send config to agent."""
         agent_id, config = agent_data.id, agent_data.config
@@ -227,20 +227,20 @@ class Controller:
 
         manifest_bytes = json.dumps(asdict(config)).encode("utf-8")
 
-        payload = pb2.JobAction(
+        payload = pb2.Action(
             type=action.action, job_id=action.job_id, manifest=manifest_bytes
         )
 
         await context.write(payload)
 
-    async def _send_action_to_agent(
-        self, agent_id: str, job_id: str, action: JobActionModel
+    async def _send_command_to_agent(
+        self, agent_id: str, job_id: str, action: CommandActionModel
     ) -> None:
-        """Send job action to agent."""
+        """Send command to agent."""
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
 
-        payload = pb2.JobAction(type=action.action, job_id=job_id)
+        payload = pb2.Action(type=action.action, job_id=job_id)
 
         await context.write(payload)
 
@@ -300,11 +300,11 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
 
         return empty_pb2.Empty()
 
-    async def fetch(
+    async def command(
         self, request: pb2.AgentID, context: ServicerContext
-    ) -> AsyncIterable[pb2.JobAction]:
-        """Push JobAction so that agent can take necessary actions for workers."""
-        # since fetch() is used for manifest "push", this function shouldn't be
+    ) -> AsyncIterable[pb2.Action]:
+        """Push CommandAction so that agent can take necessary actions for workers."""
+        # since command() is used for command "push", this function shouldn't be
         # returned. For that, we create an asyncio event and let the event wait
         # forever. The event will be released only when agent is unreachable.
         if request.id not in self.ctrl.agent_contexts:

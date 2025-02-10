@@ -23,7 +23,7 @@ from infscale.actor.agent import Agent
 from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
                                 CONTROLLER_PORT, DEFAULT_DEPLOYMENT_POLICY, LOCALHOST)
 from infscale.controller import controller as ctrl
-from infscale.controller.ctrl_dtype import JobAction, JobActionModel
+from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
 
 @click.group()
@@ -70,8 +70,8 @@ def job(endpoint: str, config: str) -> None:
     with open(config) as f:
         job_config = yaml.safe_load(f)
 
-    payload = JobActionModel(
-        action=JobAction.START,
+    payload = CommandActionModel(
+        action=CommandAction.START,
         config=job_config,
     ).model_dump_json()
 

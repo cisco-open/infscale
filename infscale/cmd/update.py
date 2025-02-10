@@ -18,7 +18,7 @@ import click
 import requests
 import yaml
 from infscale.constants import APISERVER_ENDPOINT
-from infscale.controller.ctrl_dtype import JobAction, JobActionModel
+from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
 
 @click.group()
@@ -35,8 +35,8 @@ def job(endpoint: str, config: str):
     with open(config) as f:
         job_config = yaml.safe_load(f)
 
-    payload = JobActionModel(
-        action=JobAction.UPDATE, config=job_config
+    payload = CommandActionModel(
+        action=CommandAction.UPDATE, config=job_config
     ).model_dump_json()
 
     try:

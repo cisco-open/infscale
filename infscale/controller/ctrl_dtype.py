@@ -30,29 +30,29 @@ class ReqType(str, Enum):
     JOB_ACTION = "job_action"
 
 
-class JobAction(str, Enum):
+class CommandAction(str, Enum):
     """Enum class for request type."""
 
-    START = "start"   # CLI - Controller start job action
-    STOP = "stop"     # CLI - Controller stop job action
-    UPDATE = "update" # CLI - Controller update job action
+    START = "start"   # CLI - Controller start command
+    STOP = "stop"     # CLI - Controller stop command
+    UPDATE = "update" # CLI - Controller update command
     SETUP = "setup"   # Controller - Agent setup job, assign port numbers to workers
 
 
-class JobActionModel(BaseModel):
-    """JobAction model."""
+class CommandActionModel(BaseModel):
+    """Command action model."""
 
-    action: JobAction
+    action: CommandAction
     job_id: Optional[str] = None
     config: Optional[JobConfig] = None
 
     @model_validator(mode="after")
     def check_config_for_update(self):
-        """Validate job action model."""
-        if self.action in [JobAction.UPDATE, JobAction.START] and self.config is None:
+        """Validate command action model."""
+        if self.action in [CommandAction.UPDATE, CommandAction.START] and self.config is None:
             raise ValueError("config is required when updating a job")
 
-        if self.action == JobAction.STOP and self.job_id is None:
+        if self.action == CommandAction.STOP and self.job_id is None:
             raise ValueError("job id is required stopping or updating a job")
         return self
 

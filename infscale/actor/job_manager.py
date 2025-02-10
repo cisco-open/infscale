@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus
 from infscale.config import JobConfig
-from infscale.controller.ctrl_dtype import JobAction
+from infscale.controller.ctrl_dtype import CommandAction
 from infscale.controller.job_context import JobStateEnum
 
 logger = None
@@ -172,22 +172,22 @@ class JobManager:
         """Return a job config of given job name."""
         return self.jobs[job_id].config if job_id in self.jobs else None
 
-    def get_workers(self, job_id: str, sort: JobAction = JobAction.START) -> set[str]:
+    def get_workers(self, job_id: str, sort: CommandAction = CommandAction.START) -> set[str]:
         """Return workers that match sort for a given job name."""
         if job_id not in self.jobs:
             return set()
 
         # TODO: in order to avoid creation of similar enum class,
-        #       we repurpose JobAction as argument to decide how to filter
-        #       workers. This is not ideal because the purpose of JobAction
+        #       we repurpose CommandAction as argument to decide how to filter
+        #       workers. This is not ideal because the purpose of CommandAction
         #       is different from the usage in this method.
         #       we eed to revisit this later.
         match sort:
-            case JobAction.START:
+            case CommandAction.START:
                 return self.jobs[job_id].start_wrkrs
-            case JobAction.UPDATE:
+            case CommandAction.UPDATE:
                 return self.jobs[job_id].update_wrkrs
-            case JobAction.STOP:
+            case CommandAction.STOP:
                 return self.jobs[job_id].stop_wrkrs
             case _:
                 raise ValueError(f"unknown sort: {sort}")

@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 from infscale.constants import APISERVER_PORT
-from infscale.controller.ctrl_dtype import (JobAction, JobActionModel, ReqType,
+from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel, ReqType,
                                             Response)
 from uvicorn import Config, Server
 
@@ -58,7 +58,7 @@ class ApiServer:
 
 
 @app.post("/job", response_model=Response)
-async def manage_job(job_action: JobActionModel):
+async def manage_job(job_action: CommandActionModel):
     """Start or Stop a job."""
     try:
         await _ctrl.handle_fastapi_request(
@@ -68,13 +68,13 @@ async def manage_job(job_action: JobActionModel):
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=e.detail)
 
-    res = "job started" if job_action.action == JobAction.START else "job stopped"
+    res = "job started" if job_action.action == CommandAction.START else "job stopped"
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=res)
 
 
 @app.put("/job", response_model=Response)
-async def update_job(job_action: JobActionModel):
+async def update_job(job_action: CommandActionModel):
     """Update job with new config."""
     try:
         await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, job_action)

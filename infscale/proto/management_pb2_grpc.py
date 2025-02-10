@@ -73,10 +73,10 @@ class ManagementRouteStub(object):
                 request_serializer=management__pb2.Status.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
-        self.fetch = channel.unary_stream(
-                '/management.ManagementRoute/fetch',
+        self.command = channel.unary_stream(
+                '/management.ManagementRoute/command',
                 request_serializer=management__pb2.AgentID.SerializeToString,
-                response_deserializer=management__pb2.JobAction.FromString,
+                response_deserializer=management__pb2.Action.FromString,
                 _registered_method=True)
         self.job_status = channel.unary_unary(
                 '/management.ManagementRoute/job_status',
@@ -118,8 +118,8 @@ class ManagementRouteServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def fetch(self, request, context):
-        """agent calls fetch rpc to get job action messages
+    def command(self, request, context):
+        """agent calls command rpc to get command messages
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -155,10 +155,10 @@ def add_ManagementRouteServicer_to_server(servicer, server):
                     request_deserializer=management__pb2.Status.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
-            'fetch': grpc.unary_stream_rpc_method_handler(
-                    servicer.fetch,
+            'command': grpc.unary_stream_rpc_method_handler(
+                    servicer.command,
                     request_deserializer=management__pb2.AgentID.FromString,
-                    response_serializer=management__pb2.JobAction.SerializeToString,
+                    response_serializer=management__pb2.Action.SerializeToString,
             ),
             'job_status': grpc.unary_unary_rpc_method_handler(
                     servicer.job_status,
@@ -287,7 +287,7 @@ class ManagementRoute(object):
             _registered_method=True)
 
     @staticmethod
-    def fetch(request,
+    def command(request,
             target,
             options=(),
             channel_credentials=None,
@@ -300,9 +300,9 @@ class ManagementRoute(object):
         return grpc.experimental.unary_stream(
             request,
             target,
-            '/management.ManagementRoute/fetch',
+            '/management.ManagementRoute/command',
             management__pb2.AgentID.SerializeToString,
-            management__pb2.JobAction.FromString,
+            management__pb2.Action.FromString,
             options,
             channel_credentials,
             insecure,

@@ -37,7 +37,7 @@ from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig, WorkerInfo
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
-from infscale.controller.ctrl_dtype import JobAction
+from infscale.controller.ctrl_dtype import CommandAction
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -227,27 +227,27 @@ class Agent:
         # create a task to send status in an event-driven fashion
         _ = asyncio.create_task(self.report())
 
-        # create a task to wait for fetch job action
-        _ = asyncio.create_task(self.fetch())
+        # create a task to wait for controller commands
+        _ = asyncio.create_task(self.fetch_command())
 
         return True
 
-    async def fetch(self) -> None:
+    async def fetch_command(self) -> None:
         """Connect to the server and start the listening task."""
         try:
-            await self._fetch()
+            await self._fetch_command()
         except Exception as e:
             logger.error(f"Error in connection: {e}")
 
-    async def _fetch(self) -> None:
-        """Listen for job action pushes from the ManagementRoute."""
+    async def _fetch_command(self) -> None:
+        """Listen for commands from the ManagementRoute."""
         request = pb2.AgentID(id=self.id)
 
-        async for action in self.stub.fetch(request):
+        async for action in self.stub.command(request):
             if not action:
                 continue
 
-            self._handle_job_action(action)
+            self._handle_command(action)
 
     def _get_ip_address(self) -> str:
         """Get ip address of agent"""
@@ -288,10 +288,10 @@ class Agent:
 
                     del self.wrk_ports[ctrl_port]
 
-    def _handle_job_action(self, action: pb2.JobAction) -> None:
+    def _handle_command(self, action: pb2.Action) -> None:
         """Handle job-related action."""
         match action.type:
-            case JobAction.START | JobAction.UPDATE:
+            case CommandAction.START | CommandAction.UPDATE:
                 config = JobConfig(**json.loads(action.manifest.decode("utf-8")))
                 logger.debug(f"got a new config for job {config.job_id}")
 
@@ -305,10 +305,10 @@ class Agent:
 
                 self._stop_workers(config.job_id)
 
-            case JobAction.STOP:
+            case CommandAction.STOP:
                 self.worker_mgr._signal_terminate_wrkrs(action.job_id)
 
-            case JobAction.SETUP:
+            case CommandAction.SETUP:
                 port_count = int.from_bytes(action.manifest, byteorder="big")
                 ports = self._reserve_ports(port_count)
 
@@ -368,7 +368,7 @@ class Agent:
             logger.debug(f"no config for job {job_id}")
             return
 
-        update_wrkrs = self.job_mgr.get_workers(job_id, JobAction.UPDATE)
+        update_wrkrs = self.job_mgr.get_workers(job_id, CommandAction.UPDATE)
         workers = self.worker_mgr.get_workers(job_id, update_wrkrs)
 
         logger.debug(f"workers to update: {update_wrkrs}")
@@ -381,7 +381,7 @@ class Agent:
             self.worker_mgr.send(w, msg)
 
     def _stop_workers(self, job_id: str) -> None:
-        stop_wrkrs = self.job_mgr.get_workers(job_id, JobAction.STOP)
+        stop_wrkrs = self.job_mgr.get_workers(job_id, CommandAction.STOP)
         self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs)
 
     async def report(self):

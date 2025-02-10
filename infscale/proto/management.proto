@@ -15,8 +15,8 @@ service ManagementRoute {
   rpc heartbeat(AgentID) returns (google.protobuf.Empty) {}
   // agent calls update rpc to provide status of workers
   rpc update(Status) returns (google.protobuf.Empty) {}
-  // agent calls fetch rpc to get job action messages
-  rpc fetch(AgentID) returns (stream JobAction) {}
+  // agent calls command rpc to get command messages
+  rpc command(AgentID) returns (stream Action) {}
   // agent calls job_status rpc to provide status of a job
   rpc job_status(JobStatus) returns (google.protobuf.Empty) {}
 }
@@ -25,9 +25,9 @@ message AgentID {
   string id = 1;
 }
 
-message JobAction {
+message Action {
   string type = 1;
-  string job_id = 2;
+  optional string job_id = 2;
   optional bytes manifest = 3; 
 }
 

@@ -17,7 +17,7 @@
 import click
 import requests
 from infscale.constants import APISERVER_ENDPOINT
-from infscale.controller.ctrl_dtype import JobAction, JobActionModel
+from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
 
 @click.group()
@@ -31,7 +31,7 @@ def stop():
 @click.argument("job_id", required=True)
 def job(endpoint: str, job_id: str):
     """Stop a job with."""
-    payload = JobActionModel(action=JobAction.STOP, job_id=job_id).model_dump_json()
+    payload = CommandActionModel(action=CommandAction.STOP, job_id=job_id).model_dump_json()
 
     try:
         response = requests.post(
