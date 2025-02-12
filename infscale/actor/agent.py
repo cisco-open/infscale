@@ -28,8 +28,13 @@ from multiprocess.connection import Pipe
 
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager
-from infscale.actor.job_msg import (JobStatus, Message, MessageType,
-                                    WorkerStatus, WorkerStatusMessage)
+from infscale.actor.job_msg import (
+    JobStatus,
+    Message,
+    MessageType,
+    WorkerStatus,
+    WorkerStatusMessage,
+)
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig, WorkerInfo
@@ -117,20 +122,20 @@ class Agent:
         """Send message with updated job status."""
         job_id = message.job_id
         curr_status = self.job_mgr.get_status(job_id)
-        
+
         # None means that the job is completed / stopped
         if curr_status is None:
             return
 
         job_status = self._get_latest_job_status(job_id)
-        
+
         # job status might be none when none of the conditions are met
         if job_status == JobStatus.UNKNOWN or job_status == curr_status:
             return
 
         self.job_mgr.set_status(job_id, job_status)
 
-        self._cleanup(job_id, job_status)           
+        self._cleanup(job_id, job_status)
 
         job_status = {
             "agent_id": self.id,
@@ -168,7 +173,7 @@ class Agent:
 
         if self._all_wrk_running(job_id):
             return JobStatus.RUNNING
-        
+
         if self._is_job_completed(job_id):
             return JobStatus.COMPLETED
 
@@ -179,7 +184,9 @@ class Agent:
         workers = self.worker_mgr.get_workers_by_job_id(job_id)
         config = self.job_mgr.get_config(job_id)
 
-        running_workers = [w for w in workers.values() if w.status == WorkerStatus.RUNNING]
+        running_workers = [
+            w for w in workers.values() if w.status == WorkerStatus.RUNNING
+        ]
 
         # we need the deployed worker count from the config
         deployed_wrkrs = [worker for worker in config.workers if worker.deploy]
@@ -197,7 +204,7 @@ class Agent:
         workers = self.worker_mgr.get_workers_by_job_id(job_id)
 
         any_done = any(w.status == WorkerStatus.DONE for w in workers.values())
-            
+
         # serving server is 'done' and the others terminated
         return any_done
 
@@ -320,20 +327,23 @@ class Agent:
                 self.stub.job_setup(req)
 
             case CommandAction.RESOURCE_STAT:
-                cpu_stats, dram_stats, gpu_stats, vram_stats = self._get_resource_stats()
+                cpu_stats, dram_stats, gpu_stats, vram_stats = (
+                    self._get_resource_stats()
+                )
     
                 cpu_stats_msg = CpuMonitor.stats_to_proto(cpu_stats)
                 dram_stats_msg = CpuMonitor.stats_to_proto(dram_stats)
                 gpu_stats_msg = GpuMonitor.stats_to_proto(gpu_stats)
                 vram_stats_msg = GpuMonitor.stats_to_proto(vram_stats)
 
-                msg = pb2.ResourceStats()
-                msg.gpu_stats.extend(gpu_stats_msg)
-                msg.vram_stats.extend(vram_stats_msg)
+                req = pb2.ResourceStats(
+                    id=self.id,
+                    gpu_stats=gpu_stats_msg,
+                    vram_stats=vram_stats_msg,
+                    cpu_stats=cpu_stats_msg,
+                    dram_stats=dram_stats_msg,
+                )
 
-                msg.id = self.id
-                msg.cpu_stats = cpu_stats_msg
-                msg.dram_stats = dram_stats_msg
                 self.stub.put_resource_stat(req)
 
     async def heart_beat(self):
@@ -414,7 +424,9 @@ class Agent:
 
             self.stub.update(status_msg)
 
-    def _get_resource_stats(self) -> tuple[CPUStats, DRAMStats, list[GpuStat], list[VramStat]]:
+    def _get_resource_stats(
+        self
+    ) -> tuple[CPUStats, DRAMStats, list[GpuStat], list[VramStat]]:
         """Return CPU, DRAM and GPU statistics."""
         gpu_stats, vram_stats = self.gpu_monitor.get_metrics()
         cpu_stats, dram_stats = self.cpu_monitor.get_metrics()

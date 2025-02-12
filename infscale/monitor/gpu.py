@@ -105,7 +105,7 @@ class GpuMonitor:
 
         mems, computes = self._get_gpu_stats()
 
-        return mems, computes
+        return computes, mems
 
     async def metrics(self) -> tuple[list[GpuStat], list[VramStat]]:
         """Return statistics on GPU resources."""
@@ -140,7 +140,7 @@ class GpuMonitor:
             await asyncio.sleep(self.interval)
 
     def _get_gpu_stats(self) -> tuple[list[GpuStat], list[VramStat]]:
-        """Return GPU resources."""
+        """Return GPU and VRam resources."""
         count = nvmlDeviceGetCount()
         mems = [None] * count
         computes = [None] * count
@@ -174,7 +174,7 @@ class GpuMonitor:
             used = len(processes) > 0
             computes[i] = GpuStat(i, dev_type, used, util)
 
-        return mems, computes
+        return computes, mems 
 
     @staticmethod
     def stats_to_proto(

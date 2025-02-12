@@ -18,10 +18,13 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Union
 
 from infscale import get_logger
 from infscale.constants import HEART_BEAT_PERIOD
+from infscale.monitor.cpu import CPUStats, DRAMStats
+from infscale.monitor.gpu import GpuStat, VramStat
 from infscale.utils.timer import Timer
 
 if TYPE_CHECKING:
@@ -32,6 +35,14 @@ DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD
 
 
 logger = None
+
+@dataclass
+class AgentResources:
+    """Class for keeping agent resources."""
+    gpu_stats: GpuStat
+    vram_stats: VramStat
+    cpu_stats: CPUStats
+    dram_stats: DRAMStats
 
 
 class AgentContext:
@@ -51,6 +62,8 @@ class AgentContext:
 
         self.alive: bool = False
         self.timer: Timer = None
+
+        self.resources: AgentResources = None
 
     def get_grpc_ctx(self) -> Union[ServicerContext, None]:
         """Return grpc context (i.e., servicer context)."""

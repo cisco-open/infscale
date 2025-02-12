@@ -33,7 +33,7 @@ from infscale.constants import (
     DEFAULT_DEPLOYMENT_POLICY,
     GRPC_MAX_MESSAGE_LENGTH,
 )
-from infscale.controller.agent_context import AgentContext
+from infscale.controller.agent_context import AgentContext, AgentResources
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
@@ -143,6 +143,29 @@ class Controller:
 
         job_ctx = self.job_contexts.get(job_id)
         job_ctx.handle_job_status(status, agent_id)
+
+    async def get_agents_resources(self) -> None:
+        for agent_context in self.agent_contexts.values():
+            context = agent_context.get_grpc_ctx()
+
+            payload = pb2.Action(type=CommandAction.RESOURCE_STAT)
+            await context.write(payload)
+
+    def handle_agent_resources(self, req: pb2.ResourceStats) -> None:
+        agent_id, gpu_stats, vram_stats, cpu_stats, dram_stats = (
+            req.id,
+            req.gpu_stats,
+            req.vram_stats,
+            req.cpu_stats,
+            req.dram_stats,
+        )
+
+        resources = AgentResources(
+           gpu_stats, vram_stats, cpu_stats, dram_stats
+        )
+
+        agent_context = self.agent_contexts.get(agent_id)
+        agent_context.resources = resources
 
     def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
         """Set worker status within job state."""
@@ -304,8 +327,7 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         self, request: pb2.ResourceStats, unused_context: ServicerContext
     ) -> None:
         """Handle update message for job status."""
-        # TODO: use agent resources later
-        logger.info(f"got agent resources {request}")
+        self.ctrl.handle_agent_resources(request)
 
         return empty_pb2.Empty()
 
