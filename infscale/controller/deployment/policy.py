@@ -18,7 +18,9 @@ import copy
 from abc import ABC, abstractmethod
 from enum import Enum
 
-from infscale.config import JobConfig
+from infscale import get_logger
+from infscale.config import JobConfig, WorkerData
+from infscale.controller.job_context import AgentMetaData
 
 
 class DeploymentPolicyEnum(Enum):
@@ -31,18 +33,68 @@ class DeploymentPolicyEnum(Enum):
 class DeploymentPolicy(ABC):
     """Abstract class for deployment policy."""
 
+    def __init__(self):
+        global logger
+        logger = get_logger()
+
     @abstractmethod
-    def split(self, job_config: JobConfig) -> dict[str, JobConfig]:
+    def split(
+        self, job_config: JobConfig
+    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
         """
-        Split the job config using random deployment policy
-        and return updated job config for each agent.
+        Split the job config using a deployment policy
+        and return updated job config and worker distribution for each agent.
         """
         pass
+
+    def get_workers(
+        self, distribution: dict[str, set[str]], workers: list[WorkerData]
+    ) -> list[WorkerData]:
+        """Return a list of workers."""
+        # flat worker ids from each agent
+        curr_worker_ids = [wid for wids in distribution.values() for wid in wids]
+
+        # get new worker ids
+        new_workers = [worker for worker in workers if worker.id not in curr_worker_ids]
+
+        return new_workers
+
+    def get_curr_distribution(
+        self, agent_data: list[AgentMetaData]
+    ) -> dict[str, set[str]]:
+        """Return current distribution for each agent."""
+        results = {}
+
+        for data in agent_data:
+            results[data.id] = data.existing_workers
+
+        return results
+
+    def check_agents_distr(
+        self, distribution: dict[str, set[str]], workers: list[WorkerData]
+    ) -> None:
+        """Check if worker distribution has changed and update if needed."""
+        # new worker ids
+        worker_ids = {worker.id for worker in workers}
+
+        # flatten the current worker set
+        current_workers = {wid for wids in distribution.values() for wid in wids}
+
+        # compute removed workers
+        removed_workers = set(current_workers) - set(worker_ids)
+
+        # remove workers from the distribution
+        for agent_id, workers in distribution.items():
+            distribution[agent_id] = {
+                wid for wid in workers if wid not in removed_workers
+            }
 
     def _get_agent_updated_cfg(
         self, wrk_distr: dict[str, list[str]], job_config: JobConfig
     ) -> dict[str, JobConfig]:
         """Return updated job config for each agent."""
+        logger.info(f"got new worker distribution for agents: {wrk_distr}")
+
         agents_config = {}
         for agent_id, wrk_ids in wrk_distr.items():
             # create a job_config copy to update and pass it to the agent.

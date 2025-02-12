@@ -53,6 +53,7 @@ class AgentMetaData:
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
         self.wids_to_deploy: list[str] = []
+        self.existing_workers: set[str] = set()
 
 
 class InvalidJobStateAction(Exception):
@@ -370,11 +371,23 @@ class JobContext:
 
     def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller."""
-        agent_cfg = self.ctrl.deploy_policy.split(agent_ids, self.req.config)
+        agent_data = self._get_agents_data(agent_ids)
 
-        self._update_agent_data(agent_cfg)
+        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(agent_data, self.req.config)
 
-    def _update_agent_data(self, agent_cfg: dict[str, JobConfig]) -> None:
+        self._update_agent_data(agent_cfg, wrk_distribution)
+
+    def _get_agents_data(self, agent_ids: list[str]) -> list[AgentMetaData]:
+        """Get a list of agent metadata given agent ids."""
+        result = []
+
+        for agent_id in agent_ids:
+            data = self.agent_info[agent_id]
+            result.append(data)
+
+        return result
+
+    def _update_agent_data(self, agent_cfg: dict[str, JobConfig], wrk_distribution: dict[str, set[str]]) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
             agent_data = self.agent_info[agent_id]
@@ -383,6 +396,7 @@ class JobContext:
                 agent_data.config, new_cfg
             )
             agent_data.wids_to_deploy = self._get_deploy_worker_ids(new_cfg.workers)
+            agent_data.existing_workers = wrk_distribution[agent_id]
 
     async def prepare_config(self, agent_id: str) -> None:
         """Prepare config for deploy."""
@@ -502,6 +516,7 @@ class JobContext:
     def _get_deploy_worker_ids(self, workers: list[WorkerData]) -> list[str]:
         """Return a list of worker ids to be deployed."""
         return [w.id for w in workers if w.deploy]
+
 
     def _get_state_class(self, state_enum):
         """Map a JobStateEnum to its corresponding state class."""

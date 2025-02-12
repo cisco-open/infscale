@@ -15,27 +15,23 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import random
-
-from infscale import get_logger
 from infscale.config import JobConfig
 from infscale.controller.deployment.policy import DeploymentPolicy
-
-logger = None
+from infscale.controller.job_context import AgentMetaData
 
 
 class RandomDeploymentPolicy(DeploymentPolicy):
     """Random deployment policy class."""
 
     def __init__(self):
-        global logger
-        logger = get_logger()
+        super().__init__()
 
     def split(
-        self, agent_ids: list[str], job_config: JobConfig
-    ) -> dict[str, JobConfig]:
+        self, agent_data: list[AgentMetaData], job_config: JobConfig
+    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
         """
         Split the job config using random deployment policy
-        and return updated job config for each agent.
+        and update config and worker distribution for each agent.
 
         Each agent gets at least one worker from the shuffled list.
         The remaining workers are distributed randomly.
@@ -43,20 +39,28 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         of workers to agents is random.
         The random.choice(agent_ids) assigns the remaining workers in a random way,
         ensuring no agent is left out.
+
+        Return updated config and worker distribution for each agent
         """
 
-        # make a copy of the workers list
-        workers = job_config.workers[:]
+        # dictionary to hold the workers for each agent_id
+        distribution = self.get_curr_distribution(agent_data)
 
-        # start by assigning one worker to each agent randomly
-        random.shuffle(workers)  # shuffle workers to ensure randomness
-        distribution = {agent_id: [workers.pop().id] for agent_id in agent_ids}
+        workers = self.get_workers(distribution, job_config.workers)
+
+        # check if the distribution has changed
+        self.check_agents_distr(distribution, job_config.workers)
+
+        # assign at least one worker / agent
+        for data in agent_data:
+            # we might not have workers if update job is made with less workers
+            if len(workers):
+                random.shuffle(workers)
+                distribution[data.id].add(workers.pop().id)
 
         # distribute the remaining workers randomly
         while workers:
-            agent_id = random.choice(agent_ids)  # choose an agent randomly
-            distribution[agent_id].append(workers.pop().id)
+            data = random.choice(agent_data)  # choose an agent randomly
+            distribution[data.id].add(workers.pop().id)
 
-        logger.info(f"got new worker distribution for agents: {distribution}")
-
-        return self._get_agent_updated_cfg(distribution, job_config)
+        return self._get_agent_updated_cfg(distribution, job_config), distribution
