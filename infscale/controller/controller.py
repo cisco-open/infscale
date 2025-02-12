@@ -36,10 +36,10 @@ from infscale.constants import (
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
+from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.job_context import AgentMetaData, JobContext
 from infscale.controller.deployment.policy import (
     DeploymentPolicyEnum,
-    DeploymentPolicyFactory,
 )
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
@@ -305,7 +305,7 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     ) -> None:
         """Handle update message for job status."""
         # TODO: use agent resources later
-        logger.info(f'got agent resources {request}')
+        logger.info(f"got agent resources {request}")
 
         return empty_pb2.Empty()
 
