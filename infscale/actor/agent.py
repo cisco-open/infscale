@@ -322,7 +322,8 @@ class Agent:
             case CommandAction.RESOURCE_STAT:
                 cpu_stats, dram_stats, gpu_stats, vram_stats = self._get_resource_stats()
     
-                cpu_stats_msg, dram_stats_msg = CpuMonitor.stats_to_proto(cpu_stats, dram_stats)
+                cpu_stats_msg = CpuMonitor.stats_to_proto(cpu_stats)
+                dram_stats_msg = CpuMonitor.stats_to_proto(dram_stats)
                 gpu_stats_msg = GpuMonitor.stats_to_proto(gpu_stats)
                 vram_stats_msg = GpuMonitor.stats_to_proto(vram_stats)
 
@@ -413,7 +414,7 @@ class Agent:
 
             self.stub.update(status_msg)
 
-    def _get_resource_stats(self) -> tuple[CPUStats, DRAMStats, list[GpuStat] | None, list[VramStat] | None]:
+    def _get_resource_stats(self) -> tuple[CPUStats, DRAMStats, list[GpuStat], list[VramStat]]:
         """Return CPU, DRAM and GPU statistics."""
         gpu_stats, vram_stats = self.gpu_monitor.get_metrics()
         cpu_stats, dram_stats = self.cpu_monitor.get_metrics()

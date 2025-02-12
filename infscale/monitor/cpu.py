@@ -17,6 +17,7 @@
 """CPU monitoring class."""
 import json
 from dataclasses import asdict, dataclass
+from typing import Union
 
 import psutil
 from google.protobuf.json_format import Parse
@@ -67,13 +68,16 @@ class CpuMonitor:
 
     @staticmethod
     def stats_to_proto(
-        cpu_stats: CPUStats, dram_stats: DRAMStats
-    ) -> tuple[pb2.CpuStats, pb2.DramStats]:
-        """Convert CPUStats to a protobuf message."""
-        cpu_stats_str = json.dumps(asdict(cpu_stats))
-        dram_stats_str = json.dumps(asdict(dram_stats))
+        stats: Union[CPUStats, DRAMStats]
+    ) -> Union[pb2.CpuStats, pb2.DramStats]:
+        """Convert CPUStats or DRAMStats to a protobuf messages."""
+        if isinstance(stats[0], CPUStats):
+            pb_msg_obj = pb2.CpuStats
+        elif isinstance(stats[0], DRAMStats):
+            pb_msg_obj = pb2.DramStats
 
-        cpu_msg = Parse(cpu_stats_str, pb2.CpuStats())
-        dram_msg = Parse(dram_stats_str, pb2.DramStats())
+        stats_str = json.dumps(asdict(stats))
 
-        return cpu_msg, dram_msg
+        msg = Parse(stats_str, pb_msg_obj())
+
+        return msg

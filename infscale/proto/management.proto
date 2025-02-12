@@ -64,7 +64,7 @@ message Status {
   repeated GpuStat gpu_stats = 2;
   repeated VramStat vram_stats = 3;
   CpuStats cpu_stats = 4;
-  DramStats ram_stat = 5;
+  DramStats dram_stats = 5;
   WorkerStatus worker_status = 6;
 }
 
@@ -99,7 +99,7 @@ message CpuStats {
   float load = 5; // overall CPU load as a percentage
 }
 
-// ramstat contains status information about RAM
+// DramStats contains status information about DRAM
 message DramStats {
   int64 used = 1;
   int64 total = 2;
