@@ -10,6 +10,8 @@ def parse_log(file_path: str, output_path: str):
     Parses a log file and computes statistics excluding outliers:
       - For [SEND] lines (grouped by world), it computes average, min, and max send times in ms.
       - For [COMPUTE] lines (grouped by stage), it computes average, min, and max compute times in ms.
+      - Additionally, for both SEND and COMPUTE lines, statistics are computed separately
+        based on the 'count' field.
       - For [LATENCY] lines, the numerical value is assumed to be in seconds (even if misprinted with "ms"),
         so it is converted to ms before computing statistics.
       - Outliers are excluded using the IQR method.
@@ -18,6 +20,9 @@ def parse_log(file_path: str, output_path: str):
     # Dictionaries to hold measurements.
     send_stats = {}    # key: world (e.g., 'w0'), value: list of times in ms.
     compute_stats = {} # key: stage (e.g., '0-0'), value: list of times in ms.
+    # New dictionaries for statistics by count.
+    send_stats_count = {}    # key: (world, count), value: list of times in ms.
+    compute_stats_count = {} # key: (stage, count), value: list of times in ms.
     latency_list = []  # list of latency times (converted to ms).
     total_latency = None  # total latency in seconds.
     
@@ -25,8 +30,12 @@ def parse_log(file_path: str, output_path: str):
     warmup_stats = []  # list of warmup times in ms
 
     # Regular expressions to extract values.
-    pattern_send = re.compile(r"\[SEND\].*?seqno\s+(-?\d+).*?world\s+(\w+).*?time:\s*([\d\.]+)\s*ms")
-    pattern_compute = re.compile(r"\[COMPUTE\].*?seqno\s+(-?\d+).*?stage\s+(\S+).*?time:\s*([\d\.]+)\s*ms")
+    pattern_send = re.compile(
+        r"\[SEND\].*?seqno\s+(-?\d+).*?world\s+(\w+).*?count:\s*(\d+).*?time:\s*([\d\.]+)\s*ms"
+    )
+    pattern_compute = re.compile(
+        r"\[COMPUTE\].*?seqno\s+(-?\d+).*?stage\s+(\S+).*?count:\s*(\d+).*?time:\s*([\d\.]+)\s*ms"
+    )
     # For latency, regardless of the unit, we'll treat the number as seconds.
     pattern_latency = re.compile(r"\[LATENCY\].*?seqno\s+(-?\d+).*?time:\s*([\d\.]+)\s*(s|ms)")
     pattern_total = re.compile(r"\[TOTAL LATENCY\].*?total time:\s*([\d\.]+)\s*s")
@@ -48,8 +57,13 @@ def parse_log(file_path: str, output_path: str):
                 if seqno == -1:  # Skip warmup entries
                     continue
                 world = match.group(2)
-                time_ms = float(match.group(3))
+                count_value = int(match.group(3))
+                time_ms = float(match.group(4))
+                # Overall statistics by world.
                 send_stats.setdefault(world, []).append(time_ms)
+                # Statistics grouped by (world, count).
+                key = (world, count_value)
+                send_stats_count.setdefault(key, []).append(time_ms)
                 continue
 
             # Process [COMPUTE] lines.
@@ -59,8 +73,13 @@ def parse_log(file_path: str, output_path: str):
                 if seqno == -1:  # Skip warmup entries
                     continue
                 stage = match.group(2)
-                time_ms = float(match.group(3))  # Already in ms.
+                count_value = int(match.group(3))
+                time_ms = float(match.group(4))  # Already in ms.
+                # Overall statistics by stage.
                 compute_stats.setdefault(stage, []).append(time_ms)
+                # Statistics grouped by (stage, count).
+                key = (stage, count_value)
+                compute_stats_count.setdefault(key, []).append(time_ms)
                 continue
 
             # Process [LATENCY] lines.
@@ -143,6 +162,18 @@ def parse_log(file_path: str, output_path: str):
                   f"avg = {avg:.3f} ms, min = {min_t:.3f} ms, max = {max_t:.3f} ms, median = {median_t:.3f} ms",
                   file=out_f)
 
+        # Print SEND statistics grouped by count.
+        print("\nSEND statistics by count (ms) [excluding outliers]:", file=out_f)
+        for (world, count) in sorted(send_stats_count.keys(), key=lambda x: (int(x[0][1:]), x[1])):
+            times = send_stats_count[(world, count)]
+            filtered_times = filter_outliers(times)
+            if not filtered_times:
+                filtered_times = times
+            avg, min_t, max_t, median_t = compute_summary(filtered_times)
+            print(f"  World {world}, Count {count} ({len(filtered_times)}/{len(times)} entries): "
+                  f"avg = {avg:.3f} ms, min = {min_t:.3f} ms, max = {max_t:.3f} ms, median = {median_t:.3f} ms",
+                  file=out_f)
+
         # Print COMPUTE statistics (excluding outliers).
         print("\nCOMPUTE statistics (ms) [excluding outliers]:", file=out_f)
         for stage in sorted(compute_stats.keys(), key=lambda x: tuple(map(int, x.split('-')))):  # Sort by numeric components
@@ -152,6 +183,18 @@ def parse_log(file_path: str, output_path: str):
                 filtered_times = times
             avg, min_t, max_t, median_t = compute_summary(filtered_times)
             print(f"  Stage {stage} ({len(filtered_times)}/{len(times)} entries): "
+                  f"avg = {avg:.3f} ms, min = {min_t:.3f} ms, max = {max_t:.3f} ms, median = {median_t:.3f} ms",
+                  file=out_f)
+
+        # Print COMPUTE statistics grouped by count.
+        print("\nCOMPUTE statistics by count (ms) [excluding outliers]:", file=out_f)
+        for (stage, count) in sorted(compute_stats_count.keys(), key=lambda x: (tuple(map(int, x[0].split('-'))), x[1])):
+            times = compute_stats_count[(stage, count)]
+            filtered_times = filter_outliers(times)
+            if not filtered_times:
+                filtered_times = times
+            avg, min_t, max_t, median_t = compute_summary(filtered_times)
+            print(f"  Stage {stage}, Count {count} ({len(filtered_times)}/{len(times)} entries): "
                   f"avg = {avg:.3f} ms, min = {min_t:.3f} ms, max = {max_t:.3f} ms, median = {median_t:.3f} ms",
                   file=out_f)
 
