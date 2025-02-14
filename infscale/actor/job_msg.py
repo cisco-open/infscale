@@ -27,6 +27,7 @@ class MessageType(Enum):
     TERMINATE = "terminate"
     STATUS = "status"
     CONFIG = "config"
+    FINISH_JOB = "finish_job"
 
 
 class WorkerStatus(Enum):
@@ -38,8 +39,10 @@ class WorkerStatus(Enum):
     TERMINATED = "terminated"
     FAILED = "failed"
 
+
 class JobStatus(Enum):
     """WorkerStatus enum"""
+
     RUNNING = "running"
     UPDATED = "updated"
     STOPPED = "stopped"
@@ -55,6 +58,7 @@ class Message:
     type: MessageType
     content: str | WorkerStatus | ServeConfig
     job_id: str
+
 
 @dataclass
 class WorkerStatusMessage:

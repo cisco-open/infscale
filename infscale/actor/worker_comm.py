@@ -82,3 +82,9 @@ class WorkerCommunicator:
                 )
                 logger.info("worker is terminated")
                 sys.exit()
+
+            case MessageType.FINISH_JOB:
+                # TODO: do the clean-up before transitioning to DONE
+                self.send(Message(MessageType.STATUS, WorkerStatus.DONE, self.job_id))
+                logger.info("worker is done")
+                sys.exit()

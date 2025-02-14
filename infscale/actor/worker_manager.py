@@ -52,7 +52,7 @@ class WorkerManager:
         logger = get_logger()
 
         self._workers: dict[int, WorkerMetaData] = {}
-        self.status_q = asyncio.Queue()
+        self.status_q: asyncio.Queue[WorkerStatusMessage] = asyncio.Queue()
 
     def add(
         self,
@@ -107,16 +107,20 @@ class WorkerManager:
         loop = asyncio.get_event_loop()
 
         fd = worker.pipe.fileno()
-        loop.add_reader(fd, self.on_read_ready, worker, fd)
+        loop.add_reader(fd, self.on_read_ready, worker, fd, loop)
 
-    def on_read_ready(self, worker: WorkerMetaData, fd: int) -> None:
+    def on_read_ready(
+        self, worker: WorkerMetaData, fd: int, loop: asyncio.AbstractEventLoop
+    ) -> None:
         """Receive message from a pipe via callback."""
         if worker.pipe.poll():
             try:
                 message = worker.pipe.recv()
                 self._handle_message(message, worker, fd)
             except EOFError:
-                self._signal_terminate_wrkr(worker)
+                # EOFError means that the pipe is already closed due to worker termination
+                # so removing the reader is the only thing we need to do here.
+                loop.remove_reader(fd)
 
     def _handle_message(
         self, message: Message, worker: WorkerMetaData, fd: int
@@ -134,9 +138,6 @@ class WorkerManager:
         self._update_worker_status(message, fd)
 
         match message.content:
-            case WorkerStatus.DONE:
-                self._signal_terminate_wrkrs(message.job_id)
-
             case WorkerStatus.RUNNING:
                 pass
 

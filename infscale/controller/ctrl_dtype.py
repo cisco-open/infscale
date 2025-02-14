@@ -38,6 +38,7 @@ class CommandAction(str, Enum):
     UPDATE = "update" # CLI - Controller update command
     SETUP = "setup"   # Controller - Agent setup job, assign port numbers to workers
     RESOURCE_STAT = "resource_stat" # Controller - Agent action to gather GPU and CPU resource statistics
+    FINISH_JOB = "finish_job" # Controller - Agent action to notify when a job is completed
 
 
 class CommandActionModel(BaseModel):
