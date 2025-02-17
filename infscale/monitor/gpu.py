@@ -103,7 +103,7 @@ class GpuMonitor:
             logger.info("no GPU available, skipping metrics collection.")
             return [], []
 
-        mems, computes = self._get_gpu_stats()
+        computes, mems = self._get_gpu_stats()
 
         return computes, mems
 
@@ -128,7 +128,7 @@ class GpuMonitor:
             return
 
         while True:
-            mems, computes = self._get_gpu_stats()
+            computes, mems = self._get_gpu_stats()
 
             self.mems = mems
             self.computes = computes

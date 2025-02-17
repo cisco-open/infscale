@@ -71,9 +71,9 @@ class CpuMonitor:
         stats: Union[CPUStats, DRAMStats]
     ) -> Union[pb2.CpuStats, pb2.DramStats]:
         """Convert CPUStats or DRAMStats to a protobuf messages."""
-        if isinstance(stats[0], CPUStats):
+        if isinstance(stats, CPUStats):
             pb_msg_obj = pb2.CpuStats
-        elif isinstance(stats[0], DRAMStats):
+        elif isinstance(stats, DRAMStats):
             pb_msg_obj = pb2.DramStats
 
         stats_str = json.dumps(asdict(stats))
