@@ -8,6 +8,7 @@ nfaults: 1
 micro_batch_size: 2
 fwd_policy: "static"
 job_id: "job7"
+auto_config: False
 
 flow_graph:
   s-0:

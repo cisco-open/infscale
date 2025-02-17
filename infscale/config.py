@@ -147,6 +147,9 @@ class JobConfig:
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
+    # auto_config: False - worker device and back-end fields are mandatory, they will be provided in the config file
+    # auto_config": True - worker device and back-end will be set based on available resources form the agents (GPU, CPU)
+    auto_config: bool = False
 
     def __post_init__(self) -> None:
         """Handle post init class variables."""

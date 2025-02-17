@@ -10,6 +10,7 @@ fwd_policy: "static"
 job_id: "job6"
 # maximum number of requests in flight at any given point in time
 max_inflight: 2
+auto_config: False
 
 flow_graph:
   s-0:
