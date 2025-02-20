@@ -20,7 +20,7 @@ from enum import Enum
 
 from infscale import get_logger
 from infscale.config import JobConfig, WorkerData
-from infscale.controller.job_context import AgentMetaData
+from infscale.controller.job_context import AgentDeviceMap, AgentMetaData
 
 
 class DeploymentPolicyEnum(Enum):
@@ -39,7 +39,10 @@ class DeploymentPolicy(ABC):
 
     @abstractmethod
     def split(
-        self, job_config: JobConfig
+        self,
+        agent_data: list[AgentMetaData],
+        job_config: JobConfig,
+        agent_device_map: dict[str, AgentDeviceMap],
     ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
         """
         Split the job config using a deployment policy
