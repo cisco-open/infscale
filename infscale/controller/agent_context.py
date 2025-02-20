@@ -39,8 +39,8 @@ logger = None
 @dataclass
 class AgentResources:
     """Class for keeping agent resources."""
-    gpu_stats: GpuStat
-    vram_stats: VramStat
+    gpu_stats: list[GpuStat]
+    vram_stats: list[VramStat]
     cpu_stats: CPUStats
     dram_stats: DRAMStats
 

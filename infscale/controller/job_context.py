@@ -52,6 +52,7 @@ class AgentMetaData:
         self.ports = ports
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
+        self.resources_fetched = False
         self.wids_to_deploy: list[str] = []
         self.existing_workers: set[str] = set()
 
@@ -137,7 +138,8 @@ class ReadyState(BaseJobState):
         agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
 
         self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids)
+
+        await self.context.process_cfg(agent_ids)
 
         tasks = []
 
@@ -173,7 +175,7 @@ class RunningState(BaseJobState):
         """Transition to UPDATING state."""
         agent_ids = self.context._get_ctx_agent_ids()
 
-        self.context.process_cfg(agent_ids)
+        await self.context.process_cfg(agent_ids)
 
         tasks = []
 
@@ -225,7 +227,7 @@ class StoppedState(BaseJobState):
         agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
 
         self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids)
+        await self.context.process_cfg(agent_ids)
 
         tasks = []
 
@@ -281,7 +283,7 @@ class CompleteState(BaseJobState):
         agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
 
         self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids)
+        await self.context.process_cfg(agent_ids)
 
         tasks = []
 
@@ -307,6 +309,8 @@ class JobContext:
         self.wrk_status: dict[str, WorkerStatus] = {}
         # event to update the config after all agents added ports and ip address
         self.agents_setup_event = asyncio.Event()
+        # event to wait for agent resources gather
+        self.agent_res_event = asyncio.Event()
 
         global logger
         logger = get_logger()
@@ -369,13 +373,23 @@ class JobContext:
         except ValueError:
             logger.warning(f"'{status}' is not a valid WorkerStatus")
 
-    def process_cfg(self, agent_ids: list[str]) -> None:
+    async def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller."""
+        await self.agent_res_event.wait()
+        # TODO: add agent resources check
+
         agent_data = self._get_agents_data(agent_ids)
 
         agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(agent_data, self.req.config)
 
         self._update_agent_data(agent_cfg, wrk_distribution)
+        self.agent_res_event.clear()
+
+    def set_agent_res_processed(self, agent_id: str) -> None:
+        self.agent_info.get(agent_id).resources_fetched = True
+
+        if all(info.resources_fetched == True for info in self.agent_info.values()):
+            self.agent_res_event.set()
 
     def _get_agents_data(self, agent_ids: list[str]) -> list[AgentMetaData]:
         """Get a list of agent metadata given agent ids."""
@@ -565,11 +579,11 @@ class JobContext:
 
         match req.action:
             case CommandAction.START:
-                await self.ctrl.get_agents_resources()
+                await self.ctrl.get_agents_resources(self.job_id)
                 await self.start()
 
             case CommandAction.UPDATE:
-                await self.ctrl.get_agents_resources()
+                await self.ctrl.get_agents_resources(self.job_id)
                 await self.update()
 
             case CommandAction.STOP:

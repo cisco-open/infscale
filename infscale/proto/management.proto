@@ -52,10 +52,11 @@ message RegRes {
 
 message ResourceStats {
   string id = 1; // agent's id
-  repeated GpuStat gpu_stats = 2;
-  repeated VramStat vram_stats = 3;
-  CpuStats cpu_stats = 4;
-  DramStats dram_stats = 5;
+  string job_id = 2;
+  repeated GpuStat gpu_stats = 3;
+  repeated VramStat vram_stats = 4;
+  CpuStats cpu_stats = 5;
+  DramStats dram_stats = 6;
 }
 
 // status contains details about resources and workers managed by an agent
@@ -77,10 +78,10 @@ message JobStatus {
 
 // gpustat contains status information about GPU
 message GpuStat {
-  int32 id = 1; // GPU identifier; index starts from zero
+  optional int32 id = 1; // GPU identifier; index starts from zero
   string type = 2; // GPU sub type is specified
-  bool used = 3; // specify whether the resource is used or not
-  int32 util = 4; // utilization of the resource
+  optional bool used = 3; // specify whether the resource is used or not
+  optional int32 util = 4; // utilization of the resource
 }
 
 // vramstat contains status information about VRAM
@@ -103,6 +104,7 @@ message CpuStats {
 message DramStats {
   int64 used = 1;
   int64 total = 2;
+  float load = 3;
 }
 
 // workerstatus contains information about worker's status
