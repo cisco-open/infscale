@@ -41,6 +41,7 @@ from infscale.controller.job_context import AgentMetaData, JobContext
 from infscale.controller.deployment.policy import (
     DeploymentPolicyEnum,
 )
+from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -144,21 +145,27 @@ class Controller:
         job_ctx = self.job_contexts.get(job_id)
         job_ctx.handle_job_status(status, agent_id)
 
-    async def get_agents_resources(self) -> None:
+    async def get_agents_resources(self, job_id: str) -> None:
         for agent_context in self.agent_contexts.values():
             context = agent_context.get_grpc_ctx()
 
-            payload = pb2.Action(type=CommandAction.RESOURCE_STAT)
+            payload = pb2.Action(type=CommandAction.RESOURCE_STAT, job_id=job_id)
             await context.write(payload)
 
     def handle_agent_resources(self, req: pb2.ResourceStats) -> None:
-        agent_id, gpu_stats, vram_stats, cpu_stats, dram_stats = (
+        agent_id, job_id, gpu_stats_msg, vram_stats_msg, cpu_stats_msg, dram_stats_msg = (
             req.id,
+            req.job_id,
             req.gpu_stats,
             req.vram_stats,
             req.cpu_stats,
             req.dram_stats,
         )
+
+        cpu_stats = CpuMonitor.proto_to_stats(cpu_stats_msg)
+        dram_stats = CpuMonitor.proto_to_stats(dram_stats_msg)
+        gpu_stats = GpuMonitor.proto_to_stats(gpu_stats_msg)
+        vram_stats = GpuMonitor.proto_to_stats(vram_stats_msg)
 
         resources = AgentResources(
            gpu_stats, vram_stats, cpu_stats, dram_stats
@@ -166,6 +173,9 @@ class Controller:
 
         agent_context = self.agent_contexts.get(agent_id)
         agent_context.resources = resources
+
+        job_context = self.job_contexts.get(job_id)
+        job_context.set_agent_res_processed(agent_id)
 
     def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
         """Set worker status within job state."""

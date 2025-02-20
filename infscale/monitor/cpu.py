@@ -20,7 +20,7 @@ from dataclasses import asdict, dataclass
 from typing import Union
 
 import psutil
-from google.protobuf.json_format import Parse
+from google.protobuf.json_format import MessageToJson, Parse
 from infscale.proto import management_pb2 as pb2
 
 
@@ -41,6 +41,7 @@ class DRAMStats:
 
     used: int
     total: int
+    load: int
 
 
 class CpuMonitor:
@@ -62,6 +63,7 @@ class CpuMonitor:
         dram_stats = DRAMStats(
             dram_stats.used,
             dram_stats.total,
+            load=((dram_stats.used / dram_stats.total) * 100)
         )
 
         return cpu_stats, dram_stats
@@ -81,3 +83,20 @@ class CpuMonitor:
         msg = Parse(stats_str, pb_msg_obj())
 
         return msg
+
+    @staticmethod
+    def proto_to_stats(
+        proto: Union[pb2.CpuStats, pb2.DramStats]
+    ) -> Union[CPUStats, DRAMStats]:
+        """Convert a list of protobuf messages to GpuStats or VramStats."""
+        if isinstance(proto, pb2.CpuStats):
+            target = CPUStats
+        elif isinstance(proto, pb2.DramStats):
+            target = DRAMStats
+
+        json_str = MessageToJson(proto, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+        json_obj = json.loads(json_str)
+
+        inst = target(**json_obj)
+
+        return inst
