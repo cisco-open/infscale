@@ -17,7 +17,7 @@
 import random
 from infscale.config import JobConfig
 from infscale.controller.deployment.policy import DeploymentPolicy
-from infscale.controller.job_context import AgentMetaData
+from infscale.controller.job_context import AgentDeviceMap, AgentMetaData
 
 
 class RandomDeploymentPolicy(DeploymentPolicy):
@@ -27,7 +27,10 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         super().__init__()
 
     def split(
-        self, agent_data: list[AgentMetaData], job_config: JobConfig
+        self,
+        agent_data: list[AgentMetaData],
+        job_config: JobConfig,
+        agent_device_map: dict[str, AgentDeviceMap],
     ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
         """
         Split the job config using random deployment policy
@@ -42,6 +45,8 @@ class RandomDeploymentPolicy(DeploymentPolicy):
 
         Return updated config and worker distribution for each agent
         """
+
+        # TODO: distribute based on agent_device_map
 
         # dictionary to hold the workers for each agent_id
         distribution = self.get_curr_distribution(agent_data)

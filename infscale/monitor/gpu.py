@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Union
 
-from google.protobuf.pyext._message import RepeatedCompositeContainer
+from google._upb._message import RepeatedCompositeContainer
 from google.protobuf.json_format import MessageToJson, Parse
 from infscale import get_logger
 from infscale.proto import management_pb2 as pb2
@@ -207,7 +207,7 @@ class GpuMonitor:
         global logger
         logger = get_logger()
 
-        if type(proto) is not RepeatedCompositeContainer or len(proto) == 0:
+        if len(proto) == 0:
             logger.debug("no protobuf message")
             return None
 
