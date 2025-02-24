@@ -31,7 +31,7 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         job_config: JobConfig,
         agent_device_map: dict[str, AgentDeviceMap],
-    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
+    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
         """
         Split the job config using random deployment policy
         and update config and worker distribution for each agent.
@@ -49,7 +49,13 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         # TODO: distribute based on agent_device_map
 
         # dictionary to hold the workers for each agent_id
-        distribution = self.get_curr_distribution(agent_data)
+        used_agent_data = [
+            agent for agent in agent_data if agent.id in agent_device_map
+        ]
+
+        dev_type = "gpu"  # TODO: replace with config.dev_type
+
+        distribution = self.get_curr_distribution(used_agent_data)
 
         workers = self.get_workers(distribution, job_config.workers)
 
@@ -61,11 +67,13 @@ class RandomDeploymentPolicy(DeploymentPolicy):
             # we might not have workers if update job is made with less workers
             if len(workers):
                 random.shuffle(workers)
-                distribution[data.id].add(workers.pop().id)
+                device = self._get_device(dev_type, data.id, agent_device_map)
+                distribution[data.id].add((workers.pop().id, device))
 
         # distribute the remaining workers randomly
         while workers:
             data = random.choice(agent_data)  # choose an agent randomly
-            distribution[data.id].add(workers.pop().id)
+            device = self._get_device(dev_type, data.id, agent_device_map)
+            distribution[data.id].add((workers.pop().id, device))
 
         return self._get_agent_updated_cfg(distribution, job_config), distribution

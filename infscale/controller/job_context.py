@@ -38,7 +38,7 @@ logger = None
 class AgentDeviceMap:
     """AgentDeviceMap class"""
 
-    gpu: int
+    gpu: list[int]
     cpu: int
 
 
@@ -64,7 +64,7 @@ class AgentMetaData:
         self.ready_to_config = False
         self.resources_fetched = False
         self.wids_to_deploy: list[str] = []
-        self.existing_workers: set[str] = set()
+        self.existing_workers: set[tuple[str, str]] = set()
 
 
 class InvalidJobStateAction(Exception):
@@ -413,12 +413,12 @@ class JobContext:
         agent_devices: dict[str, AgentDeviceMap] = {}
 
         # make sure there's at enough resources to support the number of workers otherwise throw error
-        gpu_count = self._get_agents_gpu_count(agent_resources)
+        gpu_res = self._get_agents_gpu_count(agent_resources)
         cpu_count = self._get_agents_cpu_count(agent_resources)
 
-        if gpu_count + cpu_count < num_workers:
+        if len(gpu_res) + cpu_count < num_workers:
             raise ValueError(
-                f"insufficient resources: requested {num_workers} devices, but only {gpu_count} GPUs and {cpu_count} CPUs are available."
+                f"insufficient resources: requested {num_workers} devices, but only {len(gpu_res)} GPUs and {cpu_count} CPUs are available."
             )
 
         sorted_agents_gpu = self._get_sorted_agents_by_gpu(agent_resources)
@@ -427,8 +427,8 @@ class JobContext:
         if dev_type == "gpu":
             agent_devices.update(
                 {
-                    agent_id: AgentDeviceMap(gpu_count, 0)
-                    for agent_id, gpu_count in sorted_agents_gpu.items()
+                    agent_id: AgentDeviceMap(gpus, 0)
+                    for agent_id, gpus in sorted_agents_gpu.items()
                 }
             )
 
@@ -457,12 +457,12 @@ class JobContext:
 
             # if there are not enough CPU resources from each agent continue with GPU
             if devices_count < num_workers:
-                for agent_id, gpu_count in sorted_agents_gpu.items():
+                for agent_id, gpu_res in sorted_agents_gpu.items():
                     if agent_id in agent_devices:
-                        agent_devices[agent_id].gpu = gpu_count
+                        agent_devices[agent_id].gpu = gpu_res
                     else:
                         agent_devices[agent_id] = AgentDeviceMap(
-                            gpu_count, agent_devices[agent_id].cpu
+                            gpu_res, agent_devices[agent_id].cpu
                         )
 
         return agent_devices
@@ -471,7 +471,7 @@ class JobContext:
         """Get total number of devices for each agent."""
         count = 0
         for device in agent_device.values():
-            count += device.gpu
+            count += len(device.gpu)
             count += device.cpu
 
         return count
@@ -482,7 +482,7 @@ class JobContext:
         """Filter agents without available GPUs and return sorted dict."""
         # filter out agents that have available GPUs and create agent_id: number_of_gpu dict
         gpu_candidates = {
-            agent_id: sum(not gpu.used for gpu in res.gpu_stats)
+            agent_id: [gpu for gpu in res.gpu_stats if not gpu.used]
             for agent_id, res in agent_resources.items()
             if res.gpu_stats
             and any(
@@ -492,7 +492,8 @@ class JobContext:
 
         # sort the agents dict based on the number of GPUs.
         sorted_agents = {
-            k: v for k, v in sorted(gpu_candidates.items(), key=lambda item: -item[1])
+            k: v
+            for k, v in sorted(gpu_candidates.items(), key=lambda item: -len(item[1]))
         }
 
         return sorted_agents
@@ -518,12 +519,13 @@ class JobContext:
         self, agent_resources: dict[str, AgentResources]
     ) -> dict[str, int]:
         """Return number of available GPUs for each agent."""
-        return sum(
-            not gpu.used
+        return [
+            gpu
             for res in agent_resources.values()
             if res.gpu_stats
             for gpu in res.gpu_stats
-        )
+            if not gpu.used
+        ]
 
     def _get_agents_cpu_count(
         self, agent_resources: dict[str, AgentResources]
@@ -557,7 +559,9 @@ class JobContext:
         return result
 
     def _update_agent_data(
-        self, agent_cfg: dict[str, JobConfig], wrk_distribution: dict[str, set[str]]
+        self,
+        agent_cfg: dict[str, JobConfig],
+        wrk_distribution: dict[str, set[tuple[str, str]]],
     ) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
@@ -599,8 +603,7 @@ class JobContext:
 
     async def _patch_job_cfg(self, agent_data: AgentMetaData) -> None:
         """Patch config for updated job."""
-        agent_id, config, new_config, port_iter = (
-            agent_data.id,
+        config, new_config, port_iter = (
             agent_data.config,
             agent_data.new_config,
             agent_data.ports,
@@ -614,6 +617,7 @@ class JobContext:
 
         worker_agent_map = self._get_worker_agent_map(new_config)
         agent_port_map = self._get_agent_port_map()
+        worker_device_map = self._get_worker_device(new_config)
 
         # step 2: patch new config with existing workers ports and assign ports to new ones
         for worker_list in new_config.flow_graph.values():
@@ -633,6 +637,10 @@ class JobContext:
                     worker.data_port = next(port_iter)
                     worker.ctrl_port = next(port_iter)
 
+        # step 3: patch new config with existing workers devices
+        for worker in new_config.workers:
+            worker.device = worker_device_map[worker.id]
+
         agent_data.config = new_config
         agent_data.new_config = None
         agent_data.num_new_workers = 0
@@ -647,6 +655,16 @@ class JobContext:
             agent_ports[info.id] = iter(info.ports)
 
         return agent_ports
+
+    def _get_worker_device(self, config: JobConfig) -> dict[str, dict[str, str]]:
+        worker_device_map = {}
+        for agent in self.agent_info.values():
+            for worker_id, device in agent.existing_workers:
+                worker_device_map[worker_id] = device
+
+        result = {worker.id: worker_device_map.get(worker.id) for worker in config.workers}
+
+        return result
 
     def _get_worker_agent_map(self, config: JobConfig) -> dict[str, AgentMetaData]:
         """Create map between worker id and agent for deploy."""

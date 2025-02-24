@@ -21,6 +21,7 @@ from enum import Enum
 from infscale import get_logger
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.job_context import AgentDeviceMap, AgentMetaData
+from infscale.monitor.gpu import GpuStat
 
 
 class DeploymentPolicyEnum(Enum):
@@ -43,19 +44,60 @@ class DeploymentPolicy(ABC):
         agent_data: list[AgentMetaData],
         job_config: JobConfig,
         agent_device_map: dict[str, AgentDeviceMap],
-    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
+    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
         """
         Split the job config using a deployment policy
         and return updated job config and worker distribution for each agent.
         """
         pass
 
+    def _get_device(
+        self,
+        dev_type: str,
+        agent_id: str,
+        agent_device_map: dict[str, AgentDeviceMap],
+    ):
+        # decide the other device type
+        other_dev_type = "cpu" if dev_type == "gpu" else "gpu"
+
+        # current agent resources
+        agent_res = agent_device_map[agent_id]
+
+        preferred_dev: list[GpuStat] | str = getattr(
+            agent_res, dev_type
+        )  # get preferred resource device eg: "cpu" or a list of gpu ids
+        other_dev: list[GpuStat] | str = getattr(
+            agent_res, other_dev_type
+        )  # get other resource device eg: "cpu" or a list of gpu ids
+
+        device = self._get_available_device(preferred_dev, dev_type)
+
+        if device is None:
+            device = self._get_available_device(other_dev, other_dev_type)
+
+        return device
+
+    def _get_available_device(
+        self, devices: list[GpuStat] | str, default_dev: str
+    ) -> str | None:
+        """Returns the first unused GPU device or a default fallback."""
+
+        if isinstance(devices, list):
+            gpu = next((gpu for gpu in devices if not gpu.used), None)
+            if gpu is None:
+                return None
+
+            gpu.used = True
+            return f"cuda:{gpu.id}"
+
+        return default_dev
+
     def get_workers(
-        self, distribution: dict[str, set[str]], workers: list[WorkerData]
+        self, distribution: dict[str, set[tuple[str, str]]], workers: list[WorkerData]
     ) -> list[WorkerData]:
         """Return a list of workers."""
         # flat worker ids from each agent
-        curr_worker_ids = [wid for wids in distribution.values() for wid in wids]
+        curr_worker_ids = [wid for workers in distribution.values() for wid, _ in workers]
 
         # get new worker ids
         new_workers = [worker for worker in workers if worker.id not in curr_worker_ids]
@@ -64,7 +106,7 @@ class DeploymentPolicy(ABC):
 
     def get_curr_distribution(
         self, agent_data: list[AgentMetaData]
-    ) -> dict[str, set[str]]:
+    ) -> dict[str, set[tuple[str, str]]]:
         """Return current distribution for each agent."""
         results = {}
 
@@ -74,17 +116,17 @@ class DeploymentPolicy(ABC):
         return results
 
     def check_agents_distr(
-        self, distribution: dict[str, set[str]], workers: list[WorkerData]
+        self, distribution: dict[str, set[tuple[str, str]]], workers: list[WorkerData]
     ) -> None:
         """Check if worker distribution has changed and update if needed."""
         # new worker ids
         worker_ids = {worker.id for worker in workers}
 
         # flatten the current worker set
-        current_workers = {wid for wids in distribution.values() for wid in wids}
+        current_workers = {wid for workers in distribution.values() for wid, _ in workers}
 
         # compute removed workers
-        removed_workers = set(current_workers) - set(worker_ids)
+        removed_workers = current_workers - worker_ids
 
         # remove workers from the distribution
         for agent_id, workers in distribution.items():
@@ -93,19 +135,21 @@ class DeploymentPolicy(ABC):
             }
 
     def _get_agent_updated_cfg(
-        self, wrk_distr: dict[str, list[str]], job_config: JobConfig
+        self, wrk_distr: dict[str, list[tuple[str, str]]], job_config: JobConfig
     ) -> dict[str, JobConfig]:
         """Return updated job config for each agent."""
         logger.info(f"got new worker distribution for agents: {wrk_distr}")
 
         agents_config = {}
-        for agent_id, wrk_ids in wrk_distr.items():
+        for agent_id, wrk_device in wrk_distr.items():
             # create a job_config copy to update and pass it to the agent.
             cfg = copy.deepcopy(job_config)
+            device_map = {wid: device for wid, device in wrk_device}
 
             for w in cfg.workers:
                 # set the deploy flag if the worker is in worker distribution for this agent
-                w.deploy = w.id in wrk_ids
+                w.deploy = w.id in device_map
+                w.device = device_map[w.id] if w.id in device_map else w.device
 
             agents_config[agent_id] = cfg
 
