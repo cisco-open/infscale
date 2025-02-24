@@ -69,10 +69,10 @@ class WorkerData:
     """Specification about worker data."""
 
     id: str
-    device: str
     stage: StageData
     is_server: bool = False
     deploy: bool = True
+    device: str = "cpu"
 
 
 @dataclass

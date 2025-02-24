@@ -39,23 +39,19 @@ dataset: # huggingface dataset
 
 workers:
   - id: s-0
-    device: cuda:0
     is_server: True
     stage:
       start: -1
       end: -1
   - id: 0-0
-    device: cuda:1
     stage:
       start: 0
       end: 7
   - id: 1-0
-    device: cuda:2
     stage:
       start: 8
       end: 20
   - id: 2-0
-    device: cuda:3
     stage:
       start: 21
       end: 34
