@@ -38,7 +38,7 @@ logger = None
 class AgentDeviceMap:
     """AgentDeviceMap class"""
 
-    gpu: int
+    gpu: list[int]
     cpu: int
 
 
@@ -413,12 +413,12 @@ class JobContext:
         agent_devices: dict[str, AgentDeviceMap] = {}
 
         # make sure there's at enough resources to support the number of workers otherwise throw error
-        gpu_count = self._get_agents_gpu_count(agent_resources)
+        gpu_res = self._get_agents_gpu_count(agent_resources)
         cpu_count = self._get_agents_cpu_count(agent_resources)
 
-        if gpu_count + cpu_count < num_workers:
+        if len(gpu_res) + cpu_count < num_workers:
             raise ValueError(
-                f"insufficient resources: requested {num_workers} devices, but only {gpu_count} GPUs and {cpu_count} CPUs are available."
+                f"insufficient resources: requested {num_workers} devices, but only {len(gpu_res)} GPUs and {cpu_count} CPUs are available."
             )
 
         sorted_agents_gpu = self._get_sorted_agents_by_gpu(agent_resources)
@@ -427,8 +427,8 @@ class JobContext:
         if dev_type == "gpu":
             agent_devices.update(
                 {
-                    agent_id: AgentDeviceMap(gpu_count, 0)
-                    for agent_id, gpu_count in sorted_agents_gpu.items()
+                    agent_id: AgentDeviceMap(gpus, 0)
+                    for agent_id, gpus in sorted_agents_gpu.items()
                 }
             )
 
@@ -457,12 +457,12 @@ class JobContext:
 
             # if there are not enough CPU resources from each agent continue with GPU
             if devices_count < num_workers:
-                for agent_id, gpu_count in sorted_agents_gpu.items():
+                for agent_id, gpu_res in sorted_agents_gpu.items():
                     if agent_id in agent_devices:
-                        agent_devices[agent_id].gpu = gpu_count
+                        agent_devices[agent_id].gpu = gpu_res
                     else:
                         agent_devices[agent_id] = AgentDeviceMap(
-                            gpu_count, agent_devices[agent_id].cpu
+                            gpu_res, agent_devices[agent_id].cpu
                         )
 
         return agent_devices
@@ -471,7 +471,7 @@ class JobContext:
         """Get total number of devices for each agent."""
         count = 0
         for device in agent_device.values():
-            count += device.gpu
+            count += len(device.gpu)
             count += device.cpu
 
         return count
@@ -482,7 +482,7 @@ class JobContext:
         """Filter agents without available GPUs and return sorted dict."""
         # filter out agents that have available GPUs and create agent_id: number_of_gpu dict
         gpu_candidates = {
-            agent_id: sum(not gpu.used for gpu in res.gpu_stats)
+            agent_id: [gpu for gpu in res.gpu_stats if not gpu.used]
             for agent_id, res in agent_resources.items()
             if res.gpu_stats
             and any(
@@ -492,7 +492,8 @@ class JobContext:
 
         # sort the agents dict based on the number of GPUs.
         sorted_agents = {
-            k: v for k, v in sorted(gpu_candidates.items(), key=lambda item: -item[1])
+            k: v
+            for k, v in sorted(gpu_candidates.items(), key=lambda item: -len(item[1]))
         }
 
         return sorted_agents
@@ -518,12 +519,13 @@ class JobContext:
         self, agent_resources: dict[str, AgentResources]
     ) -> dict[str, int]:
         """Return number of available GPUs for each agent."""
-        return sum(
-            not gpu.used
+        return [
+            gpu
             for res in agent_resources.values()
             if res.gpu_stats
             for gpu in res.gpu_stats
-        )
+            if not gpu.used
+        ]
 
     def _get_agents_cpu_count(
         self, agent_resources: dict[str, AgentResources]
@@ -557,7 +559,9 @@ class JobContext:
         return result
 
     def _update_agent_data(
-        self, agent_cfg: dict[str, JobConfig], wrk_distribution: dict[str, set[str]]
+        self,
+        agent_cfg: dict[str, JobConfig],
+        wrk_distribution: dict[str, set[tuple[str, str]]],
     ) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
