@@ -77,10 +77,10 @@ message JobStatus {
 
 // gpustat contains status information about GPU
 message GpuStat {
-  int32 id = 1; // GPU identifier; index starts from zero
+  optional int32 id = 1; // GPU identifier; index starts from zero
   string type = 2; // GPU sub type is specified
-  bool used = 3; // specify whether the resource is used or not
-  int32 util = 4; // utilization of the resource
+  optional bool used = 3; // specify whether the resource is used or not
+  optional int32 util = 4; // utilization of the resource
 }
 
 // vramstat contains status information about VRAM
