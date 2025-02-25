@@ -45,6 +45,7 @@ class AgentMetaData:
         num_new_workers: int = 0,
         ports: list[int] = None,
     ):
+        """Initialize AgentMedataData instance."""
         self.id = id
         self.job_status = job_status
         self.config = config
@@ -58,18 +59,15 @@ class AgentMetaData:
 
 
 class InvalidJobStateAction(Exception):
-    """
-    Custom exception for invalid actions in a job state.
-    """
+    """Custom exception for invalid actions in a job state."""
 
     def __init__(self, job_id, action, state):
+        """Initialize InvalidJobStateAction instance."""
         self.job_id = job_id
         self.action = action
         self.state = state
 
-        super().__init__(
-            f"Job {job_id}: '{action}' action is not allowed in the '{state}' state."
-        )
+        super().__init__(f"{job_id}: {action} disallowed in {state}.")
 
 
 class JobStateEnum(Enum):
@@ -88,6 +86,7 @@ class BaseJobState:
     """Abstract base class for job states."""
 
     def __init__(self, context: JobContext):
+        """Initialize BaseJobState instance."""
         self.context = context
         self.job_id = context.job_id
 
@@ -131,6 +130,8 @@ class BaseJobState:
 
 
 class ReadyState(BaseJobState):
+    """ReadyState class."""
+
     async def start(self):
         """Transition to STARTING state."""
         req = self.context.req
@@ -318,7 +319,7 @@ class JobContext:
             self.agent_info[id] = AgentMetaData(id=id)
 
     def get_agent_data(self, agent_id: str) -> AgentMetaData:
-        """Return agent metadata"""
+        """Return agent metadata."""
         return self.agent_info[agent_id]
 
     def _set_job_status_on_agent(self, agent_id: str, job_status: JobStatus) -> None:
@@ -567,7 +568,7 @@ class JobContext:
             )
 
     async def do(self, req: CommandActionModel):
-        """Handle specific action"""
+        """Handle specific action."""
         self.req = req
 
         match req.action:
