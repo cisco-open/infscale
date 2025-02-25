@@ -26,6 +26,7 @@ from fastapi import Request
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 from infscale import get_logger
+from infscale.actor.job_msg import WorkerStatus
 from infscale.config import JobConfig, WorkerData
 from infscale.constants import (
     APISERVER_PORT,
@@ -134,7 +135,7 @@ class Controller:
         vram_stats = GpuMonitor.proto_to_stats(request.vram_stats)
         logger.debug(f"vram_stats = {vram_stats}")
 
-        self.handle_wrk_status(request.worker_status)
+        await self.handle_wrk_status(request.worker_status)
 
         # TODO: use gpu and vram status to schedule deployment
 
@@ -173,7 +174,7 @@ class Controller:
         agent_context = self.agent_contexts.get(agent_id)
         agent_context.resources = resources
 
-    def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
+    async def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
         """Set worker status within job state."""
         if not worker_status.status:
             return
@@ -183,9 +184,15 @@ class Controller:
             worker_status.status,
             worker_status.worker_id,
         )
-        job_ctx = self.job_contexts.get(job_id)
 
-        job_ctx.set_wrk_status(wrk_id, status)
+        try:
+            status_enum = WorkerStatus(status)
+            job_ctx = self.job_contexts.get(job_id)
+            job_ctx.set_wrk_status(wrk_id, status)
+            
+            await job_ctx.do_wrk_cond(wrk_id, status_enum)
+        except ValueError:
+            logger.warning(f"'{status}' is not a valid WorkerStatus")
 
     def _cleanup_job_ctx(self, agent_id: str) -> None:
         """Cleanup job context by agent id."""

@@ -79,6 +79,7 @@ class JobStateEnum(Enum):
     STOPPED = "stopped"
     STOPPING = "stopping"
     UPDATING = "updating"
+    COMPLETING = "completing"
     COMPLETE = "complete"
 
 
@@ -120,6 +121,12 @@ class BaseJobState:
         """Handle the transition to stopped."""
         raise InvalidJobStateAction(
             self.job_id, "stopping", self.context.state_enum.value
+        )
+
+    def cond_completing(self):
+        """Handle the transition to completing."""
+        raise InvalidJobStateAction(
+            self.job_id, "completing", self.context.state_enum.value
         )
 
     def cond_complete(self):
@@ -187,9 +194,9 @@ class RunningState(BaseJobState):
 
         self.context.set_state(JobStateEnum.UPDATING)
 
-    def cond_complete(self):
-        """Handle the transition to complete."""
-        self.context.set_state(JobStateEnum.COMPLETE)
+    def cond_completing(self):
+        """Handle the transition to completing."""
+        self.context.set_state(JobStateEnum.COMPLETING)
 
 
 class StartingState(BaseJobState):
@@ -247,6 +254,13 @@ class StoppingState(BaseJobState):
         """Handle the transition to stopped."""
         self.context.set_state(JobStateEnum.STOPPED)
 
+
+class CompletingState(BaseJobState):
+    """CompletingState class."""
+
+    def cond_complete(self):
+        """Handle the transition to complete."""
+        self.context.set_state(JobStateEnum.COMPLETE)
 
 class UpdatingState(BaseJobState):
     """StoppingState class."""
@@ -348,6 +362,16 @@ class JobContext:
             logger.warning(e)
         except ValueError:
             logger.warning(f"'{status}' is not a valid JobStatus")
+
+    async def do_wrk_cond(self, wid: str, status: WorkerStatus) -> None:
+        """Handle worker status by calling conditional action."""
+
+        match status:
+            case WorkerStatus.DONE:
+                is_server = self.get_is_server(wid)
+
+                if is_server:
+                    await self.cond_completing()
 
     def _do_cond(self, status: JobStatus) -> None:
         """Handle job status by calling conditional action."""
@@ -535,6 +559,7 @@ class JobContext:
             JobStateEnum.STOPPED: StoppedState,
             JobStateEnum.STOPPING: StoppingState,
             JobStateEnum.UPDATING: UpdatingState,
+            JobStateEnum.COMPLETING: CompletingState,
             JobStateEnum.COMPLETE: CompleteState,
         }
         return state_mapping[state_enum]
@@ -566,6 +591,15 @@ class JobContext:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No agent found",
             )
+
+    def get_is_server(self, wid: str) -> bool:
+        """Return bool if the given worker id is a server or not."""
+        config = next(iter(self.agent_info.values())).config
+        is_server = any(
+            worker.id == wid and worker.is_server for worker in config.workers
+        )
+
+        return is_server
 
     async def do(self, req: CommandActionModel):
         """Handle specific action."""
@@ -632,3 +666,22 @@ class JobContext:
 
         if all_agents_completed:
             self.state.cond_complete()
+
+    async def cond_completing(self):
+        """Handle the transition to completing."""
+        self.state.cond_completing()
+
+        tasks = []
+
+        for agent_id in self.agent_info.keys():
+            command = CommandActionModel(
+                action=CommandAction.FINISH_JOB, job_id=self.job_id
+            )
+
+            task = self.ctrl._send_command_to_agent(
+                agent_id, self.job_id, command
+            )
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
+

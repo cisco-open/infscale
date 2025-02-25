@@ -112,11 +112,12 @@ class Agent:
 
     async def _get_worker_status(self) -> None:
         while True:
-            status = await self.worker_mgr.status_q.get()
-            if status is None:
+            status_msg = await self.worker_mgr.status_q.get()
+            if status_msg is None:
                 continue
-            await self.update_worker_status(status)
-            await self.update_job_status(status)
+            await self.update_worker_status(status_msg)
+
+            await self.update_job_status(status_msg)
 
     async def update_job_status(self, message: WorkerStatusMessage) -> None:
         """Send message with updated job status."""
@@ -135,8 +136,6 @@ class Agent:
 
         self.job_mgr.set_status(job_id, job_status)
 
-        self._cleanup(job_id, job_status)
-
         job_status = {
             "agent_id": self.id,
             "job_id": job_id,
@@ -145,6 +144,9 @@ class Agent:
 
         req = pb2.JobStatus(**job_status)
         await self.stub.job_status(req)
+
+        # do cleanup after all internal logic is completed
+        self._cleanup(job_id, job_status)
 
     async def update_worker_status(self, message: WorkerStatusMessage) -> None:
         """Send message with updated worker status."""
@@ -203,10 +205,9 @@ class Agent:
         """Check if a job is completed."""
         workers = self.worker_mgr.get_workers_by_job_id(job_id)
 
-        any_done = any(w.status == WorkerStatus.DONE for w in workers.values())
+        all_done = all(w.status == WorkerStatus.DONE for w in workers.values())
 
-        # serving server is 'done' and the others terminated
-        return any_done
+        return all_done
 
     def _check_updated_workers(self, job_id: str) -> bool:
         """Check if updated workers are running."""
@@ -330,7 +331,7 @@ class Agent:
                 cpu_stats, dram_stats, gpu_stats, vram_stats = (
                     self._get_resource_stats()
                 )
-    
+
                 cpu_stats_msg = CpuMonitor.stats_to_proto(cpu_stats)
                 dram_stats_msg = CpuMonitor.stats_to_proto(dram_stats)
                 gpu_stats_msg = GpuMonitor.stats_to_proto(gpu_stats)
@@ -345,6 +346,15 @@ class Agent:
                 )
 
                 self.stub.put_resource_stat(req)
+
+            case CommandAction.FINISH_JOB:
+                workers = self.worker_mgr.get_workers_by_job_id(action.job_id)
+
+                for w in workers.values():
+                    msg = Message(
+                        MessageType.FINISH_JOB, WorkerStatus.DONE, action.job_id
+                    )
+                    self.worker_mgr.send(w, msg)
 
     async def heart_beat(self):
         """Send a heart beat message periodically."""
@@ -425,7 +435,7 @@ class Agent:
             self.stub.update(status_msg)
 
     def _get_resource_stats(
-        self
+        self,
     ) -> tuple[CPUStats, DRAMStats, list[GpuStat], list[VramStat]]:
         """Return CPU, DRAM and GPU statistics."""
         gpu_stats, vram_stats = self.gpu_monitor.get_metrics()
