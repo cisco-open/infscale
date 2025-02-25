@@ -66,11 +66,12 @@ class DeploymentPolicy(ABC):
         results = {}
 
         for data in agent_data:
-            results[data.id] = data.existing_workers
+            if len(data.existing_workers):
+                results[data.id] = data.existing_workers
 
         return results
 
-    def check_agents_distr(
+    def update_agents_distr(
         self, distribution: dict[str, set[str]], workers: list[WorkerData]
     ) -> None:
         """Check if worker distribution has changed and update if needed."""

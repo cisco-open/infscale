@@ -49,18 +49,16 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         workers = self.get_workers(distribution, job_config.workers)
 
         # check if the distribution has changed
-        self.check_agents_distr(distribution, job_config.workers)
-
-        # assign at least one worker / agent
-        for data in agent_data:
-            # we might not have workers if update job is made with less workers
-            if len(workers):
-                random.shuffle(workers)
-                distribution[data.id].add(workers.pop().id)
+        self.update_agents_distr(distribution, job_config.workers)
 
         # distribute the remaining workers randomly
         while workers:
             data = random.choice(agent_data)  # choose an agent randomly
-            distribution[data.id].add(workers.pop().id)
+            worker_id = workers.pop().id
+
+            if data.id in distribution:
+                distribution[data.id].add(worker_id)
+            else:
+                distribution[data.id] = {worker_id}
 
         return self._get_agent_updated_cfg(distribution, job_config), distribution

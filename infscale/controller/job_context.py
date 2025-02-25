@@ -152,8 +152,8 @@ class ReadyState(BaseJobState):
 
         tasks = []
 
-        for agent_id in agent_ids:
-            task = asyncio.create_task(self.context.prepare_config(agent_id))
+        for info in self.context.running_agent_info:
+            task = asyncio.create_task(self.context.prepare_config(info.id))
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -177,8 +177,8 @@ class RunningState(BaseJobState):
 
         tasks = []
 
-        for agent_id in agent_ids:
-            task = asyncio.create_task(self.context.prepare_config(agent_id))
+        for info in self.context.running_agent_info:
+            task = asyncio.create_task(self.context.prepare_config(info.id))
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -231,8 +231,8 @@ class StoppedState(BaseJobState):
 
         tasks = []
 
-        for agent_id in agent_ids:
-            task = asyncio.create_task(self.context.prepare_config(agent_id))
+        for info in self.context.running_agent_info:
+            task = asyncio.create_task(self.context.prepare_config(info.id))
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -293,8 +293,8 @@ class CompleteState(BaseJobState):
 
         tasks = []
 
-        for agent_id in agent_ids:
-            task = asyncio.create_task(self.context.prepare_config(agent_id))
+        for info in self.context.running_agent_info:
+            task = asyncio.create_task(self.context.prepare_config(info.id))
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -325,6 +325,8 @@ class JobContext:
         self.wrk_status: dict[str, WorkerStatus] = {}
         # event to update the config after all agents added ports and ip address
         self.agents_setup_event = asyncio.Event()
+        # list of agent ids that will deploy workers
+        self.running_agent_info: list[AgentMetaData] = []
 
         global logger
         logger = get_logger()
@@ -405,7 +407,7 @@ class JobContext:
         self.wrk_status[wrk_id] = status
 
     def process_cfg(self, agent_ids: list[str]) -> None:
-        """Process received config from controller."""
+        """Process received config from controller and set a deployer of agent ids."""
         agent_data = self._get_agents_data(agent_ids)
 
         agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(
@@ -413,6 +415,13 @@ class JobContext:
         )
 
         self._update_agent_data(agent_cfg, wrk_distribution)
+
+        # create a list of agent info that will deploy workers
+        running_agent_info = [
+            self.agent_info[agent_id] for agent_id in wrk_distribution.keys()
+        ]
+
+        self.running_agent_info = running_agent_info
 
     def _get_agents_data(self, agent_ids: list[str]) -> list[AgentMetaData]:
         """Get a list of agent metadata given agent ids."""
@@ -440,7 +449,6 @@ class JobContext:
     async def prepare_config(self, agent_id: str) -> None:
         """Prepare config for deploy."""
         agent_data = self.agent_info[agent_id]
-
         # fetch port numbers from agent
         await self.ctrl._job_setup(agent_data)
 
@@ -448,7 +456,7 @@ class JobContext:
 
         # agent is ready to perform setup
         agent_data.ready_to_config = True
-        if any(info.ready_to_config is False for info in self.agent_info.values()):
+        if any(info.ready_to_config is False for info in self.running_agent_info):
             await self.agents_setup_event.wait()
 
         # all agents have their conn data available, release the agent setup event
@@ -510,7 +518,7 @@ class JobContext:
         """Create map between agent id and available ports."""
         agent_ports = {}
 
-        for info in self.agent_info.values():
+        for info in self.running_agent_info:
             agent_ports[info.id] = iter(info.ports)
 
         return agent_ports
@@ -634,9 +642,7 @@ class JobContext:
 
     def _check_job_status_on_all_agents(self, job_status: JobStatus) -> bool:
         """Return true or false if all agents have the same job status."""
-        return all(
-            info.job_status == job_status for info in list(self.agent_info.values())
-        )
+        return all(info.job_status == job_status for info in self.running_agent_info)
 
     async def start(self):
         """Transition to STARTING state."""

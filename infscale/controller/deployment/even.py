@@ -44,7 +44,7 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         workers = self.get_workers(distribution, job_config.workers)
 
         # check if the distribution has changed
-        self.check_agents_distr(distribution, job_config.workers)
+        self.update_agents_distr(distribution, job_config.workers)
 
         num_agents = len(agent_data)
 
@@ -58,12 +58,11 @@ class EvenDeploymentPolicy(DeploymentPolicy):
             num_workers_for_agent = workers_per_agent + (
                 1 if i < remaining_workers else 0
             )
-
-            # assign only worker id to the current agent
-            distribution[data.id].update(
-                worker.id
-                for worker in workers[start_index : start_index + num_workers_for_agent]
-            )
+            for worker in workers[start_index : start_index + num_workers_for_agent]:
+                if data.id in distribution:
+                    distribution[data.id].update(worker.id)
+                else:
+                    distribution[data.id] = {worker.id}
 
             # move the start index to the next batch of workers
             start_index += num_workers_for_agent
