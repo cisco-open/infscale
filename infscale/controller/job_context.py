@@ -15,12 +15,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
+
 import asyncio
 from enum import Enum
 from itertools import islice
 from typing import TYPE_CHECKING, Iterator
-from fastapi import HTTPException, status
 
+from fastapi import HTTPException, status
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorkerInfo
@@ -373,7 +374,9 @@ class JobContext:
         """Process received config from controller."""
         agent_data = self._get_agents_data(agent_ids)
 
-        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(agent_data, self.req.config)
+        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(
+            agent_data, self.req.config
+        )
 
         self._update_agent_data(agent_cfg, wrk_distribution)
 
@@ -387,7 +390,9 @@ class JobContext:
 
         return result
 
-    def _update_agent_data(self, agent_cfg: dict[str, JobConfig], wrk_distribution: dict[str, set[str]]) -> None:
+    def _update_agent_data(
+        self, agent_cfg: dict[str, JobConfig], wrk_distribution: dict[str, set[str]]
+    ) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
             agent_data = self.agent_info[agent_id]
@@ -411,7 +416,7 @@ class JobContext:
         agent_data.ready_to_config = True
         if any(info.ready_to_config == False for info in self.agent_info.values()):
             await self.agents_setup_event.wait()
-    
+
         # all agents have their conn data available, release the agent setup event
         self.agents_setup_event.set()
 
@@ -456,7 +461,7 @@ class JobContext:
                     agent_info = worker_agent_map[worker.name]
                     port_iter = agent_port_map[agent_info.id]
                     addr = self.ctrl.agent_contexts[agent_info.id].ip
-    
+
                     # assign new ports to new workers
                     worker.addr = addr
                     worker.data_port = next(port_iter)
@@ -490,7 +495,10 @@ class JobContext:
 
     def _get_agent_by_worker_id(self, wid: str) -> AgentMetaData:
         """Return agent that will deploy given worker id."""
-        return next((info for info in self.agent_info.values() if wid in info.wids_to_deploy), None)
+        return next(
+            (info for info in self.agent_info.values() if wid in info.wids_to_deploy),
+            None,
+        )
 
     def _get_new_workers_count(self, config: JobConfig, new_cfg: JobConfig) -> int:
         """Return the number of new workers between and old and new config."""
@@ -516,7 +524,6 @@ class JobContext:
     def _get_deploy_worker_ids(self, workers: list[WorkerData]) -> list[str]:
         """Return a list of worker ids to be deployed."""
         return [w.id for w in workers if w.deploy]
-
 
     def _get_state_class(self, state_enum):
         """Map a JobStateEnum to its corresponding state class."""
