@@ -416,7 +416,7 @@ class Agent:
             gpu_msg_list = GpuMonitor.stats_to_proto(gpu_stats)
             vram_msg_list = GpuMonitor.stats_to_proto(vram_stats)
 
-            status_msg = pb2.ResourceStats()
+            status_msg = pb2.Status()
             status_msg.id = self.id
             status_msg.gpu_stats.extend(gpu_msg_list)
             status_msg.vram_stats.extend(vram_msg_list)
