@@ -15,6 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """CPU monitoring class."""
+import asyncio
 import json
 from dataclasses import asdict, dataclass
 from typing import Union
@@ -22,6 +23,8 @@ from typing import Union
 import psutil
 from google.protobuf.json_format import MessageToJson, Parse
 from infscale.proto import management_pb2 as pb2
+
+DEFAULT_INTERVAL = 10  # 10 seconds
 
 
 @dataclass
@@ -46,6 +49,14 @@ class DRAMStats:
 class CpuMonitor:
     """CpuMonitor class."""
 
+    def __init__(self, interval: int = DEFAULT_INTERVAL):
+        """Initialize CpuMonitor instance."""
+        self.interval = interval
+
+        self.mon_event = asyncio.Event()
+        self.cpu_stats = None
+        self.dram_stats = None
+
     def get_metrics(self) -> tuple[CPUStats, DRAMStats]:
         """Start to monitor CPU statistics"""
         # total number of CPUs (logical)
@@ -65,6 +76,27 @@ class CpuMonitor:
         )
 
         return cpu_stats, dram_stats
+
+    async def metrics(self) -> tuple[CPUStats, DRAMStats]:
+        """Return statistics on CPU and DRAM resources."""
+        # Wait until data refreshes
+        await self.mon_event.wait()
+
+        return self.cpu_stats, self.dram_stats
+
+    async def start(self):
+        """Start to monitor CPU statistics."""
+        while True:
+            cpu_stats, dram_stats = self.get_metrics()
+
+            self.cpu_stats = cpu_stats
+            self.dram_stats = dram_stats
+            # unlbock metrics() call
+            self.mon_event.set()
+            # block metrics() call again
+            self.mon_event.clear()
+
+            await asyncio.sleep(self.interval)
 
     @staticmethod
     def stats_to_proto(
@@ -86,13 +118,17 @@ class CpuMonitor:
     def proto_to_stats(
         proto: Union[pb2.CpuStats, pb2.DramStats]
     ) -> Union[CPUStats, DRAMStats]:
-        """Convert a list of protobuf messages to GpuStats or VramStats."""
+        """Convert a list of protobuf messages to CPUStats or DRAMStats."""
         if isinstance(proto, pb2.CpuStats):
             target = CPUStats
         elif isinstance(proto, pb2.DramStats):
             target = DRAMStats
 
-        json_str = MessageToJson(proto, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+        json_str = MessageToJson(
+            proto,
+            preserving_proto_field_name=True,
+            always_print_fields_with_no_presence=True,
+        )
         json_obj = json.loads(json_str)
 
         inst = target(**json_obj)

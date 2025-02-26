@@ -32,13 +32,16 @@ if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
 DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD
+WMA_WEIGHT = 0.9
 
 
 logger = None
 
+
 @dataclass
 class AgentResources:
     """Class for keeping agent resources."""
+
     gpu_stats: list[GpuStat]
     vram_stats: list[VramStat]
     cpu_stats: CPUStats
@@ -83,6 +86,83 @@ class AgentContext:
         This will release the event.
         """
         self.grpc_ctx_event.set()
+
+    def set_resources(
+        self,
+        gpu_stats: list[GpuStat],
+        vram_stats: list[VramStat],
+        cpu_stats: CPUStats,
+        dram_stats: DRAMStats,
+    ) -> None:
+        curr_res = self.resources
+
+        wma_gpu, wma_vram, wma_cpu, wma_dram = self._compute_wma_resources(
+            curr_res, gpu_stats, vram_stats, cpu_stats, dram_stats
+        )
+
+        resources = AgentResources(wma_gpu, wma_vram, wma_cpu, wma_dram)
+
+        self.resources = resources
+
+    def _compute_wma_resources(
+        self,
+        curr_res: AgentResources,
+        gpu_stats: list[GpuStat],
+        vram_stats: list[VramStat],
+        cpu_stats: CPUStats,
+        dram_stats: DRAMStats,
+    ) -> tuple[list[GpuStat], list[DRAMStats], CPUStats, DRAMStats]:
+        """Compute resources using weighted moving average."""
+
+        if curr_res is None:
+            # first set of resources, return those
+            return gpu_stats, vram_stats, cpu_stats, dram_stats
+
+        gpu_wma = [
+            self._compute_wma(gpu_stat, curr_res.gpu_stats[i])
+            for i, gpu_stat in enumerate(gpu_stats)
+        ]
+        vram_wma = [
+            self._compute_wma(vram_stat, curr_res.vram_stats[i])
+            for i, vram_stat in enumerate(vram_stats)
+        ]
+        cpu_wma = self._compute_wma(cpu_stats, curr_res.cpu_stats)
+        dram_wma = self._compute_wma(dram_stats, curr_res.dram_stats)
+
+        return gpu_wma, vram_wma, cpu_wma, dram_wma
+
+    def _compute_wma(
+        self,
+        new_stat: Union[GpuStat, VramStat, CPUStats, DRAMStats],
+        old_stat: Union[GpuStat, VramStat, CPUStats, DRAMStats, None],
+    ) -> Union[GpuStat, VramStat]:
+        """Compute WMA for numeric values."""
+        if old_stat is None:
+            return new_stat
+
+        match new_stat:
+            case VramStat():
+                new_stat.used = self._wma(new_stat.used, old_stat.used)
+
+            case GpuStat():
+                new_stat.util = self._wma(new_stat.util, old_stat.util)
+
+            case CPUStats():
+                new_stat.load = self._wma(new_stat.load, old_stat.load)
+                new_stat.current_frequency = self._wma(
+                    new_stat.current_frequency, old_stat.current_frequency
+                )
+
+            case DRAMStats():
+                new_stat.used = self._wma(new_stat.used, old_stat.used)
+
+        return new_stat
+
+    def _wma(self, curr_val: float, new_val: float) -> float:
+        """Return WMA between old and current value."""
+        wma = (1 - WMA_WEIGHT) * float(curr_val) + (WMA_WEIGHT * float(new_val))
+
+        return wma
 
     def keep_alive(self):
         """Set agent's status to alive."""

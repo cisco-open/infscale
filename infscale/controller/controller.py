@@ -37,6 +37,7 @@ from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, Re
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.deployment.policy import DeploymentPolicyEnum
 from infscale.controller.job_context import AgentMetaData, JobContext
+from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -129,7 +130,14 @@ class Controller:
         vram_stats = GpuMonitor.proto_to_stats(request.vram_stats)
         logger.debug(f"vram_stats = {vram_stats}")
 
-        # TODO: use gpu and vram status to schedule deployment
+        cpu_stats = CpuMonitor.proto_to_stats(request.cpu_stats)
+        logger.debug(f"cpu_stats = {cpu_stats}")
+
+        dram_stats = CpuMonitor.proto_to_stats(request.dram_stats)
+        logger.debug(f"dram_stats = {dram_stats}")
+
+        agent_context = self.agent_contexts.get(request.id)
+        agent_context.set_resources(gpu_stats, vram_stats, cpu_stats, dram_stats)
 
     def handle_job_status(self, request: pb2.JobStatus) -> None:
         """Handle job status message."""

@@ -92,8 +92,6 @@ class GpuMonitor:
         self.interval = interval
 
         self.mon_event = asyncio.Event()
-        # TODO: consider computes and mems to mtaintain average (e.g., ewma)
-        #       values to smoothe out jitter due to instantaneous values
         self.computes = list()
         self.mems = list()
 
@@ -171,9 +169,10 @@ class GpuMonitor:
                     break
 
             used = len(processes) > 0
+
             computes[i] = GpuStat(i, dev_type, used, util)
 
-        return computes, mems 
+        return computes, mems
 
     @staticmethod
     def stats_to_proto(

@@ -398,25 +398,34 @@ class Agent:
         """Report resource stats to controller."""
         while True:
             gpu_stats, vram_stats = await self.gpu_monitor.metrics()
+            cpu_stats, dram_stats = await self.cpu_monitor.metrics()
+
             gpu_msg_list = GpuMonitor.stats_to_proto(gpu_stats)
             vram_msg_list = GpuMonitor.stats_to_proto(vram_stats)
+            cpu_stats_msg = CpuMonitor.stats_to_proto(cpu_stats)
+            dram_stats_msg = CpuMonitor.stats_to_proto(dram_stats)
 
-            status_msg = pb2.ResourceStats()
-            status_msg.id = self.id
-            status_msg.gpu_stats.extend(gpu_msg_list)
-            status_msg.vram_stats.extend(vram_msg_list)
-            # TODO: set cpu stat and ram stat into status message
+            status_msg = pb2.ResourceStats(
+                id=self.id,
+                gpu_stats=gpu_msg_list,
+                vram_stats=vram_msg_list,
+                cpu_stats=cpu_stats_msg,
+                dram_stats=dram_stats_msg,
+            )
 
             self.stub.update_resources(status_msg)
 
     def monitor(self):
         """Monitor workers and resources."""
         _ = asyncio.create_task(self._monitor_gpu())
+        _ = asyncio.create_task(self._monitor_cpu())
         # TODO: (priority: high) monitor workers
-        # TODO: (priority: low) monitor cpu resources (cpu and ram)
 
     async def _monitor_gpu(self):
         await self.gpu_monitor.start()
+
+    async def _monitor_cpu(self):
+        await self.cpu_monitor.start()
 
     async def run(self):
         """Start the agent."""
