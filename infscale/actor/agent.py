@@ -40,8 +40,8 @@ from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig, WorkerInfo
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.controller.ctrl_dtype import CommandAction
-from infscale.monitor.cpu import CpuMonitor, CPUStats, DRAMStats
-from infscale.monitor.gpu import GpuMonitor, GpuStat, VramStat
+from infscale.monitor.cpu import CpuMonitor
+from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
 
@@ -327,26 +327,6 @@ class Agent:
                 )
                 self.stub.job_setup(req)
 
-            case CommandAction.RESOURCE_STAT:
-                cpu_stats, dram_stats, gpu_stats, vram_stats = (
-                    self._get_resource_stats()
-                )
-
-                cpu_stats_msg = CpuMonitor.stats_to_proto(cpu_stats)
-                dram_stats_msg = CpuMonitor.stats_to_proto(dram_stats)
-                gpu_stats_msg = GpuMonitor.stats_to_proto(gpu_stats)
-                vram_stats_msg = GpuMonitor.stats_to_proto(vram_stats)
-
-                req = pb2.ResourceStats(
-                    id=self.id,
-                    gpu_stats=gpu_stats_msg,
-                    vram_stats=vram_stats_msg,
-                    cpu_stats=cpu_stats_msg,
-                    dram_stats=dram_stats_msg,
-                )
-
-                self.stub.put_resource_stat(req)
-
             case CommandAction.FINISH_JOB:
                 workers = self.worker_mgr.get_workers_by_job_id(action.job_id)
 
@@ -433,15 +413,6 @@ class Agent:
             # TODO: set cpu stat and ram stat into status message
 
             self.stub.update(status_msg)
-
-    def _get_resource_stats(
-        self,
-    ) -> tuple[CPUStats, DRAMStats, list[GpuStat], list[VramStat]]:
-        """Return CPU, DRAM and GPU statistics."""
-        gpu_stats, vram_stats = self.gpu_monitor.get_metrics()
-        cpu_stats, dram_stats = self.cpu_monitor.get_metrics()
-
-        return cpu_stats, dram_stats, gpu_stats, vram_stats
 
     def monitor(self):
         """Monitor workers and resources."""

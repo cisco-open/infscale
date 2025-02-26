@@ -19,8 +19,6 @@ service ManagementRoute {
   rpc command(AgentID) returns (stream Action) {}
   // agent calls job_status rpc to provide status of a job
   rpc job_status(JobStatus) returns (google.protobuf.Empty) {}
-  // agent calls put_resource_stat rpc to provide resource stats
-  rpc put_resource_stat(ResourceStats) returns (google.protobuf.Empty) {}
 }
 
 message AgentID {
@@ -48,14 +46,6 @@ message RegReq {
 message RegRes {
   bool status = 1;
   string reason = 2; // reason string in case of failure
-}
-
-message ResourceStats {
-  string id = 1; // agent's id
-  repeated GpuStat gpu_stats = 2;
-  repeated VramStat vram_stats = 3;
-  CpuStats cpu_stats = 4;
-  DramStats dram_stats = 5;
 }
 
 // status contains details about resources and workers managed by an agent

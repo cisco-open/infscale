@@ -618,11 +618,9 @@ class JobContext:
 
         match req.action:
             case CommandAction.START:
-                await self.ctrl.get_agents_resources()
                 await self.start()
 
             case CommandAction.UPDATE:
-                await self.ctrl.get_agents_resources()
                 await self.update()
 
             case CommandAction.STOP:

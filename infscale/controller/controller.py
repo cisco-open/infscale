@@ -31,14 +31,13 @@ from infscale.config import JobConfig, WorkerData
 from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
                                 DEFAULT_DEPLOYMENT_POLICY,
                                 GRPC_MAX_MESSAGE_LENGTH)
-from infscale.controller.agent_context import AgentContext, AgentResources
+from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
                                             ReqType)
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.deployment.policy import DeploymentPolicyEnum
 from infscale.controller.job_context import AgentMetaData, JobContext
-from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
@@ -141,32 +140,6 @@ class Controller:
 
         job_ctx = self.job_contexts.get(job_id)
         job_ctx.handle_job_status(status, agent_id)
-
-    async def get_agents_resources(self) -> None:
-        for agent_context in self.agent_contexts.values():
-            context = agent_context.get_grpc_ctx()
-
-            payload = pb2.Action(type=CommandAction.RESOURCE_STAT)
-            await context.write(payload)
-
-    def handle_agent_resources(self, req: pb2.ResourceStats) -> None:
-        agent_id, gpu_stats_msg, vram_stats_msg, cpu_stats_msg, dram_stats_msg = (
-            req.id,
-            req.gpu_stats,
-            req.vram_stats,
-            req.cpu_stats,
-            req.dram_stats,
-        )
-
-        cpu_stats = CpuMonitor.proto_to_stats(cpu_stats_msg)
-        dram_stats = CpuMonitor.proto_to_stats(dram_stats_msg)
-        gpu_stats = GpuMonitor.proto_to_stats(gpu_stats_msg)
-        vram_stats = GpuMonitor.proto_to_stats(vram_stats_msg)
-
-        resources = AgentResources(gpu_stats, vram_stats, cpu_stats, dram_stats)
-
-        agent_context = self.agent_contexts.get(agent_id)
-        agent_context.resources = resources
 
     async def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
         """Set worker status within job state."""
@@ -327,14 +300,6 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     ) -> None:
         """Handle update message for job status."""
         self.ctrl.handle_job_status(request)
-
-        return empty_pb2.Empty()
-
-    async def put_resource_stat(
-        self, request: pb2.ResourceStats, unused_context: ServicerContext
-    ) -> None:
-        """Handle update message for job status."""
-        self.ctrl.handle_agent_resources(request)
 
         return empty_pb2.Empty()
 
