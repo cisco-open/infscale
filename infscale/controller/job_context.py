@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""job_context.py."""
+
 from __future__ import annotations
 
 import asyncio
@@ -123,7 +125,7 @@ class BaseJobState:
             self.job_id, "stopping", self.context.state_enum.value
         )
 
-    def cond_completing(self):
+    async def cond_completing(self):
         """Handle the transition to completing."""
         raise InvalidJobStateAction(
             self.job_id, "completing", self.context.state_enum.value
@@ -164,18 +166,7 @@ class RunningState(BaseJobState):
 
     async def stop(self):
         """Transition to STOPPING state."""
-        agent_ids = self.context._get_ctx_agent_ids()
-
-        tasks = []
-
-        for agent_id in agent_ids:
-            task = self.context.ctrl._send_command_to_agent(
-                agent_id, self.job_id, self.context.req
-            )
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
-
+        await self.context.send_command_to_agents(self.context.req)
         self.context.set_state(JobStateEnum.STOPPING)
 
     async def update(self):
@@ -194,8 +185,21 @@ class RunningState(BaseJobState):
 
         self.context.set_state(JobStateEnum.UPDATING)
 
-    def cond_completing(self):
+    async def cond_completing(self):
         """Handle the transition to completing."""
+        server_wids = self.context.get_server_wids()
+
+        verdict = all(
+            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_wids
+        )
+
+        if not verdict:
+            return
+
+        command = CommandActionModel(
+            action=CommandAction.FINISH_JOB, job_id=self.job_id
+        )
+        await self.context.send_command_to_agents(command)
         self.context.set_state(JobStateEnum.COMPLETING)
 
 
@@ -204,18 +208,7 @@ class StartingState(BaseJobState):
 
     async def stop(self):
         """Transition to STOPPING state."""
-        agent_ids = self.context._get_ctx_agent_ids()
-
-        tasks = []
-
-        for agent_id in agent_ids:
-            task = self.context.ctrl._send_command_to_agent(
-                agent_id, self.job_id, self.context.req
-            )
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
-
+        await self.context.send_command_to_agents(self.context.req)
         self.context.set_state(JobStateEnum.STOPPING)
 
     def cond_running(self):
@@ -258,27 +251,26 @@ class StoppingState(BaseJobState):
 class CompletingState(BaseJobState):
     """CompletingState class."""
 
+    async def cond_completing(self):
+        """Handle the transition to completing.
+
+        This is executed because non-server workers send DONE status message
+        once server workers are DONE. In this case, we don't need to do
+        anything. So, we simply return here.
+        """
+        return
+
     def cond_complete(self):
         """Handle the transition to complete."""
         self.context.set_state(JobStateEnum.COMPLETE)
+
 
 class UpdatingState(BaseJobState):
     """StoppingState class."""
 
     async def stop(self):
         """Transition to STOPPING state."""
-        agent_ids = self.context._get_ctx_agent_ids()
-
-        tasks = []
-
-        for agent_id in agent_ids:
-            task = self.context.ctrl._send_command_to_agent(
-                agent_id, self.job_id, self.context.req
-            )
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
-
+        await self.context.send_command_to_agents(self.context.req)
         self.context.set_state(JobStateEnum.STOPPING)
 
     def cond_updated(self):
@@ -309,11 +301,21 @@ class CompleteState(BaseJobState):
 
         self.context.set_state(JobStateEnum.STARTING)
 
+    async def cond_completing(self):
+        """Handle the transition to completing.
+
+        This is executed because non-server workers send DONE status message
+        once server workers are DONE. In this case, we don't need to do
+        anything. So, we simply return here.
+        """
+        return
+
 
 class JobContext:
     """JobContext class."""
 
     def __init__(self, ctrl: Controller, job_id: str):
+        """Initialize JobContext instance."""
         self.ctrl = ctrl
         self.job_id = job_id
         self.state = ReadyState(self)
@@ -363,15 +365,22 @@ class JobContext:
         except ValueError:
             logger.warning(f"'{status}' is not a valid JobStatus")
 
+    async def send_command_to_agents(self, command: CommandActionModel) -> None:
+        """Send command to all agents in the job."""
+        tasks = []
+
+        agent_ids = self._get_ctx_agent_ids()
+        for aid in agent_ids:
+            task = self.ctrl._send_command_to_agent(aid, self.job_id, command)
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
+
     async def do_wrk_cond(self, wid: str, status: WorkerStatus) -> None:
         """Handle worker status by calling conditional action."""
-
         match status:
             case WorkerStatus.DONE:
-                is_server = self.get_is_server(wid)
-
-                if is_server:
-                    await self.cond_completing()
+                await self.cond_completing()
 
     def _do_cond(self, status: JobStatus) -> None:
         """Handle job status by calling conditional action."""
@@ -387,13 +396,13 @@ class JobContext:
             case _:
                 logger.warning(f"unsupported job status: '{status}'")
 
-    def set_wrk_status(self, wrk_id, status: str) -> None:
+    def get_wrk_status(self, wrk_id: str) -> WorkerStatus:
+        """Get worker status."""
+        return self.wrk_status[wrk_id]
+
+    def set_wrk_status(self, wrk_id: str, status: WorkerStatus) -> None:
         """Set worker status."""
-        try:
-            status_enum = WorkerStatus(status)
-            self.wrk_status[wrk_id] = status_enum
-        except ValueError:
-            logger.warning(f"'{status}' is not a valid WorkerStatus")
+        self.wrk_status[wrk_id] = status
 
     def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller."""
@@ -439,7 +448,7 @@ class JobContext:
 
         # agent is ready to perform setup
         agent_data.ready_to_config = True
-        if any(info.ready_to_config == False for info in self.agent_info.values()):
+        if any(info.ready_to_config is False for info in self.agent_info.values()):
             await self.agents_setup_event.wait()
 
         # all agents have their conn data available, release the agent setup event
@@ -458,8 +467,7 @@ class JobContext:
 
     async def _patch_job_cfg(self, agent_data: AgentMetaData) -> None:
         """Patch config for updated job."""
-        agent_id, config, new_config, port_iter = (
-            agent_data.id,
+        config, new_config, port_iter = (
             agent_data.config,
             agent_data.new_config,
             agent_data.ports,
@@ -592,14 +600,17 @@ class JobContext:
                 detail="No agent found",
             )
 
-    def get_is_server(self, wid: str) -> bool:
-        """Return bool if the given worker id is a server or not."""
+    def get_server_wids(self) -> list[str]:
+        """Return a list of worker ids whose role is a server."""
         config = next(iter(self.agent_info.values())).config
-        is_server = any(
-            worker.id == wid and worker.is_server for worker in config.workers
-        )
+        wids = set()
 
-        return is_server
+        for worker in config.workers:
+            if not worker.is_server:
+                continue
+            wids.add(worker.id)
+
+        return list(wids)
 
     async def do(self, req: CommandActionModel):
         """Handle specific action."""
@@ -669,19 +680,4 @@ class JobContext:
 
     async def cond_completing(self):
         """Handle the transition to completing."""
-        self.state.cond_completing()
-
-        tasks = []
-
-        for agent_id in self.agent_info.keys():
-            command = CommandActionModel(
-                action=CommandAction.FINISH_JOB, job_id=self.job_id
-            )
-
-            task = self.ctrl._send_command_to_agent(
-                agent_id, self.job_id, command
-            )
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
-
+        await self.state.cond_completing()

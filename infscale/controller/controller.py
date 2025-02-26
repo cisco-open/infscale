@@ -28,20 +28,16 @@ from grpc.aio import ServicerContext
 from infscale import get_logger
 from infscale.actor.job_msg import WorkerStatus
 from infscale.config import JobConfig, WorkerData
-from infscale.constants import (
-    APISERVER_PORT,
-    CONTROLLER_PORT,
-    DEFAULT_DEPLOYMENT_POLICY,
-    GRPC_MAX_MESSAGE_LENGTH,
-)
+from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
+                                DEFAULT_DEPLOYMENT_POLICY,
+                                GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext, AgentResources
 from infscale.controller.apiserver import ApiServer
-from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
+from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
+                                            ReqType)
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
+from infscale.controller.deployment.policy import DeploymentPolicyEnum
 from infscale.controller.job_context import AgentMetaData, JobContext
-from infscale.controller.deployment.policy import (
-    DeploymentPolicyEnum,
-)
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
@@ -167,9 +163,7 @@ class Controller:
         gpu_stats = GpuMonitor.proto_to_stats(gpu_stats_msg)
         vram_stats = GpuMonitor.proto_to_stats(vram_stats_msg)
 
-        resources = AgentResources(
-           gpu_stats, vram_stats, cpu_stats, dram_stats
-        )
+        resources = AgentResources(gpu_stats, vram_stats, cpu_stats, dram_stats)
 
         agent_context = self.agent_contexts.get(agent_id)
         agent_context.resources = resources
@@ -188,8 +182,8 @@ class Controller:
         try:
             status_enum = WorkerStatus(status)
             job_ctx = self.job_contexts.get(job_id)
-            job_ctx.set_wrk_status(wrk_id, status)
-            
+            job_ctx.set_wrk_status(wrk_id, status_enum)
+
             await job_ctx.do_wrk_cond(wrk_id, status_enum)
         except ValueError:
             logger.warning(f"'{status}' is not a valid WorkerStatus")
