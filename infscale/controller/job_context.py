@@ -83,6 +83,7 @@ class JobStateEnum(Enum):
     UPDATING = "updating"
     COMPLETING = "completing"
     COMPLETE = "complete"
+    FAILED = "failed"
 
 
 class BaseJobState:
@@ -268,6 +269,16 @@ class CompleteState(BaseJobState):
         anything. So, we simply return here.
         """
         return
+
+
+class FailedState(BaseJobState):
+    """FailedState class."""
+
+    async def start(self):
+        """Transition to STARTING state."""
+        await self.context._JobContext__start()
+
+        self.context.set_state(JobStateEnum.STARTING)
 
 
 class JobContext:
@@ -532,6 +543,7 @@ class JobContext:
             JobStateEnum.UPDATING: UpdatingState,
             JobStateEnum.COMPLETING: CompletingState,
             JobStateEnum.COMPLETE: CompleteState,
+            JobStateEnum.FAILED: FailedState,
         }
         return state_mapping[state_enum]
 
@@ -643,7 +655,7 @@ class JobContext:
 
     async def __start(self):
         # DO NOT call this method in job_context instance or any other places.
-        # Call it only in methods of an state instance
+        # Call it only in methods of a state instance
         # (e.g., ReadyState, CompleteState, etc).
         num_of_workers = len(self.req.config.workers)
 
