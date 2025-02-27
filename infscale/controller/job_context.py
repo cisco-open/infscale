@@ -143,20 +143,7 @@ class ReadyState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        req = self.context.req
-        num_of_workers = len(req.config.workers)
-        agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
-
-        self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids)
-
-        tasks = []
-
-        for info in self.context.running_agent_info:
-            task = asyncio.create_task(self.context.prepare_config(info.id))
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
+        await self.context._JobContext__start()
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -221,21 +208,7 @@ class StoppedState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        req = self.context.req
-        num_of_workers = len(req.config.workers)
-
-        agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
-
-        self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids)
-
-        tasks = []
-
-        for info in self.context.running_agent_info:
-            task = asyncio.create_task(self.context.prepare_config(info.id))
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
+        await self.context._JobContext__start()
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -283,21 +256,7 @@ class CompleteState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        req = self.context.req
-        num_of_workers = len(req.config.workers)
-
-        agent_ids = self.context._get_ctrl_agent_ids(num_of_workers)
-
-        self.context.set_agent_ids(agent_ids)
-        self.context.process_cfg(agent_ids)
-
-        tasks = []
-
-        for info in self.context.running_agent_info:
-            task = asyncio.create_task(self.context.prepare_config(info.id))
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
+        await self.context._JobContext__start()
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -681,3 +640,22 @@ class JobContext:
     async def cond_completing(self):
         """Handle the transition to completing."""
         await self.state.cond_completing()
+
+    async def __start(self):
+        # DO NOT call this method in job_context instance or any other places.
+        # Call it only in methods of an state instance
+        # (e.g., ReadyState, CompleteState, etc).
+        num_of_workers = len(self.req.config.workers)
+
+        agent_ids = self._get_ctrl_agent_ids(num_of_workers)
+
+        self.set_agent_ids(agent_ids)
+        self.process_cfg(agent_ids)
+
+        tasks = []
+
+        for info in self.running_agent_info:
+            task = asyncio.create_task(self.prepare_config(info.id))
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
