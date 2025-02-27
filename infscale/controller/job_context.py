@@ -475,11 +475,7 @@ class JobContext:
 
     async def _patch_job_cfg(self, agent_data: AgentMetaData) -> None:
         """Patch config for updated job."""
-        config, new_config, port_iter = (
-            agent_data.config,
-            agent_data.new_config,
-            agent_data.ports,
-        )
+        config, new_config = agent_data.config, agent_data.new_config
 
         curr_workers: dict[str, WorkerInfo] = {}
         if config is not None:

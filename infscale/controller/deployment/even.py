@@ -60,7 +60,7 @@ class EvenDeploymentPolicy(DeploymentPolicy):
             )
             for worker in workers[start_index : start_index + num_workers_for_agent]:
                 if data.id in distribution:
-                    distribution[data.id].update(worker.id)
+                    distribution[data.id].add(worker.id)
                 else:
                     distribution[data.id] = {worker.id}
 
