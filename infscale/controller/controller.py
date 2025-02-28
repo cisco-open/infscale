@@ -196,28 +196,25 @@ class Controller:
 
     async def _job_setup(self, agent_data: AgentMetaData) -> None:
         """Send job setup request to agent."""
-        agent_id, config, num_new_workers, job_setup_event = (
+        agent_id, config, num_new_worlds, job_setup_event = (
             agent_data.id,
             agent_data.new_config,
-            agent_data.num_new_workers,
+            agent_data.num_new_worlds,
             agent_data.job_setup_event,
         )
 
-        if num_new_workers <= 0:  # no new workers to ask for ports
+        if num_new_worlds <= 0:  # no new worlds to ask for ports
             job_setup_event.set()
-
             return
 
-        # we need two sets of ports for each worker for channel connection and multiworld connection
-        port_count_bytes = (num_new_workers * 2).to_bytes(1, byteorder="big")
+        # we need two ports  (channel and multiworld) for each world
+        msg = (num_new_worlds * 2).to_bytes(1, byteorder="big")
+        payload = pb2.Action(
+            type=CommandAction.SETUP, job_id=config.job_id, manifest=msg
+        )
 
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
-
-        payload = pb2.Action(
-            type=CommandAction.SETUP, job_id=config.job_id, manifest=port_count_bytes
-        )
-
         await context.write(payload)
 
     async def _send_config_to_agent(

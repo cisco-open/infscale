@@ -53,8 +53,8 @@ class Dataset:
 
 
 @dataclass
-class WorkerInfo:
-    """Specification about worker info in the flow graph."""
+class WorldInfo:
+    """Specification about world info in the flow graph."""
 
     name: str
     peers: list[str]
@@ -87,7 +87,7 @@ class ServeConfig:
 
     dataset: Dataset
 
-    flow_graph: dict[str, list[WorkerInfo]]
+    flow_graph: dict[str, list[WorldInfo]]
 
     workers_stage_info: dict[str, StageConfig]
 
@@ -124,12 +124,10 @@ class ServeConfig:
 
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
-                worker_info = (
-                    item if isinstance(item, WorkerInfo) else WorkerInfo(**item)
-                )
-                self.flow_graph[k][i] = worker_info
+                world_info = item if isinstance(item, WorldInfo) else WorldInfo(**item)
+                self.flow_graph[k][i] = world_info
 
-                if self.stage.id == k and worker_info.backend == "nccl":
+                if self.stage.id == k and world_info.backend == "nccl":
                     assert "cuda" in self.device, "nccl requires cuda device"
 
 
@@ -140,26 +138,26 @@ class JobConfig:
     workers: list[WorkerData]
     name: str
     model: str
-    flow_graph: dict[str, list[WorkerInfo]]
+    flow_graph: dict[str, list[WorldInfo]]
     dataset: Dataset
     job_id: str
     nfaults: int = 0
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
-    # auto_config: False - worker device and back-end fields are mandatory, they will be provided in the config file
-    # auto_config": True - worker device and back-end will be set based on available resources form the agents (GPU, CPU)
+    # auto_config: False - worker device and back-end fields are mandatory,
+    #                      they will be provided in the config file
+    #              True - worker device and back-end will be set based on
+    #                     available resources form the agents (GPU, CPU)
     auto_config: bool = False
 
     def __post_init__(self) -> None:
         """Handle post init class variables."""
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
-                worker_info = (
-                    item if isinstance(item, WorkerInfo) else WorkerInfo(**item)
-                )
-                self.flow_graph[k][i] = worker_info
-        
+                world_info = item if isinstance(item, WorldInfo) else WorldInfo(**item)
+                self.flow_graph[k][i] = world_info
+
         for j, w in enumerate(self.workers):
             self.workers[j] = w if isinstance(w, WorkerData) else WorkerData(**w)
 

@@ -280,31 +280,31 @@ class Pipeline:
 
         my_id = self.spec.stage.id
         for k, v in self.spec.flow_graph.items():
-            for wrk_info in v:
+            for cfg_world_info in v:
                 # NOTE: no. of peers is always 1 for now
-                assert len(wrk_info.peers) == 1
+                assert len(cfg_world_info.peers) == 1
 
                 if my_id == k:
                     my_rank = 0
                     other_rank = 1
-                    other_id = wrk_info.peers[0]
-                elif my_id in wrk_info.peers:
+                    other_id = cfg_world_info.peers[0]
+                elif my_id in cfg_world_info.peers:
                     # NOTE: this is always 1 for now
-                    my_rank = wrk_info.peers.index(my_id) + 1
+                    my_rank = cfg_world_info.peers.index(my_id) + 1
                     other_rank = 0
                     other_id = k
                 else:
                     continue
 
                 name, backend, addr, data_port, ctrl_port = (
-                    wrk_info.name,
-                    wrk_info.backend,
-                    wrk_info.addr,
-                    wrk_info.data_port,
-                    wrk_info.ctrl_port,
+                    cfg_world_info.name,
+                    cfg_world_info.backend,
+                    cfg_world_info.addr,
+                    cfg_world_info.data_port,
+                    cfg_world_info.ctrl_port,
                 )
 
-                world_size = len(wrk_info.peers) + 1
+                world_size = len(cfg_world_info.peers) + 1
                 ctrl_ch = CtrlCh(my_rank, world_size, addr, ctrl_port)
 
                 data = {
