@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from enum import Enum
 from itertools import islice
 from typing import TYPE_CHECKING, Iterator
@@ -27,12 +28,22 @@ from fastapi import HTTPException, status
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
+from infscale.controller.agent_context import AgentResources
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
+from infscale.monitor.gpu import GpuStat
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
 logger = None
+
+
+@dataclass
+class AgentDeviceMap:
+    """AgentDeviceMap class"""
+
+    gpu: list[GpuStat]
+    cpu: int
 
 
 class AgentMetaData:
@@ -57,7 +68,7 @@ class AgentMetaData:
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
         self.wids_to_deploy: list[str] = []
-        self.existing_workers: set[str] = set()
+        self.existing_workers: set[tuple[str, str]] = set()
 
 
 class InvalidJobStateAction(Exception):
@@ -380,9 +391,16 @@ class JobContext:
         """Process received config from controller and set a deployer of agent ids."""
         agent_data = self._get_agents_data(agent_ids)
 
-        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(
-            agent_data, self.req.config
+        config = self.req.config
+
+        agent_resources = self._get_agent_resources_map(agent_ids)
+
+        # TODO: pass agent_device_map to split method.
+        agent_device_map = self._get_agent_devices_map(
+            agent_resources, len(config.workers)
         )
+
+        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(agent_data, config)
 
         self._update_agent_data(agent_cfg, wrk_distribution)
 
@@ -392,6 +410,142 @@ class JobContext:
         ]
 
         self.running_agent_info = running_agent_info
+
+    def _get_agent_devices_map(
+        self,
+        agent_resources: dict[str, AgentResources],
+        num_workers: int,
+    ) -> dict[str, dict[str, int]]:
+        """Return devices count for each agent to be used in split given num of workers."""
+        agent_devices: dict[str, AgentDeviceMap] = {}
+
+        # get current devices count
+        gpu_count = self._get_agents_gpu_count(agent_resources)
+        cpu_count = self._get_agents_cpu_count(agent_resources)
+
+        # make sure there's at enough resources to support the number of workers otherwise throw error
+        if gpu_count + cpu_count < num_workers:
+            raise ValueError(
+                f"insufficient resources: requested {num_workers} devices, but only {gpu_count} GPUs and {cpu_count} CPUs are available."
+            )
+
+        sorted_agents_gpu = self._get_sorted_agents_by_gpu(agent_resources)
+        sorted_agents_cpu = self._get_sorted_agents_by_cpu(agent_resources)
+
+        # start with using available GPU resources
+        if len(sorted_agents_gpu): 
+            self._assign_gpu(agent_devices, sorted_agents_gpu)
+
+        devices_count = self._get_devices_count(agent_devices)
+
+        # if there are not enough GPU resources from each agent continue with CPU
+        if devices_count < num_workers:
+            self._assign_cpu(agent_devices, sorted_agents_cpu)
+
+        return agent_devices
+
+    def _assign_gpu(
+        self,
+        agent_devices: dict[str, AgentDeviceMap],
+        sorted_agents_gpu: dict[str, AgentResources],
+    ) -> None:
+        """Assign GPU devices from agent resources."""
+        agent_devices.update(
+            {
+                agent_id: AgentDeviceMap(gpus, 0)
+                for agent_id, gpus in sorted_agents_gpu.items()
+            }
+        )
+
+    def _assign_cpu(
+        self,
+        agent_devices: dict[str, AgentDeviceMap],
+        sorted_agents_cpu: dict[str, AgentResources],
+    ) -> None:
+        """Assign CPU devices from agent resources."""
+        for agent_id, cpu_count in sorted_agents_cpu.items():
+            if agent_id in agent_devices:
+                agent_devices[agent_id].cpu = cpu_count
+            else:
+                agent_devices[agent_id] = AgentDeviceMap(
+                    [], cpu_count
+                )
+
+    def _get_devices_count(self, agent_device: dict[str, AgentDeviceMap]) -> int:
+        """Get total number of devices for each agent."""
+        count = 0
+        for device in agent_device.values():
+            count += len(device.gpu)
+            count += device.cpu
+
+        return count
+
+    def _get_sorted_agents_by_gpu(
+        self, agent_resources: dict[str, AgentResources]
+    ) -> dict[str, AgentResources]:
+        """Filter agents without available GPUs and return sorted dict."""
+        # filter out agents that have available GPUs and create agent_id: GPU list dict
+        gpu_candidates = {
+            agent_id: [gpu for gpu in res.gpu_stats if not gpu.used]
+            for agent_id, res in agent_resources.items()
+            if res.gpu_stats
+            and any(
+                not gpu.used for gpu in res.gpu_stats
+            )  # ensure at least one free GPU
+        }
+
+        # sort the agents dict based on the number of GPUs.
+        sorted_agents = {
+            k: v
+            for k, v in sorted(gpu_candidates.items(), key=lambda item: -len(item[1]))
+        }
+
+        return sorted_agents
+
+    def _get_sorted_agents_by_cpu(
+        self, agent_resources: dict[str, AgentResources]
+    ) -> dict[str, AgentResources]:
+        """Filter agents without available CPUs and return sorted dict."""
+        # filter out agents that have available CPUs and create agent_id: #cpu dict
+        cpu_candidates = {
+            agent_id: res.cpu_stats.total_cpus
+            for agent_id, res in agent_resources.items()
+        }
+
+        # sort the agents dict based on the number of CPUs.
+        sorted_agents = {
+            k: v for k, v in sorted(cpu_candidates.items(), key=lambda item: -item[1])
+        }
+
+        return sorted_agents
+
+    def _get_agents_gpu_count(
+        self, agent_resources: dict[str, AgentResources]
+    ) -> dict[str, int]:
+        """Return number of available GPUs for each agent."""
+        return sum(
+            1
+            for res in agent_resources.values()
+            for gpu in res.gpu_stats
+            if not gpu.used
+        )
+
+    def _get_agents_cpu_count(
+        self, agent_resources: dict[str, AgentResources]
+    ) -> dict[str, int]:
+        """Return number of available CPUs for each agent."""
+        return sum(res.cpu_stats.total_cpus for res in agent_resources.values())
+
+    def _get_agent_resources_map(
+        self, agent_ids: list[str]
+    ) -> dict[str, AgentResources]:
+        """Return map with agent resources based on given agent ids."""
+        result = {}
+
+        for agent_id in agent_ids:
+            result[agent_id] = self.ctrl.agent_contexts[agent_id].resources
+
+        return result
 
     def _get_agents_data(self, agent_ids: list[str]) -> list[AgentMetaData]:
         """Get a list of agent metadata given agent ids."""
@@ -404,7 +558,9 @@ class JobContext:
         return result
 
     def _update_agent_data(
-        self, agent_cfg: dict[str, JobConfig], wrk_distribution: dict[str, set[str]]
+        self,
+        agent_cfg: dict[str, JobConfig],
+        wrk_distribution: dict[str, set[str]],
     ) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
