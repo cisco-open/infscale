@@ -19,7 +19,7 @@
 from enum import Enum
 from typing import Optional
 
-from infscale.config import Dataset, JobConfig, StageConfig, WorkerInfo
+from infscale.config import JobConfig
 from pydantic import BaseModel, model_validator
 
 
@@ -33,11 +33,11 @@ class ReqType(str, Enum):
 class CommandAction(str, Enum):
     """Enum class for request type."""
 
-    START = "start"   # CLI - Controller start command
-    STOP = "stop"     # CLI - Controller stop command
-    UPDATE = "update" # CLI - Controller update command
-    SETUP = "setup"   # Controller - Agent setup job, assign port numbers to workers
-    FINISH_JOB = "finish_job" # Controller - Agent action to notify when a job is completed
+    START = "start"  # CLI - Controller start command
+    STOP = "stop"  # CLI - Controller stop command
+    UPDATE = "update"  # CLI - Controller update command
+    SETUP = "setup"  # ctrl<->agent setup job, assign port numbers to workers
+    FINISH_JOB = "finish_job"  # ctrl<->agent action to notify job's completion
 
 
 class CommandActionModel(BaseModel):
@@ -50,26 +50,16 @@ class CommandActionModel(BaseModel):
     @model_validator(mode="after")
     def check_config_for_update(self):
         """Validate command action model."""
-        if self.action in [CommandAction.UPDATE, CommandAction.START] and self.config is None:
+        if (
+            self.action in [CommandAction.UPDATE, CommandAction.START]
+            and self.config is None
+        ):
             raise ValueError("config is required when updating a job")
 
         if self.action == CommandAction.STOP and self.job_id is None:
             raise ValueError("job id is required stopping or updating a job")
+
         return self
-
-
-class ServeSpec(BaseModel):
-    """ServiceSpec model."""
-
-    name: str
-    model: str
-    stage: StageConfig
-    dataset: Dataset
-    flow_graph: dict[str, list[WorkerInfo]]
-    device: str = "cpu"
-    nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
-    micro_batch_size: int = 8
-    fwd_policy: str = "random"
 
 
 class Response(BaseModel):

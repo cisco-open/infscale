@@ -20,24 +20,18 @@ import asyncio
 import json
 import os
 import socket
+from multiprocessing import Pipe
 
 import grpc
 import torch
 import torch.multiprocessing as mp
-from multiprocess.connection import Pipe
-
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager
-from infscale.actor.job_msg import (
-    JobStatus,
-    Message,
-    MessageType,
-    WorkerStatus,
-    WorkerStatusMessage,
-)
+from infscale.actor.job_msg import (JobStatus, Message, MessageType,
+                                    WorkerStatus, WorkerStatusMessage)
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
-from infscale.config import JobConfig, WorkerInfo
+from infscale.config import JobConfig, WorldInfo
 from infscale.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.controller.ctrl_dtype import CommandAction
 from infscale.monitor.cpu import CpuMonitor
@@ -92,7 +86,7 @@ class Agent:
         self.endpoint = endpoint
         self.job_mgr = JobManager()
         self.worker_mgr = WorkerManager()
-        self.wrk_ports: dict[int, socket.socket] = dict()
+        self.world_ports: dict[int, socket.socket] = dict()
 
         self.n_workers = torch.cuda.device_count()
 
@@ -256,13 +250,13 @@ class Agent:
             self._handle_command(action)
 
     def _get_ip_address(self) -> str:
-        """Get ip address of agent"""
+        """Get ip address of agent."""
         hostname = socket.gethostname()
         ip_address = socket.gethostbyname(hostname)
         return ip_address
 
     def _reserve_ports(self, port_count: int) -> list[str]:
-        """Reserve available ports based on number of workers."""
+        """Reserve available ports based on number of worlds."""
         available_ports = []
         while len(available_ports) < port_count:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -272,27 +266,28 @@ class Agent:
                 except OSError:
                     pass
                 else:
-                    self.wrk_ports[port] = s
+                    self.world_ports[port] = s
                     available_ports.append(port)
 
         return available_ports
 
-    def _release_ports(self, flow_graph: dict[str, list[WorkerInfo]]):
-        for wrkr_info_list in flow_graph.values():
-            for wrkr_info in wrkr_info_list:
-                data_port, ctrl_port = wrkr_info.data_port, wrkr_info.ctrl_port
+    def _release_ports(self, flow_graph: dict[str, list[WorldInfo]]):
+        for world_info_list in flow_graph.values():
+            for world_info in world_info_list:
+                data_port = world_info.data_port
+                ctrl_port = world_info.ctrl_port
 
-                if data_port in self.wrk_ports:
-                    s = self.wrk_ports[data_port]
+                if data_port in self.world_ports:
+                    s = self.world_ports[data_port]
                     s.close()
 
-                    del self.wrk_ports[data_port]
+                    del self.world_ports[data_port]
 
-                if ctrl_port in self.wrk_ports:
-                    s = self.wrk_ports[ctrl_port]
+                if ctrl_port in self.world_ports:
+                    s = self.world_ports[ctrl_port]
                     s.close()
 
-                    del self.wrk_ports[ctrl_port]
+                    del self.world_ports[ctrl_port]
 
     def _handle_command(self, action: pb2.Action) -> None:
         """Handle job-related action."""
@@ -318,7 +313,7 @@ class Agent:
                 port_count = int.from_bytes(action.manifest, byteorder="big")
                 ports = self._reserve_ports(port_count)
 
-                logger.debug(f"ports assigned: {ports} for {port_count / 2} workers")
+                logger.debug(f"ports assigned: {ports} for {port_count / 2} worlds")
 
                 req = pb2.JobSetupReq(
                     ports=ports,

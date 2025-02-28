@@ -55,6 +55,7 @@ class JobManager:
         del self.jobs[job_id]
 
     def get_job_data(self, job_id) -> JobMetaData:
+        """Get JobMetaData of a given job id."""
         return self.jobs[job_id]
 
     def process_config(self, config: JobConfig) -> None:
@@ -100,9 +101,9 @@ class JobManager:
         update_wrkrs = set()
 
         # select workers that will be affected by workers to be started
-        for w, wrkr_info_list in new_config.flow_graph.items():
-            for wrkr_info in wrkr_info_list:
-                peers = wrkr_info.peers
+        for w, world_info_list in new_config.flow_graph.items():
+            for world_info in world_info_list:
+                peers = world_info.peers
 
                 self._pick_workers(update_wrkrs, start_wrkrs, w, peers)
 
@@ -110,9 +111,9 @@ class JobManager:
             return start_wrkrs, update_wrkrs, stop_wrkrs
 
         # select workers that will be affected by workers to be stopped
-        for w, wrkr_info_list in curr_config.flow_graph.items():
-            for wrkr_info in wrkr_info_list:
-                peers = wrkr_info.peers
+        for w, world_info_list in curr_config.flow_graph.items():
+            for world_info in world_info_list:
+                peers = world_info.peers
 
                 self._pick_workers(update_wrkrs, stop_wrkrs, w, peers)
 
@@ -166,13 +167,14 @@ class JobManager:
 
         # job already stopped or completed
         return None
-    
 
     def get_config(self, job_id: str) -> JobConfig | None:
         """Return a job config of given job name."""
         return self.jobs[job_id].config if job_id in self.jobs else None
 
-    def get_workers(self, job_id: str, sort: CommandAction = CommandAction.START) -> set[str]:
+    def get_workers(
+        self, job_id: str, sort: CommandAction = CommandAction.START
+    ) -> set[str]:
         """Return workers that match sort for a given job name."""
         if job_id not in self.jobs:
             return set()

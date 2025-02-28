@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Iterator
 from fastapi import HTTPException, status
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
-from infscale.config import JobConfig, WorkerData, WorkerInfo
+from infscale.config import JobConfig, WorkerData, WorldInfo
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
 if TYPE_CHECKING:
@@ -44,7 +44,7 @@ class AgentMetaData:
         job_status: JobStatus = None,
         config: JobConfig = None,
         new_config: JobConfig = None,
-        num_new_workers: int = 0,
+        num_new_worlds: int = 0,
         ports: list[int] = None,
     ):
         """Initialize AgentMedataData instance."""
@@ -52,7 +52,7 @@ class AgentMetaData:
         self.job_status = job_status
         self.config = config
         self.new_config = new_config
-        self.num_new_workers = num_new_workers
+        self.num_new_worlds = num_new_worlds
         self.ports = ports
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
@@ -410,7 +410,7 @@ class JobContext:
         for agent_id, new_cfg in agent_cfg.items():
             agent_data = self.agent_info[agent_id]
             agent_data.new_config = new_cfg
-            agent_data.num_new_workers = self._get_new_workers_count(
+            agent_data.num_new_worlds = self._count_new_worlds(
                 agent_data.config, new_cfg
             )
             agent_data.wids_to_deploy = self._get_deploy_worker_ids(new_cfg.workers)
@@ -447,36 +447,36 @@ class JobContext:
         """Patch config for updated job."""
         config, new_config = agent_data.config, agent_data.new_config
 
-        curr_workers: dict[str, WorkerInfo] = {}
+        curr_worlds: dict[str, WorldInfo] = {}
         if config is not None:
-            for worker_list in config.flow_graph.values():
-                for worker in worker_list:
-                    curr_workers[worker.name] = worker
+            for world_list in config.flow_graph.values():
+                for world in world_list:
+                    curr_worlds[world.name] = world
 
-        worker_agent_map = self._get_worker_agent_map(new_config)
+        world_agent_map = self._get_world_agent_map(new_config)
         agent_port_map = self._get_agent_port_map()
 
-        # step 2: patch new config with existing workers ports and assign ports to new ones
-        for worker_list in new_config.flow_graph.values():
-            for worker in worker_list:
-                if worker.name in curr_workers:
+        # step 2: patch new config with existing world ports and assign ports to new ones
+        for world_list in new_config.flow_graph.values():
+            for world in world_list:
+                if world.name in curr_worlds:
                     # keep existing ports
-                    worker.addr = curr_workers[worker.name].addr
-                    worker.data_port = curr_workers[worker.name].data_port
-                    worker.ctrl_port = curr_workers[worker.name].ctrl_port
+                    world.addr = curr_worlds[world.name].addr
+                    world.data_port = curr_worlds[world.name].data_port
+                    world.ctrl_port = curr_worlds[world.name].ctrl_port
                 else:
-                    agent_info = worker_agent_map[worker.name]
+                    agent_info = world_agent_map[world.name]
                     port_iter = agent_port_map[agent_info.id]
                     addr = self.ctrl.agent_contexts[agent_info.id].ip
 
-                    # assign new ports to new workers
-                    worker.addr = addr
-                    worker.data_port = next(port_iter)
-                    worker.ctrl_port = next(port_iter)
+                    # assign new ports to new worlds
+                    world.addr = addr
+                    world.data_port = next(port_iter)
+                    world.ctrl_port = next(port_iter)
 
         agent_data.config = new_config
         agent_data.new_config = None
-        agent_data.num_new_workers = 0
+        agent_data.num_new_worlds = 0
 
         agent_data.job_setup_event.clear()
 
@@ -489,44 +489,44 @@ class JobContext:
 
         return agent_ports
 
-    def _get_worker_agent_map(self, config: JobConfig) -> dict[str, AgentMetaData]:
-        """Create map between worker id and agent for deploy."""
-        worker_agent_data = {}
+    def _get_world_agent_map(self, config: JobConfig) -> dict[str, AgentMetaData]:
+        """Create map between world name and agent."""
+        world_agent_map = {}
 
-        for wid, worker_list in config.flow_graph.items():
-            for w in worker_list:
-                agent_for_deploy = self._get_agent_by_worker_id(wid)
-                worker_agent_data[w.name] = agent_for_deploy
+        for wid, world_list in config.flow_graph.items():
+            agent_for_deploy = self._get_agent_by_worker_id(wid)
+            for world in world_list:
+                world_agent_map[world.name] = agent_for_deploy
 
-        return worker_agent_data
+        return world_agent_map
 
     def _get_agent_by_worker_id(self, wid: str) -> AgentMetaData:
-        """Return agent that will deploy given worker id."""
+        """Return agent that will deploy a given worker id."""
         return next(
             (info for info in self.agent_info.values() if wid in info.wids_to_deploy),
             None,
         )
 
-    def _get_new_workers_count(self, config: JobConfig, new_cfg: JobConfig) -> int:
-        """Return the number of new workers between and old and new config."""
-        curr_workers = []
+    def _count_new_worlds(self, config: JobConfig, new_cfg: JobConfig) -> int:
+        """Return the number of new worlds between and old and new config."""
+        curr_worlds = []
         if config is not None:
-            curr_workers = self._get_deploy_worker_names(config)
+            curr_worlds = self._get_world_names_to_setup(config)
 
-        new_workers = self._get_deploy_worker_names(new_cfg)
-        return len(set(new_workers) - set(curr_workers))
+        new_worlds = self._get_world_names_to_setup(new_cfg)
+        return len(set(new_worlds) - set(curr_worlds))
 
-    def _get_deploy_worker_names(self, config: JobConfig) -> list[str]:
-        """Return a list of worker names to be deployed."""
+    def _get_world_names_to_setup(self, config: JobConfig) -> list[str]:
+        """Return a list of world names to be set up."""
         worker_ids = self._get_deploy_worker_ids(config.workers)
-        worker_names = [
-            w.name
-            for wid, w_list in config.flow_graph.items()
-            for w in w_list
+        world_names = [
+            world.name
+            for wid, world_list in config.flow_graph.items()
+            for world in world_list
             if wid in worker_ids
         ]
 
-        return worker_names
+        return world_names
 
     def _get_deploy_worker_ids(self, workers: list[WorkerData]) -> list[str]:
         """Return a list of worker ids to be deployed."""
