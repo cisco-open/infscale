@@ -13,8 +13,10 @@ service ManagementRoute {
   rpc register(RegReq) returns (RegRes) {}
   // agent sends heart beat to the controller to signal its liveness
   rpc heartbeat(AgentID) returns (google.protobuf.Empty) {}
-  // agent calls update rpc to provide status of workers
-  rpc update(Status) returns (google.protobuf.Empty) {}
+  // agent calls update_wrk_status rpc to provide status of workers
+  rpc update_wrk_status(WorkerStatus) returns (google.protobuf.Empty) {}
+  // agent calls update_resources rpc to provide resource stats
+  rpc update_resources(ResourceStats) returns (google.protobuf.Empty) {}
   // agent calls command rpc to get command messages
   rpc command(AgentID) returns (stream Action) {}
   // agent calls job_status rpc to provide status of a job
@@ -49,13 +51,12 @@ message RegRes {
 }
 
 // status contains details about resources and workers managed by an agent
-message Status {
+message ResourceStats {
   string id = 1; // agent's id
   repeated GpuStat gpu_stats = 2;
   repeated VramStat vram_stats = 3;
   CpuStats cpu_stats = 4;
   DramStats dram_stats = 5;
-  WorkerStatus worker_status = 6;
 }
 
 // job status contains the status of a job

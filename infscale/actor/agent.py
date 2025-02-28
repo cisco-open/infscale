@@ -143,15 +143,15 @@ class Agent:
         self._cleanup(job_id, job_status)
 
     async def update_worker_status(self, message: WorkerStatusMessage) -> None:
-        """Send message with updated worker status."""
-        worker_status = {
-            "job_id": message.job_id,
-            "status": message.status.name.lower(),
-            "worker_id": message.id,
-        }
+        """Report worker status to controller."""
+        job_id, status, wrk_id = (
+            message.job_id,
+            message.status.name.lower(),
+            message.id,
+        )
 
-        req = pb2.Status(worker_status=worker_status)
-        await self.stub.update(req)
+        req = pb2.WorkerStatus(job_id=job_id, status=status, worker_id=wrk_id)
+        await self.stub.update_wrk_status(req)
 
     def _cleanup(self, job_id: str, job_status: JobStatus) -> None:
         """Remove job and worker related data b job id."""
@@ -395,19 +395,19 @@ class Agent:
         self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs)
 
     async def report(self):
-        """Report status about resources and workers to controller."""
+        """Report resource stats to controller."""
         while True:
             gpu_stats, vram_stats = await self.gpu_monitor.metrics()
             gpu_msg_list = GpuMonitor.stats_to_proto(gpu_stats)
             vram_msg_list = GpuMonitor.stats_to_proto(vram_stats)
 
-            status_msg = pb2.Status()
+            status_msg = pb2.ResourceStats()
             status_msg.id = self.id
             status_msg.gpu_stats.extend(gpu_msg_list)
             status_msg.vram_stats.extend(vram_msg_list)
             # TODO: set cpu stat and ram stat into status message
 
-            self.stub.update(status_msg)
+            self.stub.update_resources(status_msg)
 
     def monitor(self):
         """Monitor workers and resources."""

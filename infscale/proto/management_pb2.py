@@ -41,7 +41,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10management.proto\x12\nmanagement\x1a\x1bgoogle/protobuf/empty.proto\"\x15\n\x07\x41gentID\x12\n\n\x02id\x18\x01 \x01(\t\"Z\n\x06\x41\x63tion\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x13\n\x06job_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x15\n\x08manifest\x18\x03 \x01(\x0cH\x01\x88\x01\x01\x42\t\n\x07_job_idB\x0b\n\t_manifest\">\n\x0bJobSetupReq\x12\r\n\x05ports\x18\x01 \x03(\x05\x12\x0e\n\x06job_id\x18\x02 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x03 \x01(\t\" \n\x06RegReq\x12\n\n\x02id\x18\x01 \x01(\t\x12\n\n\x02ip\x18\x02 \x01(\t\"(\n\x06RegRes\x12\x0e\n\x06status\x18\x01 \x01(\x08\x12\x0e\n\x06reason\x18\x02 \x01(\t\"\xeb\x01\n\x06Status\x12\n\n\x02id\x18\x01 \x01(\t\x12&\n\tgpu_stats\x18\x02 \x03(\x0b\x32\x13.management.GpuStat\x12(\n\nvram_stats\x18\x03 \x03(\x0b\x32\x14.management.VramStat\x12\'\n\tcpu_stats\x18\x04 \x01(\x0b\x32\x14.management.CpuStats\x12)\n\ndram_stats\x18\x05 \x01(\x0b\x32\x15.management.DramStats\x12/\n\rworker_status\x18\x06 \x01(\x0b\x32\x18.management.WorkerStatus\"=\n\tJobStatus\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\"g\n\x07GpuStat\x12\x0f\n\x02id\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x11\n\x04used\x18\x03 \x01(\x08H\x01\x88\x01\x01\x12\x11\n\x04util\x18\x04 \x01(\x05H\x02\x88\x01\x01\x42\x05\n\x03_idB\x07\n\x05_usedB\x07\n\x05_util\"3\n\x08VramStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04used\x18\x02 \x01(\x03\x12\r\n\x05total\x18\x03 \x01(\x03\"u\n\x08\x43puStats\x12\x12\n\ntotal_cpus\x18\x01 \x01(\x05\x12\x15\n\rmax_frequency\x18\x02 \x01(\x02\x12\x19\n\x11\x63urrent_frequency\x18\x03 \x01(\x02\x12\x15\n\rmin_frequency\x18\x04 \x01(\x02\x12\x0c\n\x04load\x18\x05 \x01(\x02\"(\n\tDramStats\x12\x0c\n\x04used\x18\x01 \x01(\x03\x12\r\n\x05total\x18\x02 \x01(\x03\"\x97\x01\n\x0cWorkerStatus\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\x12\x0e\n\x06on_gpu\x18\x04 \x01(\x08\x12\x0b\n\x03\x63id\x18\x05 \x01(\x05\x12\x0b\n\x03mid\x18\x06 \x01(\x05\x12*\n\nstatistics\x18\x07 \x01(\x0b\x32\x16.management.Statistics\"4\n\nStatistics\x12\x12\n\nthroughput\x18\x01 \x01(\x05\x12\x12\n\nlatency_ms\x18\x02 \x01(\x05\x32\xf2\x02\n\x0fManagementRoute\x12>\n\tjob_setup\x12\x17.management.JobSetupReq\x1a\x16.google.protobuf.Empty\"\x00\x12\x34\n\x08register\x12\x12.management.RegReq\x1a\x12.management.RegRes\"\x00\x12:\n\theartbeat\x12\x13.management.AgentID\x1a\x16.google.protobuf.Empty\"\x00\x12\x36\n\x06update\x12\x12.management.Status\x1a\x16.google.protobuf.Empty\"\x00\x12\x36\n\x07\x63ommand\x12\x13.management.AgentID\x1a\x12.management.Action\"\x00\x30\x01\x12=\n\njob_status\x12\x15.management.JobStatus\x1a\x16.google.protobuf.Empty\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10management.proto\x12\nmanagement\x1a\x1bgoogle/protobuf/empty.proto\"\x15\n\x07\x41gentID\x12\n\n\x02id\x18\x01 \x01(\t\"Z\n\x06\x41\x63tion\x12\x0c\n\x04type\x18\x01 \x01(\t\x12\x13\n\x06job_id\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x15\n\x08manifest\x18\x03 \x01(\x0cH\x01\x88\x01\x01\x42\t\n\x07_job_idB\x0b\n\t_manifest\">\n\x0bJobSetupReq\x12\r\n\x05ports\x18\x01 \x03(\x05\x12\x0e\n\x06job_id\x18\x02 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x03 \x01(\t\" \n\x06RegReq\x12\n\n\x02id\x18\x01 \x01(\t\x12\n\n\x02ip\x18\x02 \x01(\t\"(\n\x06RegRes\x12\x0e\n\x06status\x18\x01 \x01(\x08\x12\x0e\n\x06reason\x18\x02 \x01(\t\"\xc1\x01\n\rResourceStats\x12\n\n\x02id\x18\x01 \x01(\t\x12&\n\tgpu_stats\x18\x02 \x03(\x0b\x32\x13.management.GpuStat\x12(\n\nvram_stats\x18\x03 \x03(\x0b\x32\x14.management.VramStat\x12\'\n\tcpu_stats\x18\x04 \x01(\x0b\x32\x14.management.CpuStats\x12)\n\ndram_stats\x18\x05 \x01(\x0b\x32\x15.management.DramStats\"=\n\tJobStatus\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x10\n\x08\x61gent_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\"g\n\x07GpuStat\x12\x0f\n\x02id\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\x11\n\x04used\x18\x03 \x01(\x08H\x01\x88\x01\x01\x12\x11\n\x04util\x18\x04 \x01(\x05H\x02\x88\x01\x01\x42\x05\n\x03_idB\x07\n\x05_usedB\x07\n\x05_util\"3\n\x08VramStat\x12\n\n\x02id\x18\x01 \x01(\x05\x12\x0c\n\x04used\x18\x02 \x01(\x03\x12\r\n\x05total\x18\x03 \x01(\x03\"u\n\x08\x43puStats\x12\x12\n\ntotal_cpus\x18\x01 \x01(\x05\x12\x15\n\rmax_frequency\x18\x02 \x01(\x02\x12\x19\n\x11\x63urrent_frequency\x18\x03 \x01(\x02\x12\x15\n\rmin_frequency\x18\x04 \x01(\x02\x12\x0c\n\x04load\x18\x05 \x01(\x02\"(\n\tDramStats\x12\x0c\n\x04used\x18\x01 \x01(\x03\x12\r\n\x05total\x18\x02 \x01(\x03\"\x97\x01\n\x0cWorkerStatus\x12\x0e\n\x06job_id\x18\x01 \x01(\t\x12\x11\n\tworker_id\x18\x02 \x01(\t\x12\x0e\n\x06status\x18\x03 \x01(\t\x12\x0e\n\x06on_gpu\x18\x04 \x01(\x08\x12\x0b\n\x03\x63id\x18\x05 \x01(\x05\x12\x0b\n\x03mid\x18\x06 \x01(\x05\x12*\n\nstatistics\x18\x07 \x01(\x0b\x32\x16.management.Statistics\"4\n\nStatistics\x12\x12\n\nthroughput\x18\x01 \x01(\x05\x12\x12\n\nlatency_ms\x18\x02 \x01(\x05\x32\xcc\x03\n\x0fManagementRoute\x12>\n\tjob_setup\x12\x17.management.JobSetupReq\x1a\x16.google.protobuf.Empty\"\x00\x12\x34\n\x08register\x12\x12.management.RegReq\x1a\x12.management.RegRes\"\x00\x12:\n\theartbeat\x12\x13.management.AgentID\x1a\x16.google.protobuf.Empty\"\x00\x12G\n\x11update_wrk_status\x12\x18.management.WorkerStatus\x1a\x16.google.protobuf.Empty\"\x00\x12G\n\x10update_resources\x12\x19.management.ResourceStats\x1a\x16.google.protobuf.Empty\"\x00\x12\x36\n\x07\x63ommand\x12\x13.management.AgentID\x1a\x12.management.Action\"\x00\x30\x01\x12=\n\njob_status\x12\x15.management.JobStatus\x1a\x16.google.protobuf.Empty\"\x00\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -58,22 +58,22 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_REGREQ']._serialized_end=272
   _globals['_REGRES']._serialized_start=274
   _globals['_REGRES']._serialized_end=314
-  _globals['_STATUS']._serialized_start=317
-  _globals['_STATUS']._serialized_end=552
-  _globals['_JOBSTATUS']._serialized_start=554
-  _globals['_JOBSTATUS']._serialized_end=615
-  _globals['_GPUSTAT']._serialized_start=617
-  _globals['_GPUSTAT']._serialized_end=720
-  _globals['_VRAMSTAT']._serialized_start=722
-  _globals['_VRAMSTAT']._serialized_end=773
-  _globals['_CPUSTATS']._serialized_start=775
-  _globals['_CPUSTATS']._serialized_end=892
-  _globals['_DRAMSTATS']._serialized_start=894
-  _globals['_DRAMSTATS']._serialized_end=934
-  _globals['_WORKERSTATUS']._serialized_start=937
-  _globals['_WORKERSTATUS']._serialized_end=1088
-  _globals['_STATISTICS']._serialized_start=1090
-  _globals['_STATISTICS']._serialized_end=1142
-  _globals['_MANAGEMENTROUTE']._serialized_start=1145
-  _globals['_MANAGEMENTROUTE']._serialized_end=1515
+  _globals['_RESOURCESTATS']._serialized_start=317
+  _globals['_RESOURCESTATS']._serialized_end=510
+  _globals['_JOBSTATUS']._serialized_start=512
+  _globals['_JOBSTATUS']._serialized_end=573
+  _globals['_GPUSTAT']._serialized_start=575
+  _globals['_GPUSTAT']._serialized_end=678
+  _globals['_VRAMSTAT']._serialized_start=680
+  _globals['_VRAMSTAT']._serialized_end=731
+  _globals['_CPUSTATS']._serialized_start=733
+  _globals['_CPUSTATS']._serialized_end=850
+  _globals['_DRAMSTATS']._serialized_start=852
+  _globals['_DRAMSTATS']._serialized_end=892
+  _globals['_WORKERSTATUS']._serialized_start=895
+  _globals['_WORKERSTATUS']._serialized_end=1046
+  _globals['_STATISTICS']._serialized_start=1048
+  _globals['_STATISTICS']._serialized_end=1100
+  _globals['_MANAGEMENTROUTE']._serialized_start=1103
+  _globals['_MANAGEMENTROUTE']._serialized_end=1563
 # @@protoc_insertion_point(module_scope)

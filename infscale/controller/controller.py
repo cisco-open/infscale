@@ -33,8 +33,7 @@ from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
                                 GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
-from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
-                                            ReqType)
+from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.deployment.policy import DeploymentPolicyEnum
 from infscale.controller.job_context import AgentMetaData, JobContext
@@ -122,15 +121,13 @@ class Controller:
 
         self.agent_contexts[id].keep_alive()
 
-    async def handle_status(self, request: pb2.Status) -> None:
-        """Handle worker status message."""
+    async def handle_resources(self, request: pb2.ResourceStats) -> None:
+        """Handle agent resource stats."""
         gpu_stats = GpuMonitor.proto_to_stats(request.gpu_stats)
         logger.debug(f"gpu_stats = {gpu_stats}")
 
         vram_stats = GpuMonitor.proto_to_stats(request.vram_stats)
         logger.debug(f"vram_stats = {vram_stats}")
-
-        await self.handle_wrk_status(request.worker_status)
 
         # TODO: use gpu and vram status to schedule deployment
 
@@ -141,15 +138,12 @@ class Controller:
         job_ctx = self.job_contexts.get(job_id)
         job_ctx.handle_job_status(status, agent_id)
 
-    async def handle_wrk_status(self, worker_status: pb2.WorkerStatus) -> None:
-        """Set worker status within job state."""
-        if not worker_status.status:
-            return
-
+    async def handle_wrk_status(self, req: pb2.WorkerStatus) -> None:
+        """Handle worker status."""
         job_id, status, wrk_id = (
-            worker_status.job_id,
-            worker_status.status,
-            worker_status.worker_id,
+            req.job_id,
+            req.status,
+            req.worker_id,
         )
 
         try:
@@ -284,11 +278,19 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
 
         return empty_pb2.Empty()
 
-    async def update(
-        self, request: pb2.Status, unused_context: ServicerContext
+    async def update_wrk_status(
+        self, request: pb2.WorkerStatus, unused_context: ServicerContext
     ) -> None:
-        """Handle update message for worker status."""
-        await self.ctrl.handle_status(request)
+        """Handle message with worker status."""
+        await self.ctrl.handle_wrk_status(request)
+
+        return empty_pb2.Empty()
+
+    async def update_resources(
+        self, request: pb2.ResourceStats, unused_context: ServicerContext
+    ) -> None:
+        """Handle message with agent resource stats."""
+        await self.ctrl.handle_resources(request)
 
         return empty_pb2.Empty()
 

@@ -68,9 +68,14 @@ class ManagementRouteStub(object):
                 request_serializer=management__pb2.AgentID.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
-        self.update = channel.unary_unary(
-                '/management.ManagementRoute/update',
-                request_serializer=management__pb2.Status.SerializeToString,
+        self.update_wrk_status = channel.unary_unary(
+                '/management.ManagementRoute/update_wrk_status',
+                request_serializer=management__pb2.WorkerStatus.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
+        self.update_resources = channel.unary_unary(
+                '/management.ManagementRoute/update_resources',
+                request_serializer=management__pb2.ResourceStats.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
         self.command = channel.unary_stream(
@@ -111,8 +116,15 @@ class ManagementRouteServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def update(self, request, context):
-        """agent calls update rpc to provide status of workers
+    def update_wrk_status(self, request, context):
+        """agent calls update_wrk_status rpc to provide status of workers
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def update_resources(self, request, context):
+        """agent calls update_resources rpc to provide resource stats
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -150,9 +162,14 @@ def add_ManagementRouteServicer_to_server(servicer, server):
                     request_deserializer=management__pb2.AgentID.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
-            'update': grpc.unary_unary_rpc_method_handler(
-                    servicer.update,
-                    request_deserializer=management__pb2.Status.FromString,
+            'update_wrk_status': grpc.unary_unary_rpc_method_handler(
+                    servicer.update_wrk_status,
+                    request_deserializer=management__pb2.WorkerStatus.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'update_resources': grpc.unary_unary_rpc_method_handler(
+                    servicer.update_resources,
+                    request_deserializer=management__pb2.ResourceStats.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
             'command': grpc.unary_stream_rpc_method_handler(
@@ -260,7 +277,7 @@ class ManagementRoute(object):
             _registered_method=True)
 
     @staticmethod
-    def update(request,
+    def update_wrk_status(request,
             target,
             options=(),
             channel_credentials=None,
@@ -273,8 +290,35 @@ class ManagementRoute(object):
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/management.ManagementRoute/update',
-            management__pb2.Status.SerializeToString,
+            '/management.ManagementRoute/update_wrk_status',
+            management__pb2.WorkerStatus.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def update_resources(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/management.ManagementRoute/update_resources',
+            management__pb2.ResourceStats.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
