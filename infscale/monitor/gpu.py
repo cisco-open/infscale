@@ -25,15 +25,9 @@ from typing import Union
 from google.protobuf.json_format import MessageToJson, Parse
 from infscale import get_logger
 from infscale.proto import management_pb2 as pb2
-from pynvml import (
-    nvmlDeviceGetComputeRunningProcesses,
-    nvmlDeviceGetCount,
-    nvmlDeviceGetHandleByIndex,
-    nvmlDeviceGetMemoryInfo,
-    nvmlDeviceGetName,
-    nvmlDeviceGetUtilizationRates,
-    nvmlInit,
-)
+from pynvml import (nvmlDeviceGetComputeRunningProcesses, nvmlDeviceGetCount,
+                    nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo,
+                    nvmlDeviceGetName, nvmlDeviceGetUtilizationRates, nvmlInit)
 
 DEFAULT_INTERVAL = 10  # 10 seconds
 
@@ -68,8 +62,16 @@ class VramStat:
     """VRAM statistics."""
 
     id: int
-    total: int
     used: int
+    total: int
+
+    def __post_init__(self):
+        """Do post init manipulation."""
+        if type(self.used) is str:
+            self.used = int(self.used)
+
+        if type(self.total) is str:
+            self.total = int(self.total)
 
 
 class GpuMonitor:
@@ -96,6 +98,7 @@ class GpuMonitor:
         self.mems = list()
 
     def get_metrics(self) -> tuple[list[GpuStat], list[VramStat]]:
+        """Return gpu and vram statistics."""
         if not self.gpu_available:
             logger.info("no GPU available, skipping metrics collection.")
             return [], []
@@ -176,7 +179,7 @@ class GpuMonitor:
 
     @staticmethod
     def stats_to_proto(
-        stats: Union[list[GpuStat], list[VramStat]]
+        stats: Union[list[GpuStat], list[VramStat]],
     ) -> Union[None, list[pb2.GpuStat], list[pb2.VramStat]]:
         """Convert GpuStats or VramStats to a list of protobuf messages."""
         if not isinstance(stats, list) or len(stats) == 0:
@@ -199,7 +202,7 @@ class GpuMonitor:
 
     @staticmethod
     def proto_to_stats(
-        proto: Union[list[pb2.GpuStat], list[pb2.VramStat]]
+        proto: Union[list[pb2.GpuStat], list[pb2.VramStat]],
     ) -> Union[None, list[GpuStat], list[VramStat]]:
         """Convert a list of protobuf messages to GpuStats or VramStats."""
         global logger

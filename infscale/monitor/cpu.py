@@ -45,6 +45,14 @@ class DRAMStats:
     used: int
     total: int
 
+    def __post_init__(self):
+        """Do post init manipulation."""
+        if type(self.used) is str:
+            self.used = int(self.used)
+
+        if type(self.total) is str:
+            self.total = int(self.total)
+
 
 class CpuMonitor:
     """CpuMonitor class."""
@@ -58,7 +66,7 @@ class CpuMonitor:
         self.dram_stats = None
 
     def get_metrics(self) -> tuple[CPUStats, DRAMStats]:
-        """Start to monitor CPU statistics"""
+        """Start to monitor CPU statistics."""
         # total number of CPUs (logical)
         total_cpus = psutil.cpu_count(logical=True)
         cpu_percent = psutil.cpu_percent(interval=1)
@@ -100,7 +108,7 @@ class CpuMonitor:
 
     @staticmethod
     def stats_to_proto(
-        stats: Union[CPUStats, DRAMStats]
+        stats: Union[CPUStats, DRAMStats],
     ) -> Union[pb2.CpuStats, pb2.DramStats]:
         """Convert CPUStats or DRAMStats to a protobuf messages."""
         if isinstance(stats, CPUStats):
@@ -116,7 +124,7 @@ class CpuMonitor:
 
     @staticmethod
     def proto_to_stats(
-        proto: Union[pb2.CpuStats, pb2.DramStats]
+        proto: Union[pb2.CpuStats, pb2.DramStats],
     ) -> Union[CPUStats, DRAMStats]:
         """Convert a list of protobuf messages to CPUStats or DRAMStats."""
         if isinstance(proto, pb2.CpuStats):

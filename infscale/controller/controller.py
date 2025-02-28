@@ -33,7 +33,8 @@ from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
                                 GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
-from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
+from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
+                                            ReqType)
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.deployment.policy import DeploymentPolicyEnum
 from infscale.controller.job_context import AgentMetaData, JobContext
@@ -137,7 +138,9 @@ class Controller:
         logger.debug(f"dram_stats = {dram_stats}")
 
         agent_context = self.agent_contexts.get(request.id)
-        agent_context.set_resources(gpu_stats, vram_stats, cpu_stats, dram_stats)
+        agent_context.update_resource_statistics(
+            gpu_stats, vram_stats, cpu_stats, dram_stats
+        )
 
     def handle_job_status(self, request: pb2.JobStatus) -> None:
         """Handle job status message."""

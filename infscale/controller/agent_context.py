@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Union
 
 from infscale import get_logger
@@ -38,14 +37,70 @@ WMA_WEIGHT = 0.9
 logger = None
 
 
-@dataclass
 class AgentResources:
     """Class for keeping agent resources."""
 
-    gpu_stats: list[GpuStat]
-    vram_stats: list[VramStat]
-    cpu_stats: CPUStats
-    dram_stats: DRAMStats
+    def __init__(
+        self,
+        gpu_stats: list[GpuStat] = None,
+        vram_stats: list[VramStat] = None,
+        cpu_stats: CPUStats = None,
+        dram_stats: DRAMStats = None,
+    ):
+        """Initialize AgentResources instance."""
+        self.gpu_stats: list[GpuStat] = gpu_stats
+        self.vram_stats: list[VramStat] = vram_stats
+        self.cpu_stats: CPUStats = cpu_stats
+        self.dram_stats: DRAMStats = dram_stats
+
+    def update_gpu_wma(self, gpu_stats: list[GpuStat]) -> None:
+        """Update wma for gpu stats."""
+        if self.gpu_stats is None:
+            self.gpu_stats = gpu_stats
+            return
+
+        for i, gpu_stat in enumerate(gpu_stats):
+            util = self._wma(self.gpu_stats[i].util, gpu_stat.util)
+            self.gpu_stats[i].util = util
+
+    def update_vram_wma(self, vram_stats: list[VramStat]) -> None:
+        """Update wma for vram stats."""
+        if self.vram_stats is None:
+            self.vram_stats = vram_stats
+            return
+
+        for i, vram_stat in enumerate(vram_stats):
+            used = self._wma(self.vram_stats[i].used, vram_stat.used)
+            total = self._wma(self.vram_stats[i].total, vram_stat.total)
+            self.vram_stats[i].used = used
+            self.vram_stats[i].total = total
+
+    def update_cpu_wma(self, cpu_stats: CPUStats) -> None:
+        """Update wma for cpu stats."""
+        if self.cpu_stats is None:
+            self.cpu_stats = cpu_stats
+            return
+
+        load = self._wma(self.cpu_stats.load, cpu_stats.load)
+        freq = self._wma(self.cpu_stats.current_frequency, cpu_stats.current_frequency)
+        self.cpu_stats.load = load
+        self.cpu_stats.current_frequency = freq
+
+    def update_dram_wma(self, dram_stats: DRAMStats) -> None:
+        """Update wma for dram stats."""
+        if self.dram_stats is None:
+            self.dram_stats = dram_stats
+            return
+
+        used = self._wma(self.dram_stats.used, dram_stats.used)
+        total = self._wma(self.dram_stats.total, dram_stats.total)
+        self.dram_stats.used = used
+        self.dram_stats.total = total
+
+    def _wma(self, curr_val: float, new_val: float) -> float:
+        """Compuate weighted moving average."""
+        wma = (1 - WMA_WEIGHT) * curr_val + WMA_WEIGHT * new_val
+        return wma
 
 
 class AgentContext:
@@ -66,7 +121,7 @@ class AgentContext:
         self.alive: bool = False
         self.timer: Timer = None
 
-        self.resources: AgentResources = None
+        self.resources = AgentResources()
 
     def get_grpc_ctx(self) -> Union[ServicerContext, None]:
         """Return grpc context (i.e., servicer context)."""
@@ -87,82 +142,18 @@ class AgentContext:
         """
         self.grpc_ctx_event.set()
 
-    def set_resources(
+    def update_resource_statistics(
         self,
         gpu_stats: list[GpuStat],
         vram_stats: list[VramStat],
         cpu_stats: CPUStats,
         dram_stats: DRAMStats,
     ) -> None:
-        curr_res = self.resources
-
-        wma_gpu, wma_vram, wma_cpu, wma_dram = self._compute_wma_resources(
-            curr_res, gpu_stats, vram_stats, cpu_stats, dram_stats
-        )
-
-        resources = AgentResources(wma_gpu, wma_vram, wma_cpu, wma_dram)
-
-        self.resources = resources
-
-    def _compute_wma_resources(
-        self,
-        curr_res: AgentResources,
-        gpu_stats: list[GpuStat],
-        vram_stats: list[VramStat],
-        cpu_stats: CPUStats,
-        dram_stats: DRAMStats,
-    ) -> tuple[list[GpuStat], list[DRAMStats], CPUStats, DRAMStats]:
-        """Compute resources using weighted moving average."""
-
-        if curr_res is None:
-            # first set of resources, return those
-            return gpu_stats, vram_stats, cpu_stats, dram_stats
-
-        gpu_wma = [
-            self._compute_wma(gpu_stat, curr_res.gpu_stats[i])
-            for i, gpu_stat in enumerate(gpu_stats)
-        ]
-        vram_wma = [
-            self._compute_wma(vram_stat, curr_res.vram_stats[i])
-            for i, vram_stat in enumerate(vram_stats)
-        ]
-        cpu_wma = self._compute_wma(cpu_stats, curr_res.cpu_stats)
-        dram_wma = self._compute_wma(dram_stats, curr_res.dram_stats)
-
-        return gpu_wma, vram_wma, cpu_wma, dram_wma
-
-    def _compute_wma(
-        self,
-        new_stat: Union[GpuStat, VramStat, CPUStats, DRAMStats],
-        old_stat: Union[GpuStat, VramStat, CPUStats, DRAMStats, None],
-    ) -> Union[GpuStat, VramStat]:
-        """Compute WMA for numeric values."""
-        if old_stat is None:
-            return new_stat
-
-        match new_stat:
-            case VramStat():
-                new_stat.used = self._wma(new_stat.used, old_stat.used)
-
-            case GpuStat():
-                new_stat.util = self._wma(new_stat.util, old_stat.util)
-
-            case CPUStats():
-                new_stat.load = self._wma(new_stat.load, old_stat.load)
-                new_stat.current_frequency = self._wma(
-                    new_stat.current_frequency, old_stat.current_frequency
-                )
-
-            case DRAMStats():
-                new_stat.used = self._wma(new_stat.used, old_stat.used)
-
-        return new_stat
-
-    def _wma(self, curr_val: float, new_val: float) -> float:
-        """Return WMA between old and current value."""
-        wma = (1 - WMA_WEIGHT) * float(curr_val) + (WMA_WEIGHT * float(new_val))
-
-        return wma
+        """Update statistis on resources."""
+        self.resources.update_gpu_wma(gpu_stats)
+        self.resources.update_vram_wma(vram_stats)
+        self.resources.update_cpu_wma(cpu_stats)
+        self.resources.update_dram_wma(dram_stats)
 
     def keep_alive(self):
         """Set agent's status to alive."""
