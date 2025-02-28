@@ -17,7 +17,7 @@
 import random
 from infscale.config import JobConfig
 from infscale.controller.deployment.policy import DeploymentPolicy
-from infscale.controller.job_context import AgentMetaData
+from infscale.controller.job_context import AgentDeviceMap, AgentMetaData
 
 
 class RandomDeploymentPolicy(DeploymentPolicy):
@@ -27,8 +27,11 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         super().__init__()
 
     def split(
-        self, agent_data: list[AgentMetaData], job_config: JobConfig
-    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
+        self,
+        agent_data: list[AgentMetaData],
+        job_config: JobConfig,
+        agent_device_map: dict[str, AgentDeviceMap],
+    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
         """
         Split the job config using random deployment policy
         and update config and worker distribution for each agent.
@@ -42,9 +45,14 @@ class RandomDeploymentPolicy(DeploymentPolicy):
 
         Return updated config and worker distribution for each agent
         """
-
         # dictionary to hold the workers for each agent_id
-        distribution = self.get_curr_distribution(agent_data)
+        used_agent_data = [
+            agent for agent in agent_data if agent.id in agent_device_map
+        ]
+
+        dev_type = "gpu"
+
+        distribution = self.get_curr_distribution(used_agent_data)
 
         workers = self.get_workers(distribution, job_config.workers)
 
@@ -54,11 +62,19 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         # distribute the remaining workers randomly
         while workers:
             data = random.choice(agent_data)  # choose an agent randomly
+
+            # if the current agent doesn't have any resources, move to the next one
+            if distribution.keys() and not self._has_resources(
+                data.id, distribution, agent_device_map
+            ):
+                continue
+
             worker_id = workers.pop().id
+            device = self._get_device(dev_type, data.id, agent_device_map)
 
             if data.id in distribution:
-                distribution[data.id].add(worker_id)
+                distribution[data.id].add((worker_id, device))
             else:
-                distribution[data.id] = {worker_id}
+                distribution[data.id] = {(worker_id, device)}
 
         return self._get_agent_updated_cfg(distribution, job_config), distribution

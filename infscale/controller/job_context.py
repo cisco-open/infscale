@@ -395,12 +395,13 @@ class JobContext:
 
         agent_resources = self._get_agent_resources_map(agent_ids)
 
-        # TODO: pass agent_device_map to split method.
         agent_device_map = self._get_agent_devices_map(
             agent_resources, len(config.workers)
         )
 
-        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(agent_data, config)
+        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(
+            agent_data, config, agent_device_map
+        )
 
         self._update_agent_data(agent_cfg, wrk_distribution)
 

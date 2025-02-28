@@ -14,9 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerData
 from infscale.controller.deployment.policy import DeploymentPolicy
-from infscale.controller.job_context import AgentMetaData
+from infscale.controller.job_context import AgentDeviceMap, AgentMetaData
 
 
 class EvenDeploymentPolicy(DeploymentPolicy):
@@ -26,8 +26,11 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         super().__init__()
 
     def split(
-        self, agent_data: list[AgentMetaData], job_config: JobConfig
-    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
+        self,
+        agent_info: list[AgentMetaData],
+        job_config: JobConfig,
+        agent_device_map: dict[str, AgentDeviceMap],
+    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
         """
         Split the job config using even deployment policy
         and update config and worker distribution for each agent.
@@ -38,33 +41,80 @@ class EvenDeploymentPolicy(DeploymentPolicy):
 
         Return updated config and worker distribution for each agent
         """
+
+        # get a list of agent info
+        used_agent_data = [
+            agent for agent in agent_info if agent.id in agent_device_map
+        ]
+
         # dictionary to hold the workers for each agent_id
-        distribution = self.get_curr_distribution(agent_data)
+        distribution = self.get_curr_distribution(used_agent_data)
 
         workers = self.get_workers(distribution, job_config.workers)
 
         # check if the distribution has changed
         self.update_agents_distr(distribution, job_config.workers)
 
-        num_agents = len(agent_data)
-
-        # assign workers to agents evenly by splitting the list of workers
-        workers_per_agent = len(workers) // num_agents
-        remaining_workers = len(workers) % num_agents
-
-        start_index = 0
-        for i, data in enumerate(agent_data):
-            # for the first 'remaining_workers' agents, assign one extra worker
-            num_workers_for_agent = workers_per_agent + (
-                1 if i < remaining_workers else 0
-            )
-            for worker in workers[start_index : start_index + num_workers_for_agent]:
-                if data.id in distribution:
-                    distribution[data.id].add(worker.id)
-                else:
-                    distribution[data.id] = {worker.id}
-
-            # move the start index to the next batch of workers
-            start_index += num_workers_for_agent
+        self._update_distribution(
+            distribution,
+            workers,
+            used_agent_data,
+            agent_device_map,
+            len(workers),
+        )
 
         return self._get_agent_updated_cfg(distribution, job_config), distribution
+
+    def _update_distribution(
+        self,
+        distribution: dict[str, set[tuple[str, str]]],
+        workers: list[WorkerData],
+        agent_data: list[AgentMetaData],
+        agent_device_map: dict[str, AgentDeviceMap],
+        remaining_workers: int,
+        curr_idx: int = 0,
+        dev_type: str = "gpu",
+    ):
+        # if there aren't any workers to split, exit recursion
+        if remaining_workers <= 0:
+            return
+
+        # calculate next workers batch index
+        idx = curr_idx
+
+        for data in agent_data:
+            # if the current agent doesn't have any resources, move to the next one
+            if distribution.keys() and not self._has_resources(
+                data.id, distribution, agent_device_map
+            ):
+                continue
+
+            # assign worker id and device to the current agent
+            for worker in workers[idx : idx + 1]:
+                device = self._get_device(dev_type, data.id, agent_device_map)
+
+                if data.id in distribution:
+                    distribution[data.id].add(
+                        (
+                            worker.id,
+                            device,
+                        )
+                    )
+                else:
+                    distribution[data.id] = {(worker.id, device)}
+
+            # calculate remaining workers
+            remaining_workers -= 1
+
+            # move the start index to the next batch of workers
+            idx += 1
+
+        # recurring call of this method to assign remaining workers
+        self._update_distribution(
+            distribution,
+            workers,
+            agent_data,
+            agent_device_map,
+            remaining_workers,
+            idx,
+        )
