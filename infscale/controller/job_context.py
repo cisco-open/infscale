@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 from enum import Enum
-from itertools import islice
 from typing import TYPE_CHECKING, Iterator
 
 from fastapi import HTTPException, status
@@ -28,6 +27,8 @@ from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
+from infscale.controller.exceptions import (InfScaleException,
+                                            InvalidJobStateAction)
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
@@ -41,6 +42,7 @@ class AgentMetaData:
     def __init__(
         self,
         id: str = None,
+        ip: str = None,
         job_status: JobStatus = None,
         config: JobConfig = None,
         new_config: JobConfig = None,
@@ -49,6 +51,7 @@ class AgentMetaData:
     ):
         """Initialize AgentMedataData instance."""
         self.id = id
+        self.ip = ip
         self.job_status = job_status
         self.config = config
         self.new_config = new_config
@@ -58,18 +61,6 @@ class AgentMetaData:
         self.ready_to_config = False
         self.wids_to_deploy: list[str] = []
         self.existing_workers: set[str] = set()
-
-
-class InvalidJobStateAction(Exception):
-    """Custom exception for invalid actions in a job state."""
-
-    def __init__(self, job_id, action, state):
-        """Initialize InvalidJobStateAction instance."""
-        self.job_id = job_id
-        self.action = action
-        self.state = state
-
-        super().__init__(f"{job_id}: {action} disallowed in {state}.")
 
 
 class JobStateEnum(Enum):
@@ -144,7 +135,11 @@ class ReadyState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        await self.context._JobContext__start()
+        try:
+            await self.context._JobContext__start()
+        except InfScaleException as e:
+            self.context.set_state(JobStateEnum.FAILED)
+            raise e
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -209,7 +204,11 @@ class StoppedState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        await self.context._JobContext__start()
+        try:
+            await self.context._JobContext__start()
+        except InfScaleException as e:
+            self.context.set_state(JobStateEnum.FAILED)
+            raise e
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -257,7 +256,11 @@ class CompleteState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        await self.context._JobContext__start()
+        try:
+            await self.context._JobContext__start()
+        except InfScaleException as e:
+            self.context.set_state(JobStateEnum.FAILED)
+            raise e
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -276,7 +279,11 @@ class FailedState(BaseJobState):
 
     async def start(self):
         """Transition to STARTING state."""
-        await self.context._JobContext__start()
+        try:
+            await self.context._JobContext__start()
+        except InfScaleException as e:
+            self.context.set_state(JobStateEnum.FAILED)
+            raise e
 
         self.context.set_state(JobStateEnum.STARTING)
 
@@ -300,11 +307,6 @@ class JobContext:
 
         global logger
         logger = get_logger()
-
-    def set_agent_ids(self, agent_ids: list[str]) -> None:
-        """Set a list of agents."""
-        for id in agent_ids:
-            self.agent_info[id] = AgentMetaData(id=id)
 
     def get_agent_data(self, agent_id: str) -> AgentMetaData:
         """Return agent metadata."""
@@ -547,18 +549,21 @@ class JobContext:
         }
         return state_mapping[state_enum]
 
-    def _get_ctrl_agent_ids(self, num_of_workers: int) -> list[str]:
-        """Return available agent id from controller."""
-        available_agents = list(self.ctrl.agent_contexts.keys())
+    def _manage_agent_metadata(self, agent_ids, agent_ips: list[str]) -> None:
+        """Manage agent metadata by create/update/delete."""
+        # create or update AgentMetaData
+        for id, ip in zip(agent_ids, agent_ips):
+            if id not in self.agent_info:
+                self.agent_info[id] = AgentMetaData(id=id, ip=ip)
+            else:
+                self.agent_info[id].ip = ip
 
-        if len(available_agents) > num_of_workers:
-            agent_ids = list(islice(available_agents, num_of_workers))
-        else:
-            agent_ids = available_agents
+        s = set(agent_ids)
+        for id in list(self.agent_info.keys()):
+            if id in s:
+                continue
 
-        self._check_agent_ids(agent_ids)
-
-        return agent_ids
+            del self.agent_info[id]
 
     def _get_ctx_agent_ids(self) -> list[str]:
         """Return current agent ids."""
@@ -657,11 +662,13 @@ class JobContext:
         # DO NOT call this method in job_context instance or any other places.
         # Call it only in methods of a state instance
         # (e.g., ReadyState, CompleteState, etc).
-        num_of_workers = len(self.req.config.workers)
+        agent_ids = list(self.ctrl.agent_contexts.keys())
+        agent_ips = [ctx.ip for ctx in self.ctrl.agent_contexts.values()]
 
-        agent_ids = self._get_ctrl_agent_ids(num_of_workers)
+        self._check_agent_ids(agent_ids)
 
-        self.set_agent_ids(agent_ids)
+        self._manage_agent_metadata(agent_ids, agent_ips)
+
         self.process_cfg(agent_ids)
 
         tasks = []

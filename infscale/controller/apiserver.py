@@ -23,8 +23,9 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
 from infscale.constants import APISERVER_PORT
-from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel, ReqType,
-                                            Response)
+from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
+                                            ReqType, Response)
+from infscale.controller.exceptions import InfScaleException
 from uvicorn import Config, Server
 
 if TYPE_CHECKING:
@@ -67,6 +68,8 @@ async def manage_job(job_action: CommandActionModel):
         )
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=e.detail)
+    except InfScaleException as e:
+        return JSONResponse(status_code=400, content=str(e))
 
     res = "job started" if job_action.action == CommandAction.START else "job stopped"
 

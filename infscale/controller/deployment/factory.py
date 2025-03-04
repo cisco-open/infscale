@@ -14,10 +14,13 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""factory.py."""
+
 from infscale.controller.deployment.even import EvenDeploymentPolicy
 from infscale.controller.deployment.policy import (DeploymentPolicy,
                                                    DeploymentPolicyEnum)
 from infscale.controller.deployment.random import RandomDeploymentPolicy
+from infscale.controller.deployment.static import StaticDeploymentPolicy
 
 
 class DeploymentPolicyFactory:
@@ -30,6 +33,7 @@ class DeploymentPolicyFactory:
         policies = {
             DeploymentPolicyEnum.RANDOM: RandomDeploymentPolicy(),
             DeploymentPolicyEnum.EVEN: EvenDeploymentPolicy(),
+            DeploymentPolicyEnum.STATIC: StaticDeploymentPolicy(),
         }
 
         return policies[deployment_policy]

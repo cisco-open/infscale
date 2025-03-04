@@ -24,10 +24,15 @@ from infscale.controller.job_context import AgentMetaData
 
 
 class DeploymentPolicyEnum(Enum):
-    """Deployment policy enum."""
+    """Deployment policy enum.
+
+    STATIC: use job config as is assuming that the config has all the info for
+            deployment
+    """
 
     EVEN = "even"
     RANDOM = "random"
+    STATIC = "static"
 
 
 class DeploymentPolicy(ABC):
@@ -52,7 +57,7 @@ class DeploymentPolicy(ABC):
     ) -> list[WorkerData]:
         """Return a list of workers."""
         # flat worker ids from each agent
-        curr_worker_ids = [wid for wids in distribution.values() for wid in wids]
+        curr_worker_ids = {wid for wids in distribution.values() for wid in wids}
 
         # get new worker ids
         new_workers = [worker for worker in workers if worker.id not in curr_worker_ids]

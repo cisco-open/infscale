@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""start.py."""
+
 import asyncio
 
 import click
@@ -21,7 +23,8 @@ import requests
 import yaml
 from infscale.actor.agent import Agent
 from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
-                                CONTROLLER_PORT, DEFAULT_DEPLOYMENT_POLICY, LOCALHOST)
+                                CONTROLLER_PORT, DEFAULT_DEPLOYMENT_POLICY,
+                                LOCALHOST)
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
@@ -35,11 +38,17 @@ def start():
 @start.command()
 @click.option("--port", default=CONTROLLER_PORT, help="port number")
 @click.option("--apiport", default=APISERVER_PORT, help="port number for api server")
-@click.option("--policy", default=DEFAULT_DEPLOYMENT_POLICY, help="deployment policy")
+@click.option(
+    "--policy",
+    default=DEFAULT_DEPLOYMENT_POLICY,
+    help="deployment policy; options: even (default), random, static",
+)
 def controller(port: int, apiport: int, policy: str):
     """Run controller."""
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(ctrl.Controller(port=port, apiport=apiport, policy=policy).run())
+    loop.run_until_complete(
+        ctrl.Controller(port=port, apiport=apiport, policy=policy).run()
+    )
 
 
 @start.command()
