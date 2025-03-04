@@ -130,13 +130,13 @@ class Agent:
 
         self.job_mgr.set_status(job_id, job_status)
 
-        job_status = {
+        job_status_msg = {
             "agent_id": self.id,
             "job_id": job_id,
             "status": job_status.name.lower(),
         }
 
-        req = pb2.JobStatus(**job_status)
+        req = pb2.JobStatus(**job_status_msg)
         await self.stub.job_status(req)
 
         # do cleanup after all internal logic is completed
