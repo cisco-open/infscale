@@ -23,13 +23,17 @@ from enum import Enum
 from typing import TYPE_CHECKING, Iterator
 
 from fastapi import HTTPException, status
+
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
-from infscale.controller.exceptions import (InfScaleException, InsufficientResources,
-                                            InvalidJobStateAction)
+from infscale.exceptions import (
+    InfScaleException,
+    InsufficientResources,
+    InvalidJobStateAction,
+)
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
@@ -200,7 +204,9 @@ class StartingState(BaseJobState):
 
     def cond_running(self):
         """Handle the transition to running."""
-        all_agents_running = self.context._check_job_status_on_all_agents(JobStatus.RUNNING)
+        all_agents_running = self.context._check_job_status_on_all_agents(
+            JobStatus.RUNNING
+        )
 
         if all_agents_running:
             self.context.set_state(JobStateEnum.RUNNING)
@@ -226,7 +232,9 @@ class StoppingState(BaseJobState):
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        all_agents_stopped = self.context._check_job_status_on_all_agents(JobStatus.STOPPED)
+        all_agents_stopped = self.context._check_job_status_on_all_agents(
+            JobStatus.STOPPED
+        )
 
         if all_agents_stopped:
             self.context.cleanup()
@@ -247,7 +255,9 @@ class CompletingState(BaseJobState):
 
     def cond_complete(self):
         """Handle the transition to complete."""
-        all_agents_completed = self.context._check_job_status_on_all_agents(JobStatus.COMPLETED)
+        all_agents_completed = self.context._check_job_status_on_all_agents(
+            JobStatus.COMPLETED
+        )
 
         if all_agents_completed:
             self.context.cleanup()
@@ -264,7 +274,9 @@ class UpdatingState(BaseJobState):
 
     def cond_updated(self):
         """Handle the transition to running."""
-        all_agents_running = self.context._check_job_status_on_all_agents(JobStatus.UPDATED)
+        all_agents_running = self.context._check_job_status_on_all_agents(
+            JobStatus.UPDATED
+        )
 
         if all_agents_running:
             self.context.set_state(JobStateEnum.RUNNING)
@@ -434,12 +446,16 @@ class JobContext:
         if available_gpus >= num_workers:
             return DeviceType.GPU
 
-        valid = any(res.cpu_stats.load <= MIN_CPU_LOAD for res in agent_resources.values())
+        valid = any(
+            res.cpu_stats.load <= MIN_CPU_LOAD for res in agent_resources.values()
+        )
 
         if valid:
             return DeviceType.CPU
 
-        raise InsufficientResources(f"insufficient resources to start {num_workers} workers.")
+        raise InsufficientResources(
+            f"insufficient resources to start {num_workers} workers."
+        )
 
     def _get_agent_resources_map(
         self, agent_ids: list[str]
