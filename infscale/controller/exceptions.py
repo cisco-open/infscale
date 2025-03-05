@@ -36,8 +36,15 @@ class InvalidJobStateAction(InfScaleException):
 
 
 class InvalidConfig(InfScaleException):
-    """Exception for invalid job configuratio."""
+    """Exception for invalid job configuration."""
 
     def __init__(self, err_msg: str):
         """Initialize InvalidConfig exception instance."""
+        super().__init__(err_msg)
+
+class InsufficientResources(InfScaleException):
+    """Exception for insufficient agent resources."""
+
+    def __init__(self, err_msg: str):
+        """Initialize InsufficientResources exception instance."""
         super().__init__(err_msg)

@@ -17,6 +17,7 @@
 from itertools import cycle
 
 from infscale.config import JobConfig
+from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
@@ -28,8 +29,12 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         super().__init__()
 
     def split(
-        self, agent_data: list[AgentMetaData], job_config: JobConfig
-    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
+        self,
+        dev_type: DeviceType,
+        agent_data: list[AgentMetaData],
+        agent_resources: dict[str, AgentResources],
+        job_config: JobConfig,
+    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
         """
         Split the job config using even deployment policy
         and update config and worker distribution for each agent.
@@ -49,9 +54,15 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         self.update_agents_distr(distribution, job_config.workers)
 
         for worker, data in zip(workers, cycle(agent_data)):
+            resources = agent_resources[data.id]
+            device = (
+                resources.get_n_set_device(dev_type)
+                if job_config.auto_config
+                else worker.device
+            )
             if data.id in distribution:
-                distribution[data.id].add(worker.id)
+                distribution[data.id].add((worker.id, device))
             else:
-                distribution[data.id] = {worker.id}
+                distribution[data.id] = {(worker.id, device)}
 
         return self._get_agent_updated_cfg(distribution, job_config), distribution

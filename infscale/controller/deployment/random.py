@@ -16,6 +16,7 @@
 
 import random
 from infscale.config import JobConfig
+from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
@@ -27,8 +28,12 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         super().__init__()
 
     def split(
-        self, agent_data: list[AgentMetaData], job_config: JobConfig
-    ) -> tuple[dict[str, JobConfig], dict[str, set[str]]]:
+        self,
+        dev_type: DeviceType,
+        agent_data: list[AgentMetaData],
+        agent_resources: dict[str, AgentResources],
+        job_config: JobConfig,
+    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
         """
         Split the job config using random deployment policy
         and update config and worker distribution for each agent.
@@ -54,11 +59,25 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         # distribute the remaining workers randomly
         while workers:
             data = random.choice(agent_data)  # choose an agent randomly
-            worker_id = workers.pop().id
+            resources = agent_resources[data.id]
+
+            decided_device = None
+
+            if job_config.auto_config:
+                decided_device = resources.get_n_set_device(dev_type)
+
+            # this means that auto config is True but current agent
+            # don't have enough resources, so we have to move to the
+            # next agent before popping the worker
+            if decided_device is None and job_config.auto_config:
+                continue
+
+            worker = workers.pop()
+            device = decided_device or worker.device
 
             if data.id in distribution:
-                distribution[data.id].add(worker_id)
+                distribution[data.id].add((worker.id, device))
             else:
-                distribution[data.id] = {worker_id}
+                distribution[data.id] = {(worker.id, device)}
 
         return self._get_agent_updated_cfg(distribution, job_config), distribution

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import asyncio
+from enum import Enum
 from typing import TYPE_CHECKING, Union
 
 from infscale import get_logger
@@ -37,6 +38,13 @@ WMA_WEIGHT = 0.9
 logger = None
 
 
+class DeviceType(str, Enum):
+    """Enum class for device type."""
+
+    GPU = "gpu"
+    CPU = "cpu"
+
+
 class AgentResources:
     """Class for keeping agent resources."""
 
@@ -52,6 +60,19 @@ class AgentResources:
         self.vram_stats: list[VramStat] = vram_stats
         self.cpu_stats: CPUStats = cpu_stats
         self.dram_stats: DRAMStats = dram_stats
+
+    def get_n_set_device(self, dev_type: DeviceType) -> str | None:
+        """Return device string or None"""
+        if dev_type == DeviceType.CPU:
+            return "cpu"
+
+        stat = next((gpu for gpu in self.gpu_stats if not gpu.used), None)
+
+        if stat is not None:
+            stat.used = True
+            return f"cuda:{stat.id}"
+
+        return None
 
     def update_gpu_wma(self, gpu_stats: list[GpuStat]) -> None:
         """Update wma for gpu stats."""

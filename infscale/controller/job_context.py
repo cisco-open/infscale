@@ -26,12 +26,15 @@ from fastapi import HTTPException, status
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
+from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
-from infscale.controller.exceptions import (InfScaleException,
+from infscale.controller.exceptions import (InfScaleException, InsufficientResources,
                                             InvalidJobStateAction)
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
+
+MIN_CPU_LOAD = 30
 
 logger = None
 
@@ -60,7 +63,7 @@ class AgentMetaData:
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
         self.wids_to_deploy: list[str] = []
-        self.existing_workers: set[str] = set()
+        self.existing_workers: set[tuple[str, str]] = set()
 
 
 class JobStateEnum(Enum):
@@ -162,7 +165,7 @@ class RunningState(BaseJobState):
         tasks = []
 
         for info in self.context.running_agent_info:
-            task = asyncio.create_task(self.context.prepare_config(info.id))
+            task = asyncio.create_task(self.context.prepare_config(info))
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -398,10 +401,14 @@ class JobContext:
 
     def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller and set a deployer of agent ids."""
+        config = self.req.config
         agent_data = self._get_agents_data(agent_ids)
+        agent_resources = self._get_agent_resources_map(agent_ids)
+
+        dev_type = self._decide_dev_type(agent_resources, len(config.workers))
 
         agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(
-            agent_data, self.req.config
+            dev_type, agent_data, agent_resources, config
         )
 
         self._update_agent_data(agent_cfg, wrk_distribution)
@@ -412,6 +419,38 @@ class JobContext:
         ]
 
         self.running_agent_info = running_agent_info
+
+    def _decide_dev_type(
+        self, agent_resources: dict[str, AgentResources], num_workers: int
+    ) -> DeviceType:
+        """Decide device based on available resources and number of workers."""
+        available_gpus = sum(
+            1
+            for res in agent_resources.values()
+            for gpu_stat in res.gpu_stats
+            if not gpu_stat.used
+        )
+
+        if available_gpus >= num_workers:
+            return DeviceType.GPU
+
+        valid = any(res.cpu_stats.load <= MIN_CPU_LOAD for res in agent_resources.values())
+
+        if valid:
+            return DeviceType.CPU
+
+        raise InsufficientResources(f"insufficient resources to start {num_workers} workers.")
+
+    def _get_agent_resources_map(
+        self, agent_ids: list[str]
+    ) -> dict[str, AgentResources]:
+        """Return map with agent resources based on given agent ids."""
+        result = {}
+
+        for agent_id in agent_ids:
+            result[agent_id] = self.ctrl.agent_contexts[agent_id].resources
+
+        return result
 
     def _get_agents_data(self, agent_ids: list[str]) -> list[AgentMetaData]:
         """Get a list of agent metadata given agent ids."""
@@ -424,7 +463,9 @@ class JobContext:
         return result
 
     def _update_agent_data(
-        self, agent_cfg: dict[str, JobConfig], wrk_distribution: dict[str, set[str]]
+        self,
+        agent_cfg: dict[str, JobConfig],
+        wrk_distribution: dict[str, set[tuple[str, str]]],
     ) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
@@ -436,9 +477,8 @@ class JobContext:
             agent_data.wids_to_deploy = self._get_deploy_worker_ids(new_cfg.workers)
             agent_data.existing_workers = wrk_distribution[agent_id]
 
-    async def prepare_config(self, agent_id: str) -> None:
+    async def prepare_config(self, agent_data: AgentMetaData) -> None:
         """Prepare config for deploy."""
-        agent_data = self.agent_info[agent_id]
         # fetch port numbers from agent
         await self.ctrl._job_setup(agent_data)
 
@@ -504,8 +544,8 @@ class JobContext:
         """Create map between agent id and available ports."""
         agent_ports = {}
 
-        for info in self.running_agent_info:
-            agent_ports[info.id] = iter(info.ports)
+        for data in self.running_agent_info:
+            agent_ports[data.id] = iter(data.ports)
 
         return agent_ports
 
@@ -687,7 +727,7 @@ class JobContext:
         tasks = []
 
         for info in self.running_agent_info:
-            task = asyncio.create_task(self.prepare_config(info.id))
+            task = asyncio.create_task(self.prepare_config(info))
             tasks.append(task)
 
         await asyncio.gather(*tasks)
