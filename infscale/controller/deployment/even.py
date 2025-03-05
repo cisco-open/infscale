@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from itertools import cycle
+
 from infscale.config import JobConfig
 from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
@@ -46,25 +48,10 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         # check if the distribution has changed
         self.update_agents_distr(distribution, job_config.workers)
 
-        num_agents = len(agent_data)
-
-        # assign workers to agents evenly by splitting the list of workers
-        workers_per_agent = len(workers) // num_agents
-        remaining_workers = len(workers) % num_agents
-
-        start_index = 0
-        for i, data in enumerate(agent_data):
-            # for the first 'remaining_workers' agents, assign one extra worker
-            num_workers_for_agent = workers_per_agent + (
-                1 if i < remaining_workers else 0
-            )
-            for worker in workers[start_index : start_index + num_workers_for_agent]:
-                if data.id in distribution:
-                    distribution[data.id].add(worker.id)
-                else:
-                    distribution[data.id] = {worker.id}
-
-            # move the start index to the next batch of workers
-            start_index += num_workers_for_agent
+        for worker, data in zip(workers, cycle(agent_data)):
+            if data.id in distribution:
+                distribution[data.id].add(worker.id)
+            else:
+                distribution[data.id] = {worker.id}
 
         return self._get_agent_updated_cfg(distribution, job_config), distribution
