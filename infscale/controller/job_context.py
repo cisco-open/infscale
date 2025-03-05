@@ -138,6 +138,7 @@ class ReadyState(BaseJobState):
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
+            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -196,7 +197,10 @@ class StartingState(BaseJobState):
 
     def cond_running(self):
         """Handle the transition to running."""
-        self.context.set_state(JobStateEnum.RUNNING)
+        all_agents_running = self.context._check_job_status_on_all_agents(JobStatus.RUNNING)
+
+        if all_agents_running:
+            self.context.set_state(JobStateEnum.RUNNING)
 
 
 class StoppedState(BaseJobState):
@@ -207,6 +211,7 @@ class StoppedState(BaseJobState):
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
+            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -218,7 +223,11 @@ class StoppingState(BaseJobState):
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        self.context.set_state(JobStateEnum.STOPPED)
+        all_agents_stopped = self.context._check_job_status_on_all_agents(JobStatus.STOPPED)
+
+        if all_agents_stopped:
+            self.context.cleanup()
+            self.context.set_state(JobStateEnum.STOPPED)
 
 
 class CompletingState(BaseJobState):
@@ -235,7 +244,11 @@ class CompletingState(BaseJobState):
 
     def cond_complete(self):
         """Handle the transition to complete."""
-        self.context.set_state(JobStateEnum.COMPLETE)
+        all_agents_completed = self.context._check_job_status_on_all_agents(JobStatus.COMPLETED)
+
+        if all_agents_completed:
+            self.context.cleanup()
+            self.context.set_state(JobStateEnum.COMPLETE)
 
 
 class UpdatingState(BaseJobState):
@@ -248,7 +261,10 @@ class UpdatingState(BaseJobState):
 
     def cond_updated(self):
         """Handle the transition to running."""
-        self.context.set_state(JobStateEnum.RUNNING)
+        all_agents_running = self.context._check_job_status_on_all_agents(JobStatus.UPDATED)
+
+        if all_agents_running:
+            self.context.set_state(JobStateEnum.RUNNING)
 
 
 class CompleteState(BaseJobState):
@@ -259,6 +275,7 @@ class CompleteState(BaseJobState):
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
+            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -282,6 +299,7 @@ class FailedState(BaseJobState):
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
+            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -592,6 +610,13 @@ class JobContext:
 
         return list(wids)
 
+    def cleanup(self) -> None:
+        """Do cleanup on context resources."""
+        self.agent_info = {}
+        self.req = None
+        self.wrk_status = {}
+        self.running_agent_info = []
+
     async def do(self, req: CommandActionModel):
         """Handle specific action."""
         self.req = req
@@ -628,31 +653,19 @@ class JobContext:
 
     def cond_running(self):
         """Handle the transition to running."""
-        all_agents_running = self._check_job_status_on_all_agents(JobStatus.RUNNING)
-
-        if all_agents_running:
-            self.state.cond_running()
+        self.state.cond_running()
 
     def cond_updated(self):
         """Handle the transition to running."""
-        all_agents_running = self._check_job_status_on_all_agents(JobStatus.UPDATED)
-
-        if all_agents_running:
-            self.state.cond_updated()
+        self.state.cond_updated()
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        all_agents_stopped = self._check_job_status_on_all_agents(JobStatus.STOPPED)
-
-        if all_agents_stopped:
-            self.state.cond_stopped()
+        self.state.cond_stopped()
 
     def cond_complete(self):
         """Handle the transition to complete."""
-        all_agents_completed = self._check_job_status_on_all_agents(JobStatus.COMPLETED)
-
-        if all_agents_completed:
-            self.state.cond_complete()
+        self.state.cond_complete()
 
     async def cond_completing(self):
         """Handle the transition to completing."""
