@@ -22,11 +22,12 @@ from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
+from uvicorn import Config, Server
+
 from infscale.constants import APISERVER_PORT
 from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
                                             ReqType, Response)
-from infscale.controller.exceptions import InfScaleException
-from uvicorn import Config, Server
+from infscale.exceptions import InfScaleException
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller

@@ -17,8 +17,10 @@
 """Config parser."""
 
 from dataclasses import dataclass
+from typing import Optional
 
 from infscale import get_logger
+from infscale.exceptions import InvalidConfig
 
 logger = None
 
@@ -61,7 +63,7 @@ class WorldInfo:
     data_port: int = 30000
     ctrl_port: int = 30001
     addr: str = "127.0.0.1"
-    backend: str = "gloo"
+    backend: Optional[str] = ""
 
 
 @dataclass
@@ -69,10 +71,10 @@ class WorkerData:
     """Specification about worker data."""
 
     id: str
-    device: str
     stage: StageData
     is_server: bool = False
     deploy: bool = True
+    device: Optional[str] = ""
 
 
 @dataclass
@@ -93,7 +95,7 @@ class ServeConfig:
 
     job_id: str
 
-    device: str = "cpu"
+    device: str = "gpu"
 
     nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
 
@@ -156,10 +158,19 @@ class JobConfig:
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
                 world_info = item if isinstance(item, WorldInfo) else WorldInfo(**item)
+
+                if self.auto_config == False and not world_info.backend:
+                    raise InvalidConfig(f"backend attribute is required when auto_config is set to: {self.auto_config}")
+
                 self.flow_graph[k][i] = world_info
 
         for j, w in enumerate(self.workers):
-            self.workers[j] = w if isinstance(w, WorkerData) else WorkerData(**w)
+            worker = w if isinstance(w, WorkerData) else WorkerData(**w)
+
+            if self.auto_config == False and not worker.device:
+                raise InvalidConfig(f"device attribute is required when auto_config is set to: {self.auto_config}")
+
+            self.workers[j] = worker
 
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
