@@ -27,7 +27,7 @@ from fastapi import HTTPException, status
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
-from infscale.controller.agent_context import AgentResources, DeviceType
+from infscale.controller.agent_context import MIN_CPU_LOAD, AgentResources, DeviceType
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 from infscale.exceptions import (
     InfScaleException,
@@ -37,8 +37,6 @@ from infscale.exceptions import (
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
-
-MIN_CPU_LOAD = 30
 
 logger = None
 

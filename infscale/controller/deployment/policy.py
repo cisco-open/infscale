@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""policy.py"""
+
 import copy
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -34,6 +36,7 @@ class DeploymentPolicyEnum(Enum):
     EVEN = "even"
     RANDOM = "random"
     STATIC = "static"
+    PACKING = "packing"
 
 
 class DeploymentPolicy(ABC):

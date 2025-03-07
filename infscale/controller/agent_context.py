@@ -29,11 +29,12 @@ from infscale.utils.timer import Timer
 
 if TYPE_CHECKING:
     from grpc import ServicerContext
+
     from infscale.controller.controller import Controller
 
 DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD
 WMA_WEIGHT = 0.9
-
+MIN_CPU_LOAD = 30
 
 logger = None
 
