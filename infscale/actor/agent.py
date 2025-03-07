@@ -25,10 +25,16 @@ from multiprocessing import Pipe
 import grpc
 import torch
 import torch.multiprocessing as mp
+
 from infscale import get_logger
 from infscale.actor.job_manager import JobManager
-from infscale.actor.job_msg import (JobStatus, Message, MessageType,
-                                    WorkerStatus, WorkerStatusMessage)
+from infscale.actor.job_msg import (
+    JobStatus,
+    Message,
+    MessageType,
+    WorkerStatus,
+    WorkerStatusMessage,
+)
 from infscale.actor.worker import Worker
 from infscale.actor.worker_manager import WorkerManager
 from infscale.config import JobConfig, WorldInfo

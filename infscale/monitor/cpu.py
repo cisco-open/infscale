@@ -22,6 +22,7 @@ from typing import Union
 
 import psutil
 from google.protobuf.json_format import MessageToJson, Parse
+
 from infscale.proto import management_pb2 as pb2
 
 DEFAULT_INTERVAL = 10  # 10 seconds
@@ -89,6 +90,8 @@ class CpuMonitor:
         """Return statistics on CPU and DRAM resources."""
         # Wait until data refreshes
         await self.mon_event.wait()
+        # block metrics() call again
+        self.mon_event.clear()
 
         return self.cpu_stats, self.dram_stats
 
@@ -101,8 +104,6 @@ class CpuMonitor:
             self.dram_stats = dram_stats
             # unlbock metrics() call
             self.mon_event.set()
-            # block metrics() call again
-            self.mon_event.clear()
 
             await asyncio.sleep(self.interval)
 

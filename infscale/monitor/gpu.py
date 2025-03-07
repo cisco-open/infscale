@@ -23,11 +23,18 @@ from enum import Enum
 from typing import Union
 
 from google.protobuf.json_format import MessageToJson, Parse
+from pynvml import (
+    nvmlDeviceGetComputeRunningProcesses,
+    nvmlDeviceGetCount,
+    nvmlDeviceGetHandleByIndex,
+    nvmlDeviceGetMemoryInfo,
+    nvmlDeviceGetName,
+    nvmlDeviceGetUtilizationRates,
+    nvmlInit,
+)
+
 from infscale import get_logger
 from infscale.proto import management_pb2 as pb2
-from pynvml import (nvmlDeviceGetComputeRunningProcesses, nvmlDeviceGetCount,
-                    nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo,
-                    nvmlDeviceGetName, nvmlDeviceGetUtilizationRates, nvmlInit)
 
 DEFAULT_INTERVAL = 10  # 10 seconds
 
@@ -113,6 +120,8 @@ class GpuMonitor:
         logger.debug("wait for monitor event")
         await self.mon_event.wait()
         logger.debug("monitor event is set")
+        # block metrics() call again
+        self.mon_event.clear()
 
         return self.computes, self.mems
 
@@ -134,8 +143,6 @@ class GpuMonitor:
             self.computes = computes
             # unlbock metrics() call
             self.mon_event.set()
-            # block metrics() call again
-            self.mon_event.clear()
 
             await asyncio.sleep(self.interval)
 
