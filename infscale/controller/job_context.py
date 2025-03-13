@@ -538,15 +538,18 @@ class JobContext:
         world_agent_map = self._get_world_agent_map(new_config)
         agent_port_map = self._get_agent_port_map()
 
-        # step 2: patch new config with existing world ports and assign ports to new ones
-        for world_list in new_config.flow_graph.values():
+        # step 1: patch new config with existing world ports and assign ports to new ones
+        for wid, world_list in new_config.flow_graph.items():
             for world in world_list:
                 if world.name in curr_worlds:
                     # keep existing ports
                     world.addr = curr_worlds[world.name].addr
                     world.data_port = curr_worlds[world.name].data_port
                     world.ctrl_port = curr_worlds[world.name].ctrl_port
+                    world.backend = curr_worlds[world.name].backend
                 else:
+                    assignment_data = self._get_worker_assignment_data(agent_data, wid)
+
                     agent_info = world_agent_map[world.name]
                     port_iter = agent_port_map[agent_info.id]
                     addr = self.ctrl.agent_contexts[agent_info.id].ip
@@ -555,12 +558,28 @@ class JobContext:
                     world.addr = addr
                     world.data_port = next(port_iter)
                     world.ctrl_port = next(port_iter)
+                    world.backend = assignment_data.worlds_map[world.name].backend
+
+        # step 2: update workers devices
+        for w in new_config.workers:
+            assignment_data = self._get_worker_assignment_data(agent_data, w.id)
+            w.device = assignment_data.device
 
         agent_data.config = new_config
         agent_data.new_config = None
         agent_data.num_new_worlds = 0
 
         agent_data.job_setup_event.clear()
+
+    def _get_worker_assignment_data(
+        self, agent_data: AgentMetaData, wid: str
+    ) -> AssignmentData:
+        """Return assignment data based on worker id."""
+        return next(
+            assignment_data
+            for assignment_data in agent_data.assignment_set
+            if assignment_data.wid == wid
+        )
 
     def _get_agent_port_map(self) -> dict[str, Iterator[int]]:
         """Create map between agent id and available ports."""
