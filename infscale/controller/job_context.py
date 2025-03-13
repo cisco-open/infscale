@@ -27,7 +27,11 @@ from fastapi import HTTPException, status
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
-from infscale.controller.agent_context import MIN_CPU_LOAD, AgentResources, DeviceType
+from infscale.controller.agent_context import (
+    CPU_LOAD_THRESHOLD,
+    AgentResources,
+    DeviceType,
+)
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 from infscale.exceptions import (
     InfScaleException,
@@ -445,7 +449,7 @@ class JobContext:
             return DeviceType.GPU
 
         valid = any(
-            res.cpu_stats.load <= MIN_CPU_LOAD for res in agent_resources.values()
+            res.cpu_stats.load <= CPU_LOAD_THRESHOLD for res in agent_resources.values()
         )
 
         if valid:

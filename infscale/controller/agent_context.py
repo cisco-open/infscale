@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD
 WMA_WEIGHT = 0.9
-MIN_CPU_LOAD = 30
+CPU_LOAD_THRESHOLD = 30
 
 logger = None
 
@@ -63,7 +63,13 @@ class AgentResources:
         self.dram_stats: DRAMStats = dram_stats
 
     def get_n_set_device(self, dev_type: DeviceType) -> str | None:
-        """Return device string or None"""
+        """
+        Return device string based on device type.
+
+        In case of GPU, select the first unused GPU and update its used property.
+
+        If no device is available, return None.
+        """
         if dev_type == DeviceType.CPU:
             return "cpu"
 
