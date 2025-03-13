@@ -15,7 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from infscale.config import JobConfig
-from infscale.controller.agent_context import MIN_CPU_LOAD, AgentResources, DeviceType
+from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
