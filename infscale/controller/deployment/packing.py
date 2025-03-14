@@ -16,7 +16,7 @@
 
 from infscale.config import JobConfig
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import DeploymentPolicy
+from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 
@@ -32,22 +32,22 @@ class PackingPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
+    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
         """
         Split the job config using packing policy.
 
         Agent with most resources given dev_type is selected.
         Deploy as many workers as the resources allow.
 
-        Return updated config and worker distribution for each agent.
+        Return updated config and worker assignment map for each agent.
         """
         # dictionary to hold the workers for each agent_id
-        distribution = self.get_curr_distribution(agent_data)
+        assignment_map = self.get_curr_assignment_map(agent_data)
 
-        workers = self.get_workers(distribution, job_config.workers)
+        workers = self.get_workers(assignment_map, job_config.workers)
 
-        # check if the distribution has changed
-        self.update_agents_distr(distribution, job_config.workers)
+        # check if the assignment map has changed
+        self.update_agents_assignment_map(assignment_map, job_config.workers)
 
         while workers:
             agent_id, resources = self._select_agent_with_most_resources(
@@ -61,12 +61,12 @@ class PackingPolicy(DeploymentPolicy):
             worker = workers.pop()
             device = decided_device or worker.device
 
-            if agent_id in distribution:
-                distribution[agent_id].add((worker.id, device))
+            if agent_id in assignment_map:
+                assignment_map[agent_id].add(AssignmentData(worker.id, device))
             else:
-                distribution[agent_id] = {(worker.id, device)}
+                assignment_map[agent_id] = {AssignmentData(worker.id, device)}
 
-        return self._get_agent_updated_cfg(distribution, job_config), distribution
+        return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
 
     def _select_agent_with_most_resources(
         self, dev_type: DeviceType, agent_resources: dict[str, AgentResources]

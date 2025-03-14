@@ -15,9 +15,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import random
+
 from infscale.config import JobConfig
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import DeploymentPolicy
+from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 
@@ -33,28 +34,28 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
+    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
         """
         Split the job config using random deployment policy
-        and update config and worker distribution for each agent.
+        and update config and worker assignment map for each agent.
 
         Each agent gets at least one worker from the shuffled list.
         The remaining workers are distributed randomly.
-        The random.shuffle(workers) ensures that the initial distribution
+        The random.shuffle(workers) ensures that the initial assignment
         of workers to agents is random.
         The random.choice(agent_ids) assigns the remaining workers in a random way,
         ensuring no agent is left out.
 
-        Return updated config and worker distribution for each agent
+        Return updated config and worker assignment map for each agent
         """
 
         # dictionary to hold the workers for each agent_id
-        distribution = self.get_curr_distribution(agent_data)
+        assignment_map = self.get_curr_assignment_map(agent_data)
 
-        workers = self.get_workers(distribution, job_config.workers)
+        workers = self.get_workers(assignment_map, job_config.workers)
 
-        # check if the distribution has changed
-        self.update_agents_distr(distribution, job_config.workers)
+        # check if the assignment map has changed
+        self.update_agents_assignment_map(assignment_map, job_config.workers)
 
         # distribute the remaining workers randomly
         while workers:
@@ -75,9 +76,9 @@ class RandomDeploymentPolicy(DeploymentPolicy):
             worker = workers.pop()
             device = decided_device or worker.device
 
-            if data.id in distribution:
-                distribution[data.id].add((worker.id, device))
+            if data.id in assignment_map:
+                assignment_map[data.id].add(AssignmentData(worker.id, device))
             else:
-                distribution[data.id] = {(worker.id, device)}
+                assignment_map[data.id] = {AssignmentData(worker.id, device)}
 
-        return self._get_agent_updated_cfg(distribution, job_config), distribution
+        return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map

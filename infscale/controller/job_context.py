@@ -41,6 +41,7 @@ from infscale.exceptions import (
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
+    from infscale.controller.deployment.policy import AssignmentData
 
 logger = None
 
@@ -69,7 +70,7 @@ class AgentMetaData:
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
         self.wids_to_deploy: list[str] = []
-        self.existing_workers: set[tuple[str, str]] = set()
+        self.assignment_set: set[AssignmentData] = set()
 
 
 class JobStateEnum(Enum):
@@ -421,15 +422,18 @@ class JobContext:
 
         dev_type = self._decide_dev_type(agent_resources, len(config.workers))
 
-        agent_cfg, wrk_distribution = self.ctrl.deploy_policy.split(
-            dev_type, agent_data, agent_resources, config
+        agent_cfg, assignment_map = self.ctrl.deploy_policy.split(
+            dev_type,
+            agent_data,
+            agent_resources,
+            config,
         )
 
-        self._update_agent_data(agent_cfg, wrk_distribution)
+        self._update_agent_data(agent_cfg, assignment_map)
 
         # create a list of agent info that will deploy workers
         running_agent_info = [
-            self.agent_info[agent_id] for agent_id in wrk_distribution.keys()
+            self.agent_info[agent_id] for agent_id in assignment_map.keys()
         ]
 
         self.running_agent_info = running_agent_info
@@ -483,7 +487,7 @@ class JobContext:
     def _update_agent_data(
         self,
         agent_cfg: dict[str, JobConfig],
-        wrk_distribution: dict[str, set[tuple[str, str]]],
+        assignment_map: dict[str, set[AssignmentData]],
     ) -> None:
         """Update agent data based on deployment policy split."""
         for agent_id, new_cfg in agent_cfg.items():
@@ -493,7 +497,7 @@ class JobContext:
                 agent_data.config, new_cfg
             )
             agent_data.wids_to_deploy = self._get_deploy_worker_ids(new_cfg.workers)
-            agent_data.existing_workers = wrk_distribution[agent_id]
+            agent_data.assignment_set = assignment_map[agent_id]
 
     async def prepare_config(self, agent_data: AgentMetaData) -> None:
         """Prepare config for deploy."""

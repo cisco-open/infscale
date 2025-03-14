@@ -18,7 +18,7 @@
 
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import DeploymentPolicy
+from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 from infscale.exceptions import InvalidConfig
 
@@ -36,13 +36,13 @@ class StaticDeploymentPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
+    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
         """Split the job config statically based on its details."""
-        distribution = self.get_curr_distribution(agent_data)
+        assignment_map = self.get_curr_assignment_map(agent_data)
 
-        workers = self.get_workers(distribution, job_config.workers)
+        workers = self.get_workers(assignment_map, job_config.workers)
 
-        self.update_agents_distr(distribution, job_config.workers)
+        self.update_agents_assignment_map(assignment_map, job_config.workers)
 
         agent_ip_to_id = {}
         for data in agent_data:
@@ -50,7 +50,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
 
         handled_worker_ids = set()
         # check if the config is complete and deployable
-        # and build distribution
+        # and build assignment map
         for worker_id, world_infos in job_config.flow_graph.items():
 
             # create a set to remove duplicate
@@ -68,17 +68,12 @@ class StaticDeploymentPolicy(DeploymentPolicy):
                 raise InvalidConfig(f"{ip} not a valid agent IP")
 
             agent_id = agent_ip_to_id[ip]
-            resources = agent_resources[agent_id]
-            device = (
-                resources.get_n_set_device(dev_type)
-                if job_config.auto_config
-                else self._get_worker_device(worker_id, job_config.workers)
-            )
+            device = self._get_worker_device(worker_id, job_config.workers)
 
-            if agent_id in distribution:
-                distribution[agent_id].add((worker_id, device))
+            if agent_id in assignment_map:
+                assignment_map[agent_id].add(AssignmentData(worker_id, device))
             else:
-                distribution[agent_id] = {(worker_id, device)}
+                assignment_map[agent_id] = {AssignmentData(worker_id, device)}
 
             handled_worker_ids.add(worker_id)
 
@@ -90,7 +85,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             # an entry for new workers
             raise InvalidConfig(f"failed to assign {worker.id} to an agent")
 
-        return self._get_agent_updated_cfg(distribution, job_config), distribution
+        return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
 
     def _get_worker_device(self, worker_id: str, workers: list[WorkerData]) -> str:
         """Get worker device."""

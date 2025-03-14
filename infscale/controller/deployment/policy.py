@@ -39,6 +39,14 @@ class DeploymentPolicyEnum(Enum):
     PACKING = "packing"
 
 
+class AssignmentData:
+    """AssignmentData class."""
+
+    def __init__(self, wid: str, device: str):
+        self.wid = wid
+        self.device = device
+
+
 class DeploymentPolicy(ABC):
     """Abstract class for deployment policy."""
 
@@ -53,20 +61,22 @@ class DeploymentPolicy(ABC):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
+    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
         """
         Split the job config using a deployment policy
-        and return updated job config and worker distribution for each agent.
+        and return updated job config and worker assignment map for each agent.
         """
         pass
 
     def get_workers(
-        self, distribution: dict[str, set[str]], workers: list[WorkerData]
+        self, assignment_map: dict[str, set[AssignmentData]], workers: list[WorkerData]
     ) -> list[WorkerData]:
-        """Return a list of workers."""
+        """Return a list of new workers."""
         # flat worker ids from each agent
         curr_worker_ids = {
-            wid for wrk_data in distribution.values() for wid, _ in wrk_data
+            data.wid
+            for assignment_set in assignment_map.values()
+            for data in assignment_set
         }
 
         # get new worker ids
@@ -74,51 +84,57 @@ class DeploymentPolicy(ABC):
 
         return new_workers
 
-    def get_curr_distribution(
+    def get_curr_assignment_map(
         self, agent_data: list[AgentMetaData]
-    ) -> dict[str, set[tuple[str, str]]]:
-        """Return current distribution for each agent."""
+    ) -> dict[str, set[AssignmentData]]:
+        """Return current assignment map for each agent."""
         results = {}
 
         for data in agent_data:
-            if len(data.existing_workers):
-                results[data.id] = data.existing_workers
+            if len(data.assignment_set):
+                results[data.id] = data.assignment_set
 
         return results
 
-    def update_agents_distr(
-        self, distribution: dict[str, set[tuple[str, str]]], workers: list[WorkerData]
+    def update_agents_assignment_map(
+        self, assignment_map: dict[str, set[AssignmentData]], workers: list[WorkerData]
     ) -> None:
-        """Check if worker distribution has changed and update if needed."""
+        """Check if worker assignment map has changed and update if needed."""
         # new worker ids
         worker_ids = {worker.id for worker in workers}
 
         # flatten the current worker set
-        current_workers = {wid for wrk in distribution.values() for wid, _ in wrk}
+        current_workers = {
+            data.wid
+            for assignment_set in assignment_map.values()
+            for data in assignment_set
+        }
 
         # compute removed workers
         removed_workers = set(current_workers) - set(worker_ids)
 
-        # remove workers from the distribution
-        for agent_id, workers in distribution.items():
-            distribution[agent_id] = {
-                (wid, device) for wid, device in workers if wid not in removed_workers
+        # remove workers from the assignment map
+        for agent_id, assignment_set in assignment_map.items():
+            assignment_map[agent_id] = {
+                AssignmentData(data.wid, data.device)
+                for data in assignment_set
+                if data.wid not in removed_workers
             }
 
     def _get_agent_updated_cfg(
-        self, wrk_distr: dict[str, set[tuple[str, str]]], job_config: JobConfig
+        self, assignment_map: dict[str, set[AssignmentData]], job_config: JobConfig
     ) -> dict[str, JobConfig]:
         """Return updated job config for each agent."""
-        logger.info(f"got new worker distribution for agents: {wrk_distr}")
+        logger.info(f"got new worker assignment map for agents: {assignment_map}")
 
         agents_config = {}
-        for agent_id, wrk in wrk_distr.items():
+        for agent_id, assignment_set in assignment_map.items():
             # create a job_config copy to update and pass it to the agent.
             cfg = copy.deepcopy(job_config)
 
             for w in cfg.workers:
-                # set the deploy flag if the worker is in worker distribution for this agent
-                w.deploy = w.id in {wrk_id for wrk_id, _ in wrk}
+                # set the deploy flag if the worker is in worker assignment for this agent
+                w.deploy = w.id in {data.wid for data in assignment_set}
 
             agents_config[agent_id] = cfg
 

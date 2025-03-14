@@ -18,7 +18,7 @@ from itertools import cycle
 
 from infscale.config import JobConfig
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import DeploymentPolicy
+from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 
@@ -34,35 +34,37 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[tuple[str, str]]]]:
+    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
         """
         Split the job config using even deployment policy
-        and update config and worker distribution for each agent.
+        and update config and worker assignment map for each agent.
 
         Workers are distributed as evenly as possible across the available agents.
         If the number of workers isn't perfectly divisible by the number of agents,
         the "extra" workers are assigned to the first agents in the list.
 
-        Return updated config and worker distribution for each agent
+        Return updated config and worker assignment map for each agent
         """
         # dictionary to hold the workers for each agent_id
-        distribution = self.get_curr_distribution(agent_data)
+        assignment_map = self.get_curr_assignment_map(agent_data)
 
-        workers = self.get_workers(distribution, job_config.workers)
+        workers = self.get_workers(assignment_map, job_config.workers)
 
-        # check if the distribution has changed
-        self.update_agents_distr(distribution, job_config.workers)
+        # check if the assignment map has changed
+        self.update_agents_assignment_map(assignment_map, job_config.workers)
 
         for worker, data in zip(workers, cycle(agent_data)):
             resources = agent_resources[data.id]
-            device = (
-                resources.get_n_set_device(dev_type)
-                if job_config.auto_config
-                else worker.device
-            )
-            if data.id in distribution:
-                distribution[data.id].add((worker.id, device))
-            else:
-                distribution[data.id] = {(worker.id, device)}
+            decided_device = None
 
-        return self._get_agent_updated_cfg(distribution, job_config), distribution
+            if job_config.auto_config:
+                decided_device = resources.get_n_set_device(dev_type)
+
+            device = decided_device or worker.device
+
+            if data.id in assignment_map:
+                assignment_map[data.id].add(AssignmentData(worker.id, device))
+            else:
+                assignment_map[data.id] = {AssignmentData(worker.id, device)}
+
+        return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
