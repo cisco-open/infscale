@@ -55,16 +55,19 @@ class EvenDeploymentPolicy(DeploymentPolicy):
 
         for worker, data in zip(workers, cycle(agent_data)):
             resources = agent_resources[data.id]
-            decided_device = None
+            worlds_map = self._get_worker_worlds_map(worker.id, job_config)
 
-            if job_config.auto_config:
-                decided_device = resources.get_n_set_device(dev_type)
+            decided_device = resources.get_n_set_device(
+                dev_type, job_config.auto_config
+            )
+            self._update_backend(worlds_map, decided_device, job_config.auto_config)
 
             device = decided_device or worker.device
 
+            assignment_data = AssignmentData(worker.id, device, worlds_map)
             if data.id in assignment_map:
-                assignment_map[data.id].add(AssignmentData(worker.id, device))
+                assignment_map[data.id].add(assignment_data)
             else:
-                assignment_map[data.id] = {AssignmentData(worker.id, device)}
+                assignment_map[data.id] = {assignment_data}
 
         return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map

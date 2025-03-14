@@ -53,18 +53,21 @@ class PackingPolicy(DeploymentPolicy):
             agent_id, resources = self._select_agent_with_most_resources(
                 dev_type, agent_resources
             )
-            decided_device = None
-
-            if job_config.auto_config:
-                decided_device = resources.get_n_set_device(dev_type)
 
             worker = workers.pop()
+            decided_device = resources.get_n_set_device(
+                dev_type, job_config.auto_config
+            )
             device = decided_device or worker.device
 
+            worlds_map = self._get_worker_worlds_map(worker.id, job_config)
+            self._update_backend(worlds_map, decided_device, job_config.auto_config)
+
+            assignment_data = AssignmentData(worker.id, device, worlds_map)
             if agent_id in assignment_map:
-                assignment_map[agent_id].add(AssignmentData(worker.id, device))
+                assignment_map[agent_id].add(assignment_data)
             else:
-                assignment_map[agent_id] = {AssignmentData(worker.id, device)}
+                assignment_map[agent_id] = {assignment_data}
 
         return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
 

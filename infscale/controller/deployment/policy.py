@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 
 from infscale import get_logger
-from infscale.config import JobConfig, WorkerData
+from infscale.config import JobConfig, WorkerData, WorldInfo
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.job_context import AgentMetaData
 
@@ -42,9 +42,10 @@ class DeploymentPolicyEnum(Enum):
 class AssignmentData:
     """AssignmentData class."""
 
-    def __init__(self, wid: str, device: str):
+    def __init__(self, wid: str, device: str, worlds_map: dict[str, WorldInfo]):
         self.wid = wid
         self.device = device
+        self.worlds_map = worlds_map
 
 
 class DeploymentPolicy(ABC):
@@ -139,3 +140,23 @@ class DeploymentPolicy(ABC):
             agents_config[agent_id] = cfg
 
         return agents_config
+
+    def _get_worker_worlds_map(
+        self, worker_id: str, config: JobConfig
+    ) -> dict[str, WorldInfo]:
+        """Return world info map for worker."""
+        result = {
+            world_info.name: world_info for world_info in config.flow_graph[worker_id]
+        }
+
+        return result
+
+    def _update_backend(
+        self, worlds_map: dict[str, WorldInfo], device: str, auto_config: bool
+    ) -> dict[str, WorldInfo]:
+        """Update backend value based on device if auto config is True."""
+        if not auto_config:
+            return
+
+        for world in worlds_map.values():
+            world.backend = "gloo" if device == "cpu" else "nccl"

@@ -62,14 +62,17 @@ class AgentResources:
         self.cpu_stats: CPUStats = cpu_stats
         self.dram_stats: DRAMStats = dram_stats
 
-    def get_n_set_device(self, dev_type: DeviceType) -> str | None:
+    def get_n_set_device(self, dev_type: DeviceType, auto_config: bool) -> str | None:
         """
         Return device string based on device type.
 
         In case of GPU, select the first unused GPU and update its used property.
 
-        If no device is available, return None.
+        If auto_config is set to False, return None.
         """
+        if not auto_config:
+            return None
+
         if dev_type == DeviceType.CPU:
             return "cpu"
 
@@ -78,7 +81,6 @@ class AgentResources:
         if stat is not None:
             stat.used = True
             return f"cuda:{stat.id}"
-
         return None
 
     def update_gpu_wma(self, gpu_stats: list[GpuStat]) -> None:

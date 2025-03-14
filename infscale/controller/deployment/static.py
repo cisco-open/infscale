@@ -16,7 +16,7 @@
 
 """Static deployment policy."""
 
-from infscale.config import JobConfig, WorkerData
+from infscale.config import JobConfig, WorkerData, WorldInfo
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
@@ -69,11 +69,13 @@ class StaticDeploymentPolicy(DeploymentPolicy):
 
             agent_id = agent_ip_to_id[ip]
             device = self._get_worker_device(worker_id, job_config.workers)
+            worlds_map = self._get_worker_worlds_map(worker_id, job_config)
 
+            assignment_data = AssignmentData(worker_id, device, worlds_map)
             if agent_id in assignment_map:
-                assignment_map[agent_id].add(AssignmentData(worker_id, device))
+                assignment_map[agent_id].add(assignment_data)
             else:
-                assignment_map[agent_id] = {AssignmentData(worker_id, device)}
+                assignment_map[agent_id] = {assignment_data}
 
             handled_worker_ids.add(worker_id)
 
