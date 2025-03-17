@@ -53,7 +53,7 @@ def job(endpoint: str, config: str):
         )
 
         if response.status_code == 200:
-            click.echo(f"{response.status_code}: Job updated successfully")
+            click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
         else:
             click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
     except requests.exceptions.RequestException as e:

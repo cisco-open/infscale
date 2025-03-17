@@ -23,9 +23,13 @@ import requests
 import yaml
 
 from infscale.actor.agent import Agent
-from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
-                                CONTROLLER_PORT, DEFAULT_DEPLOYMENT_POLICY,
-                                LOCALHOST)
+from infscale.constants import (
+    APISERVER_ENDPOINT,
+    APISERVER_PORT,
+    CONTROLLER_PORT,
+    DEFAULT_DEPLOYMENT_POLICY,
+    LOCALHOST,
+)
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 from infscale.exceptions import InvalidConfig
@@ -98,7 +102,7 @@ def job(endpoint: str, config: str) -> None:
         )
 
         if response.status_code == 200:
-            click.echo(f"{response.status_code}: Job started successfully")
+            click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
         else:
             click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
     except requests.exceptions.RequestException as e:

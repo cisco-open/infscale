@@ -32,6 +32,7 @@ from infscale.controller.ctrl_dtype import (
     ReqType,
     Response,
 )
+from infscale.controller.deployment.static import StaticDeploymentPolicy
 from infscale.exceptions import InfScaleException
 
 if TYPE_CHECKING:
@@ -97,7 +98,13 @@ async def manage_job(job_action: CommandActionModel):
     except InfScaleException as e:
         return JSONResponse(status_code=400, content=str(e))
 
-    res = "job started" if job_action.action == CommandAction.START else "job stopped"
+    res = ""
+    if job_action.config.auto_config and isinstance(
+        _ctrl.deploy_policy, StaticDeploymentPolicy
+    ):
+        res = "WARNING: static deployment policy is enabled; ignoring auto config.\n"
+
+    res += "Job started" if job_action.action == CommandAction.START else "Job stopped"
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=res)
 
@@ -110,6 +117,12 @@ async def update_job(job_action: CommandActionModel):
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=e.detail)
 
-    res = "job updated"
+    res = ""
+    if job_action.config.auto_config and isinstance(
+        _ctrl.deploy_policy, StaticDeploymentPolicy
+    ):
+        res = "WARNING: static deployment policy is enabled; ignoring auto config.\n"
+
+    res += "Job updated"
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=res)
