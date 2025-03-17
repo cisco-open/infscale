@@ -20,13 +20,18 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from uvicorn import Config, Server
 
 from infscale.constants import APISERVER_PORT
-from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
-                                            ReqType, Response)
+from infscale.controller.ctrl_dtype import (
+    CommandAction,
+    CommandActionModel,
+    ReqType,
+    Response,
+)
 from infscale.exceptions import InfScaleException
 
 if TYPE_CHECKING:
@@ -34,6 +39,26 @@ if TYPE_CHECKING:
 
 _ctrl = None
 app = FastAPI()
+
+
+async def request_validation_exception_handler(
+    unused_request: Request, exc: RequestValidationError
+):
+    """Customize Fast API validation errors with a user friendly message."""
+    errors = exc.errors()
+
+    readable_errors = []
+    for error in errors:
+        loc = " -> ".join(str(i) for i in error["loc"])
+        readable_errors.append(f"Error in field '{loc}': {error['msg']}")
+
+    return JSONResponse(
+        status_code=422,
+        content={"Validation error": readable_errors},
+    )
+
+
+app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
 
 
 class ApiServer:

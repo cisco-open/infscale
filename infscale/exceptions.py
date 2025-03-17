@@ -42,6 +42,7 @@ class InvalidConfig(InfScaleException):
         """Initialize InvalidConfig exception instance."""
         super().__init__(err_msg)
 
+
 class InsufficientResources(InfScaleException):
     """Exception for insufficient agent resources."""
 
