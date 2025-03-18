@@ -284,6 +284,23 @@ class UpdatingState(BaseJobState):
         if all_agents_running:
             self.context.set_state(JobStateEnum.RUNNING)
 
+    async def cond_completing(self):
+        """Handle the transition to completing."""
+        server_wids = self.context.get_server_wids()
+
+        verdict = all(
+            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_wids
+        )
+
+        if not verdict:
+            return
+
+        command = CommandActionModel(
+            action=CommandAction.FINISH_JOB, job_id=self.job_id
+        )
+        await self.context.send_command_to_agents(command)
+        self.context.set_state(JobStateEnum.COMPLETING)
+
 
 class CompleteState(BaseJobState):
     """CompleteState class."""
