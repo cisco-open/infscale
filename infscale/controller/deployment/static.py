@@ -68,6 +68,8 @@ class StaticDeploymentPolicy(DeploymentPolicy):
                 raise InvalidConfig(f"{ip} not a valid agent IP")
 
             agent_id = agent_ip_to_id[ip]
+            resources = agent_resources[agent_id]
+
             device = self._get_worker_device(worker_id, job_config.workers)
             worlds_map = self._get_worker_worlds_map(worker_id, job_config)
 
@@ -76,6 +78,8 @@ class StaticDeploymentPolicy(DeploymentPolicy):
                 assignment_map[agent_id].add(assignment_data)
             else:
                 assignment_map[agent_id] = {assignment_data}
+
+            self._update_gpu_resources(resources, device)
 
             handled_worker_ids.add(worker_id)
 

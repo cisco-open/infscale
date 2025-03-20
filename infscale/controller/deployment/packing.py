@@ -69,6 +69,8 @@ class PackingPolicy(DeploymentPolicy):
             else:
                 assignment_map[agent_id] = {assignment_data}
 
+            self._update_gpu_resources(resources, device)
+
         return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
 
     def _select_agent_with_most_resources(

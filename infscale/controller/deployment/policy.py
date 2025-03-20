@@ -160,3 +160,17 @@ class DeploymentPolicy(ABC):
 
         for world in worlds_map.values():
             world.backend = "gloo" if device == "cpu" else "nccl"
+
+    def _update_gpu_resources(self, resources: AgentResources, device: str) -> None:
+        """Update agent GPU resources when a worker is assigned."""
+        if device == "cpu":
+            return
+
+        gpu_id = int(device.split(":")[1])
+
+        gpu_stat = next(
+            (gpu_stat for gpu_stat in resources.gpu_stats if gpu_stat.id == gpu_id), None
+        )
+
+        if gpu_stat:
+            gpu_stat.used = True
