@@ -158,19 +158,55 @@ class JobConfig:
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
                 world_info = item if isinstance(item, WorldInfo) else WorldInfo(**item)
-
-                if self.auto_config == False and not world_info.backend:
-                    raise InvalidConfig(f"backend attribute is required when auto_config is set to: {self.auto_config}")
-
                 self.flow_graph[k][i] = world_info
 
         for j, w in enumerate(self.workers):
             worker = w if isinstance(w, WorkerData) else WorkerData(**w)
-
-            if self.auto_config == False and not worker.device:
-                raise InvalidConfig(f"device attribute is required when auto_config is set to: {self.auto_config}")
-
             self.workers[j] = worker
+
+        self._validate()
+
+    def _validate(self) -> None:
+        """Validate job config."""
+        if self.auto_config:
+            # we don't need to validate anything
+            return
+
+        worker_devices = {
+            worker.id: worker.device.split(":")[0] for worker in self.workers
+        }
+
+        for wid, world_infos in self.flow_graph.items():
+            for world_info in world_infos:
+                self._validate_device_backend(wid, world_info, worker_devices)
+
+    def _validate_device_backend(
+        self, wid: str, world_info: WorldInfo, worker_devices: dict[str, str]
+    ) -> None:
+        """Validate device and backend values."""
+        backend = world_info.backend
+
+        if not backend:
+            raise InvalidConfig(
+                f"backend attribute is required when auto_config is set to false"
+            )
+
+        device_type = worker_devices.get(wid, None)
+
+        if not device_type:
+            raise InvalidConfig(
+                f"device attribute is required when auto_config is set to false"
+            )
+
+        if device_type == "cuda" and backend not in {"gloo", "nccl"}:
+            raise InvalidConfig(
+                f"Worker '{wid}' has device 'cuda' but uses backend '{backend}'. Expected 'gloo' or 'nccl'."
+            )
+
+        if device_type == "cpu" and backend != "gloo":
+            raise InvalidConfig(
+                f"Worker '{wid}' has device 'cpu' but uses backend '{backend}'. Expected 'gloo'."
+            )
 
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""

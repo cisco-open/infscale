@@ -16,7 +16,7 @@
 
 """conftest file."""
 
-from infscale.config import JobConfig, WorldInfo
+from infscale.config import JobConfig, WorkerData, WorldInfo
 
 # old_config,new_config,expected_terminate_ids,expected_start_ids,expected_updated_ids
 job_config_diffs = [
@@ -24,63 +24,83 @@ job_config_diffs = [
     (
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-0": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["1-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-0": [
-                     WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "1-0": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["0-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
             },
         ),
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-0": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["1-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-0": [
-                    WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "1-0": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["0-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
             },
         ),
@@ -92,75 +112,101 @@ job_config_diffs = [
     (
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-0": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["1-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-0": [
-                    WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-0"],
-                         "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "1-0": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["0-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
             },
         ),
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-1", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-0": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["1-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-0": [
-                    WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-1": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "1-0": [
-                    WorldInfo(**{
-                        "name": "w3",
-                        "peers": ["0-0"],
-                        "backend": "gloo",
-                    }),
-                    WorldInfo(**{
-                        "name": "w4",
-                        "peers": ["0-1"],
-                        "backend": "gloo",
-                    })],
+                    WorldInfo(
+                        **{
+                            "name": "w3",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    ),
+                    WorldInfo(
+                        **{
+                            "name": "w4",
+                            "peers": ["0-1"],
+                            "backend": "gloo",
+                        }
+                    ),
+                ],
             },
         ),
         [],  # Expected terminate_ids
@@ -171,74 +217,100 @@ job_config_diffs = [
     (
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-1", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-0": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["1-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-0": [
-                    WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-1": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "1-0": [
-                    WorldInfo(**{
-                        "name": "w3",
-                        "peers": ["0-0"],
-                        "backend": "gloo",
-                    }),
-                    WorldInfo(**{
-                        "name": "w4",
-                        "peers": ["0-1"],
-                        "backend": "gloo",
-                    })],
+                    WorldInfo(
+                        **{
+                            "name": "w3",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    ),
+                    WorldInfo(
+                        **{
+                            "name": "w4",
+                            "peers": ["0-1"],
+                            "backend": "gloo",
+                        }
+                    ),
+                ],
             },
         ),
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-0": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["1-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-0": [
-                    WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "1-0": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["0-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
             },
         ),
@@ -250,63 +322,83 @@ job_config_diffs = [
     (
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-0": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["1-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "0-0": [
-                    WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "1-0": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["0-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
             },
         ),
         JobConfig(
             job_id="job1",
-            workers=[],
+            workers=[
+                WorkerData(**{"id": "s-4", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "2-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "4-0", "stage": {}, "device": "cpu"}),
+            ],
             name="test",
             model="model",
             dataset=None,
             auto_config=False,
             flow_graph={
                 "s-4": [
-                    WorldInfo(**{
-                        "name": "w0",
-                        "peers": ["4-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["4-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "2-0": [
-                    WorldInfo(**{
-                        "name": "w1",
-                        "peers": ["s-4"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-4"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
                 "4-0": [
-                    WorldInfo(**{
-                        "name": "w2",
-                        "peers": ["2-0"],
-                        "backend": "gloo",
-                    })
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["2-0"],
+                            "backend": "gloo",
+                        }
+                    )
                 ],
             },
         ),
