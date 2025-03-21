@@ -88,6 +88,7 @@ class Pipeline:
                 backend=backend,
                 addr=addr,
                 port=port,
+                device=self.device,
             )
         except Exception as e:
             logger.error(f"failed to initialize a multiworld {name}: {e}")
