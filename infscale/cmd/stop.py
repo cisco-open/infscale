@@ -16,6 +16,7 @@
 
 import click
 import requests
+
 from infscale.constants import APISERVER_ENDPOINT
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
@@ -41,7 +42,7 @@ def job(endpoint: str, job_id: str):
         )
 
         if response.status_code == 200:
-            click.echo(f"{response.status_code}: Job stopped successfully")
+            click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
         else:
             click.echo(f"{response.status_code}: {response.content.decode('utf-8')}")
     except requests.exceptions.RequestException as e:

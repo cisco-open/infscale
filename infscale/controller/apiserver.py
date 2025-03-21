@@ -59,7 +59,18 @@ async def request_validation_exception_handler(
     )
 
 
+async def invalid_config_exception_handler(
+    unused_request: Request, exc: InfScaleException
+):
+    """Handle InfScaleException errors."""
+    return JSONResponse(
+        status_code=400,
+        content={"detail": f"Request failed: {str(exc)}"},
+    )
+
+
 app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
+app.add_exception_handler(InfScaleException, invalid_config_exception_handler)
 
 
 class ApiServer:
@@ -98,13 +109,16 @@ async def manage_job(job_action: CommandActionModel):
     except InfScaleException as e:
         return JSONResponse(status_code=400, content=str(e))
 
+    config, action = job_action.config, job_action.action
     res = ""
-    if job_action.config.auto_config and isinstance(
-        _ctrl.deploy_policy, StaticDeploymentPolicy
+    if (
+        action == CommandAction.START
+        and config.auto_config
+        and isinstance(_ctrl.deploy_policy, StaticDeploymentPolicy)
     ):
         res = "WARNING: static deployment policy is enabled; ignoring auto config.\n"
 
-    res += "Job started" if job_action.action == CommandAction.START else "Job stopped"
+    res += "Job started" if action == CommandAction.START else "Job stopped"
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=res)
 
@@ -116,6 +130,8 @@ async def update_job(job_action: CommandActionModel):
         await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, job_action)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=e.detail)
+    except InfScaleException as e:
+        return JSONResponse(status_code=400, content=str(e))
 
     res = ""
     if job_action.config.auto_config and isinstance(
