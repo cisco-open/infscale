@@ -698,7 +698,7 @@ class JobContext:
 
     def get_server_wids(self) -> list[str]:
         """Return a list of worker ids whose role is a server."""
-        config = next(iter(self.agent_info.values())).config
+        config = next(iter(self.running_agent_info)).config
         wids = set()
 
         for worker in config.workers:
