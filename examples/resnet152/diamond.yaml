@@ -11,28 +11,22 @@ fwd_policy: "rr"
 job_id: "job1"
 # maximum number of requests in flight at any given point in time
 max_inflight: 8
-auto_config: False
 
 flow_graph:
   s-0:
     - name: w0
       peers: [1-0]
-      backend: gloo
   0-0:
     - name: w1
       peers: [s-0]
-      backend: gloo
   0-1:
     - name: w4
       peers: [s-0]
-      backend: gloo
   1-0:
     - name: w2
       peers: [0-0]
-      backend: nccl
     - name: w3
       peers: [0-1]
-      backend: nccl
 
 dataset: # huggingface dataset
   path: "cifar10"
@@ -41,23 +35,19 @@ dataset: # huggingface dataset
 
 workers:
   - id: s-0
-    device: cpu
     is_server: True
     stage:
       start: -1
       end: -1
   - id: 0-0
-    device: cuda:1
     stage:
       start: 0
       end: 25
   - id: 0-1
-    device: cuda:2
     stage:
       start: 0
       end: 25
   - id: 1-0
-    device: cuda:3
     stage:
       start: 26
       end: 51

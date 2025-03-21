@@ -57,12 +57,8 @@ class EvenDeploymentPolicy(DeploymentPolicy):
             resources = agent_resources[data.id]
             worlds_map = self._get_worker_worlds_map(worker.id, job_config)
 
-            decided_device = resources.get_n_set_device(
-                dev_type, job_config.auto_config
-            )
-            self._update_backend(worlds_map, decided_device, job_config.auto_config)
-
-            device = decided_device or worker.device
+            device = resources.get_n_set_device(dev_type)
+            self._update_backend(worlds_map, device)
 
             assignment_data = AssignmentData(worker.id, device, worlds_map)
             if data.id in assignment_map:

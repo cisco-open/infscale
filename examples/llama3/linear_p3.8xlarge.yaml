@@ -10,28 +10,22 @@ fwd_policy: "static"
 job_id: "job5"
 # maximum number of requests in flight at any given point in time
 max_inflight: 4
-auto_config: False
 
 flow_graph:
   s-0:
     - name: w0
       peers: [2-0]
-      backend: nccl
   0-0:
     - name: w1
       peers: [s-0]
-      backend: nccl
     - name: w2
       peers: [2-0]
-      backend: nccl
   1-0:
     - name: w3
       peers: [0-0]
-      backend: nccl
   2-0:
     - name: w4
       peers: [1-0]
-      backend: nccl
 
 dataset: # huggingface dataset
   path: fka/awesome-chatgpt-prompts
@@ -40,23 +34,19 @@ dataset: # huggingface dataset
 
 workers:
   - id: s-0
-    device: cuda:0
     is_server: True
     stage:
       start: -1
       end: -1
   - id: 0-0
-    device: cuda:1
     stage:
       start: 0
       end: 7
   - id: 1-0
-    device: cuda:2
     stage:
       start: 8
       end: 20
   - id: 2-0
-    device: cuda:3
     stage:
       start: 21
       end: 34

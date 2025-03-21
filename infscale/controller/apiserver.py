@@ -99,26 +99,21 @@ class ApiServer:
 @app.post("/job", response_model=Response)
 async def manage_job(job_action: CommandActionModel):
     """Start or Stop a job."""
+    config, action = job_action.config, job_action.action
+
     try:
-        await _ctrl.handle_fastapi_request(
-            ReqType.JOB_ACTION,
-            job_action,
-        )
+        if action == CommandAction.START and isinstance(
+            _ctrl.deploy_policy, StaticDeploymentPolicy
+        ):
+            config.validate()
+
+        await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, job_action)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=e.detail)
     except InfScaleException as e:
         return JSONResponse(status_code=400, content=str(e))
 
-    config, action = job_action.config, job_action.action
-    res = ""
-    if (
-        action == CommandAction.START
-        and config.auto_config
-        and isinstance(_ctrl.deploy_policy, StaticDeploymentPolicy)
-    ):
-        res = "WARNING: static deployment policy is enabled; ignoring auto config.\n"
-
-    res += "Job started" if action == CommandAction.START else "Job stopped"
+    res = "Job started" if action == CommandAction.START else "Job stopped"
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=res)
 
@@ -126,19 +121,18 @@ async def manage_job(job_action: CommandActionModel):
 @app.put("/job", response_model=Response)
 async def update_job(job_action: CommandActionModel):
     """Update job with new config."""
+    config = job_action.config
+
     try:
+        if isinstance(_ctrl.deploy_policy, StaticDeploymentPolicy):
+            config.validate()
+
         await _ctrl.handle_fastapi_request(ReqType.JOB_ACTION, job_action)
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=e.detail)
     except InfScaleException as e:
         return JSONResponse(status_code=400, content=str(e))
 
-    res = ""
-    if job_action.config.auto_config and isinstance(
-        _ctrl.deploy_policy, StaticDeploymentPolicy
-    ):
-        res = "WARNING: static deployment policy is enabled; ignoring auto config.\n"
-
-    res += "Job updated"
+    res = "Job updated"
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=res)

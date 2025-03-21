@@ -8,17 +8,14 @@ nfaults: 1
 micro_batch_size: 2
 fwd_policy: "static"
 job_id: "job7"
-auto_config: False
 
 flow_graph:
   s-0:
     - name: w0
       peers: [0-0]
-      backend: gloo
   0-0:
     - name: w1
       peers: [s-0]
-      backend: gloo
 
 dataset: # huggingface dataset
   path: fka/awesome-chatgpt-prompts
@@ -27,13 +24,11 @@ dataset: # huggingface dataset
 
 workers:
   - id: s-0
-    device: cpu
     is_server: True
     stage:
       start: -1
       end: -1
   - id: 0-0
-    device: cpu
     stage:
       start: 0
       end: 13

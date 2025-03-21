@@ -53,7 +53,6 @@ class StaticDeploymentPolicy(DeploymentPolicy):
         # check if the config is complete and deployable
         # and build assignment map
         for worker_id, world_infos in job_config.flow_graph.items():
-
             # create a set to remove duplicate
             ips = set(world_info.addr for world_info in world_infos)
             # convert the set to a list
@@ -69,7 +68,10 @@ class StaticDeploymentPolicy(DeploymentPolicy):
                 raise InvalidConfig(f"{ip} not a valid agent IP")
 
             agent_id = agent_ip_to_id[ip]
-            device = self._get_worker_device(worker_id, job_config.workers)
+            resources = agent_resources[agent_id]
+            device = self._get_n_update_worker_device(
+                worker_id, job_config.workers, resources
+            )
             worlds_map = self._get_worker_worlds_map(worker_id, job_config)
 
             assignment_data = AssignmentData(worker_id, device, worlds_map)
@@ -90,8 +92,28 @@ class StaticDeploymentPolicy(DeploymentPolicy):
 
         return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
 
-    def _get_worker_device(self, worker_id: str, workers: list[WorkerData]) -> str:
-        """Get worker device."""
+    def _get_n_update_worker_device(
+        self, worker_id: str, workers: list[WorkerData], resources: AgentResources
+    ) -> str:
+        """Get and update worker device."""
         worker = next(w for w in workers if w.id == worker_id)
 
-        return worker.device
+        device = worker.device
+
+        if device == "cpu":
+            return device
+
+        gpu_id = int(device.split(":")[1])
+
+        gpu_stat = next(
+            gpu_stat for gpu_stat in resources.gpu_stats if gpu_stat.id == gpu_id
+        )
+
+        if gpu_stat.used:
+            raise InvalidConfig(
+                f"GPU {gpu_stat.id} is used, please consider using another device."
+            )
+
+        gpu_stat.used = True
+
+        return device

@@ -32,7 +32,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-0": [
                     WorldInfo(
@@ -73,7 +72,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-0": [
                     WorldInfo(
@@ -120,7 +118,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-0": [
                     WorldInfo(
@@ -162,7 +159,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-0": [
                     WorldInfo(
@@ -226,7 +222,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-0": [
                     WorldInfo(
@@ -283,7 +278,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-0": [
                     WorldInfo(
@@ -330,7 +324,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-0": [
                     WorldInfo(
@@ -371,7 +364,6 @@ job_config_diffs = [
             name="test",
             model="model",
             dataset=None,
-            auto_config=False,
             flow_graph={
                 "s-4": [
                     WorldInfo(

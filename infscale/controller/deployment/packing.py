@@ -54,14 +54,16 @@ class PackingPolicy(DeploymentPolicy):
                 dev_type, agent_resources
             )
 
-            worker = workers.pop()
-            decided_device = resources.get_n_set_device(
-                dev_type, job_config.auto_config
-            )
-            device = decided_device or worker.device
+            device = resources.get_n_set_device(dev_type)
 
+            # this means that current agent don't have enough resources,
+            # so we have to move to the next agent before popping the worker
+            if device is None:
+                continue
+
+            worker = workers.pop()
             worlds_map = self._get_worker_worlds_map(worker.id, job_config)
-            self._update_backend(worlds_map, decided_device, job_config.auto_config)
+            self._update_backend(worlds_map, device)
 
             assignment_data = AssignmentData(worker.id, device, worlds_map)
             if agent_id in assignment_map:

@@ -62,17 +62,12 @@ class AgentResources:
         self.cpu_stats: CPUStats = cpu_stats
         self.dram_stats: DRAMStats = dram_stats
 
-    def get_n_set_device(self, dev_type: DeviceType, auto_config: bool) -> str | None:
+    def get_n_set_device(self, dev_type: DeviceType) -> str | None:
         """
         Return device string based on device type.
 
         In case of GPU, select the first unused GPU and update its used property.
-
-        If auto_config is set to False, return None.
         """
-        if not auto_config:
-            return None
-
         if dev_type == DeviceType.CPU:
             return "cpu"
 

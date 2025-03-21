@@ -152,11 +152,8 @@ class DeploymentPolicy(ABC):
         return result
 
     def _update_backend(
-        self, worlds_map: dict[str, WorldInfo], device: str, auto_config: bool
+        self, worlds_map: dict[str, WorldInfo], device: str
     ) -> dict[str, WorldInfo]:
-        """Update backend value based on device if auto config is True."""
-        if not auto_config:
-            return
-
+        """Update backend value based on device."""
         for world in worlds_map.values():
             world.backend = "gloo" if device == "cpu" else "nccl"

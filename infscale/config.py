@@ -147,11 +147,6 @@ class JobConfig:
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
-    # auto_config: False - worker device and back-end fields are mandatory,
-    #                      they will be provided in the config file
-    #              True - worker device and back-end will be set based on
-    #                     available resources form the agents (GPU, CPU)
-    auto_config: bool = False
 
     def __post_init__(self) -> None:
         """Handle post init class variables."""
@@ -164,14 +159,8 @@ class JobConfig:
             worker = w if isinstance(w, WorkerData) else WorkerData(**w)
             self.workers[j] = worker
 
-        self._validate()
-
-    def _validate(self) -> None:
+    def validate(self) -> None:
         """Validate job config."""
-        if self.auto_config:
-            # we don't need to validate anything
-            return
-
         worker_devices = {
             worker.id: worker.device.split(":")[0] for worker in self.workers
         }
@@ -188,14 +177,14 @@ class JobConfig:
 
         if not backend:
             raise InvalidConfig(
-                f"backend attribute is required when auto_config is set to false"
+                f"backend attribute is required when static policy is used"
             )
 
         device_type = worker_devices.get(wid, None)
 
         if not device_type:
             raise InvalidConfig(
-                f"device attribute is required when auto_config is set to false"
+                f"device attribute is required when static policy is used"
             )
 
         if device_type == "cuda" and backend not in {"gloo", "nccl"}:
