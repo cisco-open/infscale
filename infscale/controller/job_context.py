@@ -23,21 +23,14 @@ from enum import Enum
 from typing import TYPE_CHECKING, Iterator
 
 from fastapi import HTTPException, status
-
 from infscale import get_logger
 from infscale.actor.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
-from infscale.controller.agent_context import (
-    CPU_LOAD_THRESHOLD,
-    AgentResources,
-    DeviceType,
-)
+from infscale.controller.agent_context import (CPU_LOAD_THRESHOLD,
+                                               AgentResources, DeviceType)
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
-from infscale.exceptions import (
-    InfScaleException,
-    InsufficientResources,
-    InvalidJobStateAction,
-)
+from infscale.exceptions import (InfScaleException, InsufficientResources,
+                                 InvalidJobStateAction)
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
@@ -565,20 +558,27 @@ class JobContext:
                     world.ctrl_port = curr_worlds[world.name].ctrl_port
                     world.backend = curr_worlds[world.name].backend
                 else:
-                    assignment_data = self._get_worker_assignment_data(agent_data, wid)
-
                     agent_info = world_agent_map[world.name]
-                    port_iter = agent_port_map[agent_info.id]
+
                     addr = self.ctrl.agent_contexts[agent_info.id].ip
+                    port_iter = agent_port_map[agent_info.id]
+                    assignment_data = self._get_worker_assignment_data(agent_info, wid)
+                    backend = assignment_data.worlds_map[world.name].backend
 
                     # assign new ports to new worlds
                     world.addr = addr
                     world.data_port = next(port_iter)
                     world.ctrl_port = next(port_iter)
-                    world.backend = assignment_data.worlds_map[world.name].backend
+                    world.backend = backend
 
         # step 2: update workers devices
         for w in new_config.workers:
+            if not w.deploy:
+                log = f"not setting device for {w.id}"
+                log += f" since it's not deployed in {agent_data.id}"
+                logger.debug(log)
+                continue
+
             assignment_data = self._get_worker_assignment_data(agent_data, w.id)
             w.device = assignment_data.device
 
