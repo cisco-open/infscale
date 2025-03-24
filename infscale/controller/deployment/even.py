@@ -15,8 +15,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from itertools import cycle
+from typing import Iterator
 
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
@@ -51,19 +52,42 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         workers = self.get_workers(assignment_map, job_config.workers)
 
         # check if the assignment map has changed
-        self.update_agents_assignment_map(assignment_map, job_config.workers)
+        self.update_agents_assignment_map(assignment_map, job_config)
 
-        for worker, data in zip(workers, cycle(agent_data)):
-            resources = agent_resources[data.id]
+        # sort agent data ascending by number of assignments
+        agent_data.sort(key=lambda agent: len(agent.assignment_set))
+        agent_cycle = cycle(agent_data)
+
+        while workers:
+            device, data = self._get_device_n_data(
+                dev_type, agent_resources, agent_cycle
+            )
+
+            worker = workers.pop()
+
             worlds_map = self._get_worker_worlds_map(worker.id, job_config)
 
-            device = resources.get_n_set_device(dev_type)
             self._update_backend(worlds_map, device)
-
             assignment_data = AssignmentData(worker.id, device, worlds_map)
+
             if data.id in assignment_map:
                 assignment_map[data.id].add(assignment_data)
             else:
                 assignment_map[data.id] = {assignment_data}
 
         return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
+
+    def _get_device_n_data(
+        self,
+        dev_type: DeviceType,
+        agent_resources: dict[str, AgentResources],
+        agent_cycle: Iterator[AgentMetaData],
+    ) -> tuple[str, AgentMetaData]:
+        """Get device and agent data."""
+        while True:
+            data = next(agent_cycle)  # Get the next agent
+            resources = agent_resources[data.id]
+
+            device = resources.get_n_set_device(dev_type)
+            if device:
+                return device, data

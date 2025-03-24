@@ -47,7 +47,7 @@ class PackingPolicy(DeploymentPolicy):
         workers = self.get_workers(assignment_map, job_config.workers)
 
         # check if the assignment map has changed
-        self.update_agents_assignment_map(assignment_map, job_config.workers)
+        self.update_agents_assignment_map(assignment_map, job_config)
 
         while workers:
             agent_id, resources = self._select_agent_with_most_resources(

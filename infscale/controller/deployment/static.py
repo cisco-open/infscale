@@ -43,7 +43,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
 
         workers = self.get_workers(assignment_map, job_config.workers)
 
-        self.update_agents_assignment_map(assignment_map, job_config.workers)
+        self.update_agents_assignment_map(assignment_map, job_config)
 
         agent_ip_to_id = {}
         for data in agent_data:

@@ -98,11 +98,11 @@ class DeploymentPolicy(ABC):
         return results
 
     def update_agents_assignment_map(
-        self, assignment_map: dict[str, set[AssignmentData]], workers: list[WorkerData]
+        self, assignment_map: dict[str, set[AssignmentData]], config: JobConfig
     ) -> None:
         """Check if worker assignment map has changed and update if needed."""
         # new worker ids
-        worker_ids = {worker.id for worker in workers}
+        worker_ids = {worker.id for worker in config.workers}
 
         # flatten the current worker set
         current_workers = {
@@ -114,13 +114,17 @@ class DeploymentPolicy(ABC):
         # compute removed workers
         removed_workers = set(current_workers) - set(worker_ids)
 
-        # remove workers from the assignment map
+        # update assignment map
         for agent_id, assignment_set in assignment_map.items():
-            assignment_map[agent_id] = {
-                AssignmentData(data.wid, data.device)
+            assignment_set = {
+                # update worlds map due to possible flow graph change
+                AssignmentData(
+                    data.wid, data.device, self._get_worker_worlds_map(data.wid, config)
+                )
                 for data in assignment_set
                 if data.wid not in removed_workers
             }
+            assignment_map[agent_id] = assignment_set
 
     def _get_agent_updated_cfg(
         self, assignment_map: dict[str, set[AssignmentData]], job_config: JobConfig
