@@ -33,6 +33,7 @@ from infscale.constants import (APISERVER_PORT, CONTROLLER_PORT,
                                 GRPC_MAX_MESSAGE_LENGTH)
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
+from infscale.controller.autoscaler import AutoScaler
 from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
                                             ReqType)
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
@@ -56,6 +57,7 @@ class Controller:
         port: int = CONTROLLER_PORT,
         apiport: int = APISERVER_PORT,
         policy: str = DEFAULT_DEPLOYMENT_POLICY,
+        enable_as: bool = False,
     ):
         """Initialize an instance."""
         global logger
@@ -79,6 +81,10 @@ class Controller:
             )
             self.deploy_policy = policy_fact.get_deployment(DeploymentPolicyEnum.EVEN)
 
+        self.autoscaler = None
+        if enable_as:
+            self.autoscaler = AutoScaler(self)
+
     async def _start_server(self):
         server_options = [
             ("grpc.max_send_message_length", GRPC_MAX_MESSAGE_LENGTH),
@@ -98,6 +104,9 @@ class Controller:
         """Run controller."""
         logger.info("starting controller")
         _ = asyncio.create_task(self._start_server())
+
+        if self.autoscaler is not None:
+            _ = asyncio.create_task(self.autoscaler.run())
 
         await self.apiserver.run()
 
