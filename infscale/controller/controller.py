@@ -337,3 +337,7 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         event = agent_context.get_grpc_ctx_event()
 
         await event.wait()
+
+    def update_metrics(self, request: pb2.JobMetrics, unused_context: ServicerContext):
+        """Handle message with job's performance metrics."""
+        return empty_pb2.Empty()

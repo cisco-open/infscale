@@ -21,6 +21,8 @@ service ManagementRoute {
   rpc command(AgentID) returns (stream Action) {}
   // agent calls job_status rpc to provide status of a job
   rpc job_status(JobStatus) returns (google.protobuf.Empty) {}
+  // agent calls update_metrics rpc to provide performance metrics of a job
+  rpc update_metrics(JobMetrics) returns (google.protobuf.Empty) {}
 }
 
 message AgentID {
@@ -105,11 +107,17 @@ message WorkerStatus {
   int32 cid = 5;         // compute id specifies device id where the task is running
                          // if on_gpu is false and cid = -1, no cpu pinning
   int32 mid = 6;         // vram id; meaningful only if on_gpu is true
-  Statistics statistics = 7;
 }
 
-// statistics contains 
-message Statistics {
-  int32 throughput = 1; // requests (e.g., prompts) per second; can be an average value
-  int32 latency_ms = 2; // delay in millisecond; can be an average value
+// Job Metrics contains information about performance metrics for a job
+message JobMetrics {
+  string job_id = 1;                        // job id
+  map<string, PerfMetrics> metrics_map = 2; // key: worker id, value: performance metrics
+}
+
+// Performance Metrics contains metrics related to worker's performance
+message PerfMetrics {
+  float qlevel = 1; // number of requests in a worker waiting for processing
+  float thp = 2;    // requests (e.g., prompts) per second; can be an average value
+  float delay = 3;  // per-request delay in second; can be an average value
 }
