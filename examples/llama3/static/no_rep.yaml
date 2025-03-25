@@ -1,0 +1,43 @@
+---
+name: llama3_example
+model: meta-llama/Meta-Llama-3.1-8B
+nfaults: 1
+# the following entries are for local development only
+# after development is done, they need to be revised accordingly
+# to automate building flow_graph, etc.
+micro_batch_size: 2
+fwd_policy: "static"
+job_id: "job6"
+# maximum number of requests in flight at any given point in time
+max_inflight: 2
+
+# Note: IP addresses should be agents'
+flow_graph:
+  s-0:
+    - name: w0
+      peers: [0-0]
+      addr: 10.20.1.50
+      backend: gloo
+  0-0:
+    - name: w1
+      peers: [s-0]
+      addr: 10.20.1.50
+      backend: gloo
+
+dataset: # huggingface dataset
+  path: fka/awesome-chatgpt-prompts
+  name: ""
+  split: train
+
+workers:
+  - id: s-0
+    device: cpu
+    is_server: True
+    stage:
+      start: -1
+      end: -1
+  - id: 0-0
+    device: cpu
+    stage:
+      start: 0
+      end: 34
