@@ -16,12 +16,12 @@
 
 """Static deployment policy."""
 
+from infscale.common.exceptions import InvalidConfig
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import (AssignmentData,
                                                    DeploymentPolicy)
 from infscale.controller.job_context import AgentMetaData
-from infscale.exceptions import InvalidConfig
 
 
 class StaticDeploymentPolicy(DeploymentPolicy):

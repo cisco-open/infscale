@@ -22,7 +22,7 @@ from multiprocessing import connection
 
 import torch.multiprocessing as mp
 from infscale import get_logger
-from infscale.actor.job_msg import (
+from infscale.common.job_msg import (
     Message,
     MessageType,
     WorkerStatus,

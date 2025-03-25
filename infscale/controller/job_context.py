@@ -24,13 +24,14 @@ from typing import TYPE_CHECKING, Iterator
 
 from fastapi import HTTPException, status
 from infscale import get_logger
-from infscale.actor.job_msg import JobStatus, WorkerStatus
+from infscale.common.exceptions import (InfScaleException,
+                                        InsufficientResources,
+                                        InvalidJobStateAction)
+from infscale.common.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
 from infscale.controller.agent_context import (CPU_LOAD_THRESHOLD,
                                                AgentResources, DeviceType)
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
-from infscale.exceptions import (InfScaleException, InsufficientResources,
-                                 InvalidJobStateAction)
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller

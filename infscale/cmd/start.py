@@ -22,12 +22,12 @@ import click
 import requests
 import yaml
 from infscale.actor.agent import Agent
-from infscale.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
-                                CONTROLLER_PORT, DEFAULT_DEPLOYMENT_POLICY,
-                                LOCALHOST)
+from infscale.common.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
+                                       CONTROLLER_PORT,
+                                       DEFAULT_DEPLOYMENT_POLICY, LOCALHOST)
+from infscale.common.exceptions import InvalidConfig
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
-from infscale.exceptions import InvalidConfig
 
 
 @click.group()

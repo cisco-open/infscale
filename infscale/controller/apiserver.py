@@ -23,17 +23,12 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from uvicorn import Config, Server
-
-from infscale.constants import APISERVER_PORT
-from infscale.controller.ctrl_dtype import (
-    CommandAction,
-    CommandActionModel,
-    ReqType,
-    Response,
-)
+from infscale.common.constants import APISERVER_PORT
+from infscale.common.exceptions import InfScaleException
+from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
+                                            ReqType, Response)
 from infscale.controller.deployment.static import StaticDeploymentPolicy
-from infscale.exceptions import InfScaleException
+from uvicorn import Config, Server
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller

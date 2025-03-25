@@ -19,7 +19,7 @@
 from dataclasses import dataclass
 
 from infscale import get_logger
-from infscale.actor.job_msg import JobStatus
+from infscale.common.job_msg import JobStatus
 from infscale.config import JobConfig
 from infscale.controller.ctrl_dtype import CommandAction
 from infscale.controller.job_context import JobStateEnum

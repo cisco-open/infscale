@@ -21,7 +21,7 @@ import sys
 from multiprocessing import connection
 
 from infscale import get_logger
-from infscale.actor.job_msg import Message, MessageType, WorkerStatus
+from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.config import ServeConfig
 
 logger = None

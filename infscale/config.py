@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from infscale import get_logger
-from infscale.exceptions import InvalidConfig
+from infscale.common.exceptions import InvalidConfig
 
 logger = None
 

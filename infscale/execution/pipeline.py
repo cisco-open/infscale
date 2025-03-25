@@ -21,8 +21,8 @@ import time
 
 import torch
 from infscale import get_logger
-from infscale.actor.job_msg import Message, MessageType, WorkerStatus
 from infscale.actor.worker_comm import WorkerCommunicator
+from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.config import ServeConfig
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.router import Router

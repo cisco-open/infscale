@@ -22,14 +22,13 @@ from enum import Enum
 from typing import TYPE_CHECKING, Union
 
 from infscale import get_logger
-from infscale.constants import HEART_BEAT_PERIOD
+from infscale.common.constants import HEART_BEAT_PERIOD
 from infscale.monitor.cpu import CPUStats, DRAMStats
 from infscale.monitor.gpu import GpuStat, VramStat
 from infscale.utils.timer import Timer
 
 if TYPE_CHECKING:
     from grpc import ServicerContext
-
     from infscale.controller.controller import Controller
 
 DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD
