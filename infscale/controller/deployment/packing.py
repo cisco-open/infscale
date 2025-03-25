@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from infscale.config import JobConfig
+from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
@@ -54,27 +54,66 @@ class PackingPolicy(DeploymentPolicy):
                 dev_type, agent_resources
             )
 
-            device = resources.get_n_set_device(dev_type)
-
-            # this means that current agent don't have enough resources,
-            # so we have to move to the next agent before popping the worker
-            if device is None:
-                continue
-
-            worker = workers.pop()
-            worlds_map = self._get_worker_worlds_map(worker.id, job_config)
-            self._update_backend(worlds_map, device)
-
-            assignment_data = AssignmentData(worker.id, device, worlds_map)
-            if agent_id in assignment_map:
-                assignment_map[agent_id].add(assignment_data)
-            else:
-                assignment_map[agent_id] = {assignment_data}
+            self._assign_workers(
+                dev_type, agent_id, job_config, workers, assignment_map, resources
+            )
 
         return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
 
+    def _assign_workers(
+        self,
+        dev_type: DeviceType,
+        agent_id: str,
+        job_config: JobConfig,
+        workers: list[WorkerData],
+        assignment_map: dict[str, set[AssignmentData]],
+        resources: AgentResources,
+    ) -> None:
+        workers_num = len(workers)
+        workers_to_deploy = workers_num
+
+        if dev_type == DeviceType.GPU:
+            available_gpu_num = sum(
+                1 for gpu_stat in resources.gpu_stats if not gpu_stat.used
+            )
+            workers_to_deploy = (
+                workers_num if available_gpu_num >= workers_num else available_gpu_num
+            )
+
+        for i in range(workers_to_deploy):
+            device = resources.get_n_set_device(dev_type)
+            self._assign_worker(
+                workers,
+                agent_id,
+                job_config,
+                device,
+                assignment_map,
+            )
+
+    def _assign_worker(
+        self,
+        workers: list[WorkerData],
+        agent_id: str,
+        job_config: JobConfig,
+        device: str,
+        assignment_map: dict[str, AssignmentData],
+    ) -> None:
+        """Assign worker and update backend."""
+        worker = workers.pop()
+
+        worlds_map = self._get_worker_worlds_map(worker.id, job_config)
+        self._update_backend(worlds_map, device)
+
+        assignment_data = AssignmentData(worker.id, device, worlds_map)
+        if agent_id in assignment_map:
+            assignment_map[agent_id].add(assignment_data)
+        else:
+            assignment_map[agent_id] = {assignment_data}
+
     def _select_agent_with_most_resources(
-        self, dev_type: DeviceType, agent_resources: dict[str, AgentResources]
+        self,
+        dev_type: DeviceType,
+        agent_resources: dict[str, AgentResources],
     ) -> tuple[str, AgentResources]:
         """Return the agent_id and AgentResources instance with the most available resources based on dev_type."""
 
