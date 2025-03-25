@@ -23,14 +23,20 @@ from enum import Enum
 from typing import TYPE_CHECKING, Iterator
 
 from fastapi import HTTPException, status
+
 from infscale import get_logger
-from infscale.common.exceptions import (InfScaleException,
-                                        InsufficientResources,
-                                        InvalidJobStateAction)
+from infscale.common.exceptions import (
+    InfScaleException,
+    InsufficientResources,
+    InvalidJobStateAction,
+)
 from infscale.common.job_msg import JobStatus, WorkerStatus
 from infscale.config import JobConfig, WorkerData, WorldInfo
-from infscale.controller.agent_context import (CPU_LOAD_THRESHOLD,
-                                               AgentResources, DeviceType)
+from infscale.controller.agent_context import (
+    CPU_LOAD_THRESHOLD,
+    AgentResources,
+    DeviceType,
+)
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
 if TYPE_CHECKING:
@@ -453,22 +459,23 @@ class JobContext:
         self, agent_resources: dict[str, AgentResources], num_workers: int
     ) -> DeviceType:
         """Decide device based on available resources and number of workers."""
-        available_gpus = sum(
-            1
-            for res in agent_resources.values()
-            for gpu_stat in res.gpu_stats
-            if not gpu_stat.used
-        )
+        available_gpus = 0
+        for res in agent_resources.values():
+            if not res.gpu_stats:
+                continue
 
-        if available_gpus >= num_workers:
-            return DeviceType.GPU
+            for gpu_stat in res.gpu_stats:
+                if not gpu_stat.used:
+                    available_gpus += 1
 
-        valid = any(
-            res.cpu_stats.load <= CPU_LOAD_THRESHOLD for res in agent_resources.values()
-        )
+            if available_gpus >= num_workers:
+                return DeviceType.GPU
 
-        if valid:
-            return DeviceType.CPU
+        for res in agent_resources.values():
+            if not res.cpu_stats:
+                continue
+            if res.cpu_stats.load <= CPU_LOAD_THRESHOLD:
+                return DeviceType.CPU
 
         raise InsufficientResources(
             f"insufficient resources to start {num_workers} workers."
