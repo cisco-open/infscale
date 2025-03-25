@@ -26,9 +26,8 @@ import grpc
 import torch
 import torch.multiprocessing as mp
 from infscale import get_logger
-from infscale.actor.job_manager import JobManager
-from infscale.actor.worker import Worker
-from infscale.actor.worker_manager import WorkerManager
+from infscale.agent.job_manager import JobManager
+from infscale.agent.worker_manager import WorkerManager
 from infscale.common.constants import (GRPC_MAX_MESSAGE_LENGTH,
                                        HEART_BEAT_PERIOD)
 from infscale.common.job_msg import (JobStatus, Message, MessageType,
@@ -39,6 +38,7 @@ from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2
 from infscale.proto import management_pb2_grpc as pb2_grpc
+from infscale.worker.worker import Worker
 
 logger = None
 

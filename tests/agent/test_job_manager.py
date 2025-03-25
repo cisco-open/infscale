@@ -15,8 +15,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
-from infscale.actor.job_manager import JobManager
-from tests.actor.conftest import job_config_diffs
+from infscale.agent.job_manager import JobManager
+from tests.agent.conftest import job_config_diffs
 
 
 @pytest.mark.parametrize(

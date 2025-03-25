@@ -21,7 +21,7 @@ import asyncio
 import click
 import requests
 import yaml
-from infscale.actor.agent import Agent
+from infscale.agent.agent import Agent
 from infscale.common.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
                                        CONTROLLER_PORT,
                                        DEFAULT_DEPLOYMENT_POLICY, LOCALHOST)

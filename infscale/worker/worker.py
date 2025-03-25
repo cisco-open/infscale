@@ -20,8 +20,8 @@ import os
 from multiprocessing.connection import Connection
 
 from infscale import get_logger
-from infscale.actor.worker_comm import WorkerCommunicator
 from infscale.execution.pipeline import Pipeline
+from infscale.worker.worker_comm import WorkerCommunicator
 
 logger = None
 
