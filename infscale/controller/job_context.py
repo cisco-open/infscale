@@ -437,7 +437,7 @@ class JobContext:
         agent_data = self._get_agents_data(agent_ids)
         agent_resources = self._get_agent_resources_map(agent_ids)
 
-        dev_type = self._decide_dev_type(agent_resources, len(config.workers))
+        dev_type = self._decide_dev_type(agent_resources, config)
 
         agent_cfg, assignment_map = self.ctrl.deploy_policy.split(
             dev_type,
@@ -456,9 +456,10 @@ class JobContext:
         self.running_agent_info = running_agent_info
 
     def _decide_dev_type(
-        self, agent_resources: dict[str, AgentResources], num_workers: int
+        self, agent_resources: dict[str, AgentResources], config: JobConfig
     ) -> DeviceType:
         """Decide device based on available resources and number of workers."""
+        num_new_workers = self._get_new_workers_count(config)
         available_gpus = 0
         for res in agent_resources.values():
             if not res.gpu_stats:
@@ -468,7 +469,7 @@ class JobContext:
                 if not gpu_stat.used:
                     available_gpus += 1
 
-            if available_gpus >= num_workers:
+            if available_gpus >= num_new_workers:
                 return DeviceType.GPU
 
         for res in agent_resources.values():
@@ -478,8 +479,22 @@ class JobContext:
                 return DeviceType.CPU
 
         raise InsufficientResources(
-            f"insufficient resources to start {num_workers} workers."
+            f"insufficient resources to start {num_new_workers} workers."
         )
+
+    def _get_new_workers_count(self, config: JobConfig) -> int:
+        """Return number of new workers."""
+        existing_worker_ids = {
+            wid for info in self.running_agent_info for wid in info.wids_to_deploy
+        }
+
+        new_worker_ids = [
+            worker.id
+            for worker in config.workers
+            if worker.id not in existing_worker_ids
+        ]
+
+        return len(new_worker_ids)
 
     def _get_agent_resources_map(
         self, agent_ids: list[str]
@@ -718,10 +733,22 @@ class JobContext:
 
     def cleanup(self) -> None:
         """Do cleanup on context resources."""
+        self._release_gpu_resources()
         self.agent_info = {}
         self.req = None
         self.wrk_status = {}
         self.running_agent_info = []
+
+    def _release_gpu_resources(self) -> None:
+        """Mark GPU resources as not used."""
+        for agent_data in self.running_agent_info:
+            resources = self.ctrl.agent_contexts[agent_data.id].resources
+
+            if not resources:
+                continue
+
+            for gpu_stat in resources.gpu_stats:
+                gpu_stat.used = False
 
     async def do(self, req: CommandActionModel):
         """Handle specific action."""
