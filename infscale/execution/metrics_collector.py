@@ -1,0 +1,76 @@
+# Copyright 2025 Cisco Systems, Inc. and its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+"""metrics_collector.py."""
+
+import time
+
+
+class MetricsCollector:
+    """MetricsCollector class."""
+
+    def __init__(self, coeff: float = 0.9):
+        """Initialize an instance."""
+        self._coeff = coeff
+
+        self._qlevel = 0
+        self._delay = 0
+        self._thp = 0
+
+        # key: sequence number
+        # value: relative time that request entered the system
+        self._metrics_map: dict[int, float] = {}
+        self._served_count = 0
+        self._last_time = time.perf_counter()
+
+    def update(self, seqno: int):
+        """Update metrics."""
+        if seqno not in self._metrics_map:
+            self._metrics_map[seqno] = time.perf_counter()
+        else:
+            start = self._metrics_map[seqno]
+            del self._metrics_map[seqno]
+
+            qlevel = len(self._metrics_map)
+            self._qlevel = (1 - self._coeff) * self._qlevel + self._coeff * qlevel
+
+            end = time.perf_counter()
+            delay = end - start
+            self._delay = (1 - self._coeff) * self._delay + self._coeff * delay
+
+            self._served_count += 1
+
+    def _compute_thp(self) -> None:
+        now = time.perf_counter()
+        instant_thp = self._served_count / (now - self._last_time)
+
+        self._thp = (1 - self._coeff) * self._thp + self._coeff * instant_thp
+
+        # reset served count
+        self._served_count = 0
+        # update the last time with the current time
+        self._last_time = now
+
+    def retrieve(self) -> tuple[float, float, float]:
+        """Return metrics.
+
+        Note: This function should be called periodically (e.g., every second).
+        """
+        # we can only compute throughput every time we call this function
+        # since we need an interval to compute throughput
+        self._compute_thp()
+
+        return self._qlevel, self._delay, self._thp

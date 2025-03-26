@@ -22,6 +22,7 @@ import torch
 from infscale import get_logger
 from infscale.config import ServeConfig
 from infscale.execution.comm import TensorReceiver, TensorSender
+from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo
 from infscale.fwding import random, rr, shortest, static
 from multiworld.manager import WorldManager
@@ -38,12 +39,13 @@ logger = None
 class Router:
     """Router class."""
 
-    def __init__(self, world_manager: WorldManager):
+    def __init__(self, world_manager: WorldManager, mc: MetricsCollector):
         """Initialize Router instance."""
         global logger
         logger = get_logger()
 
         self.world_manager = world_manager
+        self.mc = mc
 
         self._rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
         self._tx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
@@ -154,6 +156,9 @@ class Router:
                 logger.warn(f"{world_info.name} error: {e}")
                 break
 
+            # update metrics for request
+            self.mc.update(seqno)
+
             if recv_dev != self.device:
                 for k in tensors.keys():
                     tensors[k] = tensors[k].to(self.device)
@@ -221,6 +226,9 @@ class Router:
                 logger.warn(f"{world_info.name} error: {e}")
                 break
             logger.debug(f"sent tensors of seqno {seqno}")
+
+            # update metrics for request
+            self.mc.update(seqno)
 
         # remove tx queue for the world
         self._cleanup_tx_q(world_info)

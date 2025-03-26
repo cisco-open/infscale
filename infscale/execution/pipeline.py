@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pipeline class."""
+"""pipeline.py."""
 
 import asyncio
 import time
@@ -24,6 +24,7 @@ from infscale import get_logger
 from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.config import ServeConfig
 from infscale.execution.control import Channel as CtrlCh
+from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.router import Router
 from infscale.execution.stage import Stage
 from infscale.execution.world import WorldInfo
@@ -51,8 +52,9 @@ class Pipeline:
         logger = get_logger()
 
         self.stage: Stage = None
+        self.mc = MetricsCollector()
         self.world_manager = WorldManager()
-        self.router = Router(self.world_manager)
+        self.router = Router(self.world_manager, self.mc)
         self.wcomm = wcomm
         self.spec: ServeConfig = None
         self.device = None
@@ -257,6 +259,13 @@ class Pipeline:
 
             await self.router.send(seqno, outputs, next_layer)
 
+    async def _collect_metrics(self):
+        # TODO: more changes will follow
+        while True:
+            await asyncio.sleep(1)
+            qlevel, delay, thp = self.mc.retrieve()
+            logger.info(f"qlevel = {qlevel}, delay = {delay}, thp = {thp}")
+
     async def handle_config(self) -> None:
         """Handle a config sent by the controller."""
         while True:
@@ -366,6 +375,7 @@ class Pipeline:
 
     async def run(self) -> None:
         """Run pipeline."""
+        _ = asyncio.create_task(self._collect_metrics())
         _ = asyncio.create_task(self.handle_config())
         await self.cfg_event.wait()
 
