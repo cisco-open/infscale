@@ -19,6 +19,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from infscale.common.metrics import Metrics
 from infscale.config import ServeConfig
 
 
@@ -30,6 +31,7 @@ class MessageType(Enum):
     STATUS = "status"
     CONFIG = "config"
     FINISH_JOB = "finish_job"
+    METRICS = "metrics"
 
 
 class WorkerStatus(Enum):
@@ -53,12 +55,15 @@ class JobStatus(Enum):
     UNKNOWN = "unknown"
 
 
+MessageContentType = str | WorkerStatus | ServeConfig | Metrics
+
+
 @dataclass
 class Message:
     """Message dataclass."""
 
     type: MessageType
-    content: str | WorkerStatus | ServeConfig
+    content: MessageContentType
     job_id: str
 
 

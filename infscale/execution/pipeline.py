@@ -75,6 +75,8 @@ class Pipeline:
         self.tx_allow_evt = asyncio.Event()
         self.tx_allow_evt.set()
 
+        self.metrics_interval = 1  # 1 second
+
     async def _configure_multiworld(self, world_info: WorldInfo) -> None:
         (name, world_size, addr, port, backend, my_rank) = (
             world_info.name,
@@ -266,11 +268,13 @@ class Pipeline:
             await self.router.send(seqno, outputs, next_layer)
 
     async def _collect_metrics(self):
-        # TODO: more changes will follow
         while True:
-            await asyncio.sleep(1)
-            qlevel, delay, thp = self.mc.retrieve()
-            logger.info(f"qlevel = {qlevel}, delay = {delay}, thp = {thp}")
+            metrics = self.mc.retrieve()
+            msg = Message(MessageType.METRICS, metrics, self.job_id)
+            self.wcomm.send(msg)
+
+            # wait for an interval
+            await asyncio.sleep(self.metrics_interval)
 
     async def _handle_message(self) -> None:
         """Handle a message from an agent."""
