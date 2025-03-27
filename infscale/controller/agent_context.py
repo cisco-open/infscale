@@ -27,8 +27,10 @@ from infscale.monitor.cpu import CPUStats, DRAMStats
 from infscale.monitor.gpu import GpuStat, VramStat
 from infscale.utils.timer import Timer
 
+
 if TYPE_CHECKING:
     from grpc import ServicerContext
+
     from infscale.controller.controller import Controller
 
 DEFAULT_TIMEOUT = 2 * HEART_BEAT_PERIOD

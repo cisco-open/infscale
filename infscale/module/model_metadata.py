@@ -21,13 +21,19 @@ from typing import Callable, List, Union
 
 import torch
 from accelerate import init_empty_weights
-from infscale import get_logger
 from torch import Tensor
-from transformers import (AutoModelForCausalLM,
-                          AutoModelForImageClassification,
-                          AutoModelForPreTraining, AutoTokenizer,
-                          PretrainedConfig, PreTrainedTokenizer,
-                          PreTrainedTokenizerFast)
+from transformers import (
+    AutoModelForCausalLM,
+    AutoModelForImageClassification,
+    AutoModelForPreTraining,
+    AutoTokenizer,
+    PretrainedConfig,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+)
+
+from infscale import get_logger
+
 
 AutoModelType = (
     AutoModelForPreTraining | AutoModelForCausalLM | AutoModelForImageClassification

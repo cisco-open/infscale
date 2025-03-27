@@ -25,24 +25,27 @@ import grpc
 from fastapi import Request
 from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
+
 from infscale import get_logger
-from infscale.common.constants import (APISERVER_PORT, CONTROLLER_PORT,
-                                       DEFAULT_DEPLOYMENT_POLICY,
-                                       GRPC_MAX_MESSAGE_LENGTH)
+from infscale.common.constants import (
+    APISERVER_PORT,
+    CONTROLLER_PORT,
+    DEFAULT_DEPLOYMENT_POLICY,
+    GRPC_MAX_MESSAGE_LENGTH,
+)
 from infscale.common.job_msg import WorkerStatus
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.autoscaler import AutoScaler
-from infscale.controller.ctrl_dtype import (CommandAction, CommandActionModel,
-                                            ReqType)
+from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.deployment.policy import DeploymentPolicyEnum
 from infscale.controller.job_context import AgentMetaData, JobContext
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
-from infscale.proto import management_pb2 as pb2
-from infscale.proto import management_pb2_grpc as pb2_grpc
+from infscale.proto import management_pb2 as pb2, management_pb2_grpc as pb2_grpc
+
 
 logger = None
 

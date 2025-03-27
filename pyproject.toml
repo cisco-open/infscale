@@ -50,3 +50,22 @@ dev = [
 
 [tool.setuptools.dynamic]
 version = {attr = "infscale.__version__"}
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+src_paths = ["infscale", "tests"]
+extra_standard_library = ["typing_extensions"]
+skip_gitignore = true
+skip = ["management_pb2.py", "management_pb2_grpc.py"]
+# skip_glob = []
+atomic = true
+profile = "black"
+indent = 4
+line_length = 88
+lines_after_imports = 2
+multi_line_output = 3
+include_trailing_comma = true
+combine_as_imports = true

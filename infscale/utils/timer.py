@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from infscale import get_logger
 
+
 logger = None
 
 

@@ -28,8 +28,10 @@ import random
 from typing import TYPE_CHECKING, Callable, Union
 
 import torch
+
 from infscale import get_logger
 from infscale.module.sharder import Sharder
+
 
 if TYPE_CHECKING:
     from infscale.module.model_metadata import BaseModelMetaData

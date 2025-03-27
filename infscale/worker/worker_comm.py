@@ -22,6 +22,7 @@ from multiprocessing.connection import Connection
 from infscale import get_logger
 from infscale.common.job_msg import Message
 
+
 logger = None
 
 

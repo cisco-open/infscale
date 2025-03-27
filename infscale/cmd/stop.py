@@ -16,6 +16,7 @@
 
 import click
 import requests
+
 from infscale.common.constants import APISERVER_ENDPOINT
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 

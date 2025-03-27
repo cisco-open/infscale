@@ -16,8 +16,9 @@
 
 """Communication module."""
 import torch
-from infscale.execution.control import MSG_MODE_ACK, Channel, ControlMessage
 from multiworld.communicator import WorldCommunicator
+
+from infscale.execution.control import MSG_MODE_ACK, Channel, ControlMessage
 
 
 class TensorSender:

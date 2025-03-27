@@ -23,8 +23,10 @@ from dataclasses import dataclass
 from typing import Union
 
 import torch
-from infscale import get_logger
 from torch import Tensor
+
+from infscale import get_logger
+
 
 logger = None
 

@@ -21,10 +21,15 @@ import asyncio
 import click
 import requests
 import yaml
+
 from infscale.agent.agent import Agent
-from infscale.common.constants import (APISERVER_ENDPOINT, APISERVER_PORT,
-                                       CONTROLLER_PORT,
-                                       DEFAULT_DEPLOYMENT_POLICY, LOCALHOST)
+from infscale.common.constants import (
+    APISERVER_ENDPOINT,
+    APISERVER_PORT,
+    CONTROLLER_PORT,
+    DEFAULT_DEPLOYMENT_POLICY,
+    LOCALHOST,
+)
 from infscale.common.exceptions import InvalidConfig
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel

@@ -24,6 +24,7 @@ from infscale.config import JobConfig
 from infscale.controller.ctrl_dtype import CommandAction
 from infscale.controller.job_context import JobStateEnum
 
+
 logger = None
 
 

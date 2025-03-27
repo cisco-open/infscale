@@ -15,6 +15,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
+
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.sharder import Sharder
 from infscale.module.zoo import Zoo

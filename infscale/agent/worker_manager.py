@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from multiprocessing import connection
 
 import torch.multiprocessing as mp
+
 from infscale import get_logger
 from infscale.common.job_msg import (
     Message,
@@ -28,6 +29,7 @@ from infscale.common.job_msg import (
     WorkerStatus,
     WorkerStatusMessage,
 )
+
 
 logger = None
 

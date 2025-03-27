@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from infscale import get_logger
 
+
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 

@@ -24,6 +24,7 @@ from infscale import get_logger
 from infscale.execution.pipeline import Pipeline
 from infscale.worker.worker_comm import WorkerCommunicator
 
+
 logger = None
 
 

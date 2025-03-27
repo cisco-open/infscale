@@ -39,6 +39,7 @@ from infscale.controller.agent_context import (
 )
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
+
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
     from infscale.controller.deployment.policy import AssignmentData

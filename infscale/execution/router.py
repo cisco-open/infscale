@@ -19,14 +19,16 @@ import asyncio
 from collections import deque
 
 import torch
+from multiworld.manager import WorldManager
+from torch import Tensor
+
 from infscale import get_logger
 from infscale.config import ServeConfig
 from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo
 from infscale.fwding import random, rr, shortest, static
-from multiworld.manager import WorldManager
-from torch import Tensor
+
 
 DEFAULT_QUEUE_SIZE = 3
 DEFAULT_SLEEP_TIME = 0.1  # 100ms

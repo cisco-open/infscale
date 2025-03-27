@@ -17,6 +17,7 @@
 import click
 import requests
 import yaml
+
 from infscale.common.constants import APISERVER_ENDPOINT
 from infscale.common.exceptions import InvalidConfig
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel

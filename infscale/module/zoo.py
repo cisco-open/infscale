@@ -16,13 +16,17 @@
 
 """Zoo class."""
 
-from infscale.module.model_metadata import (BaseModelMetaData,
-                                            BertModelMetaData,
-                                            Gpt2ModelMetaData,
-                                            Llama3ModelMetaData,
-                                            ResnetModelMetaData,
-                                            T5ModelMetaData, VitModelMetaData)
 from transformers import AutoConfig
+
+from infscale.module.model_metadata import (
+    BaseModelMetaData,
+    BertModelMetaData,
+    Gpt2ModelMetaData,
+    Llama3ModelMetaData,
+    ResnetModelMetaData,
+    T5ModelMetaData,
+    VitModelMetaData,
+)
 
 
 class Zoo:

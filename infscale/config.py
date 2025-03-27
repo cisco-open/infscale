@@ -22,6 +22,7 @@ from typing import Optional
 from infscale import get_logger
 from infscale.common.exceptions import InvalidConfig
 
+
 logger = None
 
 
