@@ -17,6 +17,7 @@ import asyncio
 
 from infscale.execution.world import WorldInfo
 
+
 _curr_q_idx = 0
 
 

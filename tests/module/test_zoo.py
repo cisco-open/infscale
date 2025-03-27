@@ -15,8 +15,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import pytest
+
 from infscale.module.zoo import Zoo
 from tests.module.conftest import supported_model_names
+
 
 bad_testdata = [
     ("albert-base-v1", KeyError),  # not supported

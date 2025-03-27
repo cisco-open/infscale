@@ -29,10 +29,12 @@ from itertools import chain
 from typing import Dict, List, Optional, Tuple
 
 import torch.fx
-from infscale import get_logger
-from infscale.module.model_metadata import BaseModelMetaData
 from torch.fx.node import Node
 from transformers.utils.fx import symbolic_trace
+
+from infscale import get_logger
+from infscale.module.model_metadata import BaseModelMetaData
+
 
 logger = None
 

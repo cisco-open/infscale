@@ -22,6 +22,8 @@ import sys
 import time
 
 import torch
+from multiworld.manager import WorldManager
+
 from infscale import get_logger
 from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.config import ServeConfig
@@ -34,7 +36,7 @@ from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
 from infscale.worker.worker_comm import WorkerCommunicator
-from multiworld.manager import WorldManager
+
 
 logger = None
 

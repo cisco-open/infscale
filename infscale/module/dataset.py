@@ -28,14 +28,14 @@ from typing import Optional, Tuple, Type, Union
 
 import torch
 from datasets import Dataset, load_dataset
-from infscale.module.model_metadata import BaseModelMetaData, ModelGroup
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torchvision.transforms import (CenterCrop, Compose, Normalize, Resize,
-                                    ToTensor)
+from torchvision.transforms import CenterCrop, Compose, Normalize, Resize, ToTensor
 from transformers import AutoImageProcessor, AutoTokenizer
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.tokenization_utils import PreTrainedTokenizerBase
+
+from infscale.module.model_metadata import BaseModelMetaData, ModelGroup
 
 
 class HuggingFaceDataset:

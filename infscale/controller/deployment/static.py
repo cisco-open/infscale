@@ -19,8 +19,7 @@
 from infscale.common.exceptions import InvalidConfig
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import (AssignmentData,
-                                                   DeploymentPolicy)
+from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 

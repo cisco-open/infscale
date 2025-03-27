@@ -25,6 +25,7 @@ from google.protobuf.json_format import MessageToJson, Parse
 
 from infscale.proto import management_pb2 as pb2
 
+
 DEFAULT_INTERVAL = 10  # 10 seconds
 
 

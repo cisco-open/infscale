@@ -20,7 +20,9 @@ import logging
 import os
 import sys
 from pathlib import Path
+
 from infscale.version import VERSION as __version__  # noqa: F401
+
 
 level = getattr(logging, os.getenv("INFSCALE_LOG_LEVEL", "WARNING"))
 

@@ -24,11 +24,13 @@ from typing import TYPE_CHECKING, Callable, Union
 import torch
 import torch.nn as nn
 from accelerate.utils.modeling import set_module_tensor_to_device
+from torch.nn import Parameter
+from transformers import DynamicCache
+
 from infscale import get_logger
 from infscale.module.model_metadata import Llama3ModelMetaData
 from infscale.module.modelir import ModelIR
-from torch.nn import Parameter
-from transformers import DynamicCache
+
 
 if TYPE_CHECKING:
     import torch.fx as fx

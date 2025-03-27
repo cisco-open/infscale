@@ -36,6 +36,7 @@ from pynvml import (
 from infscale import get_logger
 from infscale.proto import management_pb2 as pb2
 
+
 DEFAULT_INTERVAL = 10  # 10 seconds
 
 logger = None
