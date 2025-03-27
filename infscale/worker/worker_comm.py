@@ -17,12 +17,10 @@
 """WorkerCommunicator class."""
 
 import asyncio
-import sys
-from multiprocessing import connection
+from multiprocessing.connection import Connection
 
 from infscale import get_logger
-from infscale.common.job_msg import Message, MessageType, WorkerStatus
-from infscale.config import ServeConfig
+from infscale.common.job_msg import Message
 
 logger = None
 
@@ -30,25 +28,24 @@ logger = None
 class WorkerCommunicator:
     """WorkerCommunicator class."""
 
-    def __init__(self, pipe: connection.Connection, job_id: str):
+    def __init__(self, pipe: Connection):
         """Initialize an instance."""
         global logger
         logger = get_logger()
 
         self.pipe = pipe
-        self.job_id = job_id
-        self.config_q = asyncio.Queue()
+        self.msg_q = asyncio.Queue()
 
     def send(self, message: Message) -> None:
         """Send a message to agent."""
         self.pipe.send(message)
 
-    async def recv(self) -> ServeConfig:
-        """Receive a config."""
-        return await self.config_q.get()
+    async def recv(self) -> Message:
+        """Receive a message."""
+        return await self.msg_q.get()
 
     def message_listener(self) -> None:
-        """Asynchronous worker listener to handle communication with agent."""
+        """Add a listener to handle communication with agent."""
         loop = asyncio.get_event_loop()
 
         loop.add_reader(
@@ -65,26 +62,10 @@ class WorkerCommunicator:
         if self.pipe.poll():
             try:
                 message = self.pipe.recv()
-                self._handle_message(message)
             except EOFError:
                 # TODO: TBD on pipe failure case
                 loop.remove_reader(self.pipe.fileno())
 
-    def _handle_message(self, message: Message) -> None:
-        match message.type:
-            case MessageType.CONFIG:
-                _ = asyncio.create_task(self.config_q.put(message.content))
-
-            case MessageType.TERMINATE:
-                # TODO: do the clean-up / caching before termination
-                self.send(
-                    Message(MessageType.STATUS, WorkerStatus.TERMINATED, self.job_id)
-                )
-                logger.info("worker is terminated")
-                sys.exit()
-
-            case MessageType.FINISH_JOB:
-                # TODO: do the clean-up before transitioning to DONE
-                self.send(Message(MessageType.STATUS, WorkerStatus.DONE, self.job_id))
-                logger.info("worker is done")
-                sys.exit()
+            # put the message into the message queue
+            # so that it can be comsumed in the pipeline
+            _ = asyncio.run_coroutine_threadsafe(self.msg_q.put(message), loop)

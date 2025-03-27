@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""job_msg.py."""
+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -31,7 +33,7 @@ class MessageType(Enum):
 
 
 class WorkerStatus(Enum):
-    """WorkerStatus enum"""
+    """WorkerStatus enum."""
 
     READY = "ready"
     RUNNING = "running"
@@ -41,7 +43,7 @@ class WorkerStatus(Enum):
 
 
 class JobStatus(Enum):
-    """WorkerStatus enum"""
+    """WorkerStatus enum."""
 
     RUNNING = "running"
     UPDATED = "updated"

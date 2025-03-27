@@ -14,7 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Worker class."""
+"""worker.py."""
+
 import asyncio
 import os
 from multiprocessing.connection import Connection
@@ -35,7 +36,9 @@ class Worker:
         logger = get_logger(f"{os.getpid()}", f"job-{job_id}/worker-{wrk_id}.log")
 
         self.local_rank = local_rank
-        self.wcomm = WorkerCommunicator(conn, job_id)
+
+        self.job_id = job_id
+        self.conn = conn
 
     def run(self) -> None:
         """Run worker."""
@@ -44,6 +47,9 @@ class Worker:
     async def _run(self) -> None:
         """Run the worker."""
         logger.info(f"worker {self.local_rank}")
-        self.wcomm.message_listener()
-        pipeline = Pipeline(self.wcomm)
+
+        wcomm = WorkerCommunicator(self.conn)
+        # register communication listener
+        wcomm.message_listener()
+        pipeline = Pipeline(self.job_id, wcomm)
         await pipeline.run()

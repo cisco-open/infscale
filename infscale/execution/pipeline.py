@@ -17,6 +17,8 @@
 """pipeline.py."""
 
 import asyncio
+import os
+import sys
 import time
 
 import torch
@@ -45,6 +47,7 @@ class Pipeline:
 
     def __init__(
         self,
+        job_id: str,
         wcomm: WorkerCommunicator,
     ):
         """Initialize pipeline instance."""
@@ -55,6 +58,7 @@ class Pipeline:
         self.mc = MetricsCollector()
         self.world_manager = WorldManager()
         self.router = Router(self.world_manager, self.mc)
+        self.job_id = job_id
         self.wcomm = wcomm
         self.spec: ServeConfig = None
         self.device = None
@@ -266,24 +270,54 @@ class Pipeline:
             qlevel, delay, thp = self.mc.retrieve()
             logger.info(f"qlevel = {qlevel}, delay = {delay}, thp = {thp}")
 
-    async def handle_config(self) -> None:
-        """Handle a config sent by the controller."""
+    async def _handle_message(self) -> None:
+        """Handle a message from an agent."""
         while True:
-            spec = await self.wcomm.recv()
+            msg = await self.wcomm.recv()
 
-            if spec is None:
-                continue
+            match msg.type:
+                case MessageType.CONFIG:
+                    await self._handle_config(msg.content)
 
-            self._configure_variables(spec)
+                case MessageType.TERMINATE:
+                    # TODO: do the clean-up / caching before termination
+                    status = WorkerStatus.TERMINATED
+                    resp = Message(MessageType.STATUS, status, self.job_id)
+                    self.wcomm.send(resp)
+                    logger.info("worker is terminated")
 
-            self._initialize_once()
+                    sys.stdout.flush()
+                    # TODO: This forcibly terminates the entire process.
+                    #       This is not graceful. Revisit this later.
+                    os._exit(0)
 
-            # (re)configure the pipeline
-            await self._configure()
+                case MessageType.FINISH_JOB:
+                    # TODO: do the clean-up before transitioning to DONE
+                    status = WorkerStatus.DONE
+                    resp = Message(MessageType.STATUS, status, self.job_id)
+                    self.wcomm.send(resp)
+                    logger.info("worker is done")
 
-            self.cfg_event.set()
+                    sys.stdout.flush()
+                    # TODO: This forcibly terminates the entire process.
+                    #       This is not graceful. Revisit this later.
+                    os._exit(0)
 
-            self._send_status_message(WorkerStatus.RUNNING)
+    async def _handle_config(self, spec: ServeConfig) -> None:
+        """Handle a config."""
+        if spec is None:
+            return
+
+        self._configure_variables(spec)
+
+        self._initialize_once()
+
+        # (re)configure the pipeline
+        await self._configure()
+
+        self.cfg_event.set()
+
+        self._send_status_message(WorkerStatus.RUNNING)
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}
@@ -376,7 +410,7 @@ class Pipeline:
     async def run(self) -> None:
         """Run pipeline."""
         _ = asyncio.create_task(self._collect_metrics())
-        _ = asyncio.create_task(self.handle_config())
+        _ = asyncio.create_task(self._handle_message())
         await self.cfg_event.wait()
 
         if self.spec.is_server:
