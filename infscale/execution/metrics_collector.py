@@ -18,6 +18,8 @@
 
 import time
 
+from infscale.common.metrics import Metrics
+
 
 class MetricsCollector:
     """MetricsCollector class."""
@@ -64,7 +66,7 @@ class MetricsCollector:
         # update the last time with the current time
         self._last_time = now
 
-    def retrieve(self) -> tuple[float, float, float]:
+    def retrieve(self) -> Metrics:
         """Return metrics.
 
         Note: This function should be called periodically (e.g., every second).
@@ -73,4 +75,4 @@ class MetricsCollector:
         # since we need an interval to compute throughput
         self._compute_thp()
 
-        return self._qlevel, self._delay, self._thp
+        return Metrics(qlevel=self._qlevel, delay=self._delay, thp=self._thp)

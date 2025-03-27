@@ -110,7 +110,7 @@ class Agent:
         self.gpu_monitor = GpuMonitor()
         self.cpu_monitor = CpuMonitor()
 
-    async def _get_worker_status(self) -> None:
+    async def _monitor_status(self) -> None:
         while True:
             status_msg = await self.worker_mgr.status_q.get()
             if status_msg is None:
@@ -118,6 +118,12 @@ class Agent:
             await self.update_worker_status(status_msg)
 
             await self.update_job_status(status_msg)
+
+    async def _monitor_metrics(self) -> None:
+        while True:
+            job_id, worker_id, metrics = await self.worker_mgr.metrics_q.get()
+            logger.info(f"job ID: {job_id}, worker id: {worker_id}, metrics: {metrics}")
+            # TODO: send metrics to controller
 
     async def update_job_status(self, message: WorkerStatusMessage) -> None:
         """Send message with updated job status."""
@@ -423,9 +429,10 @@ class Agent:
 
     def monitor(self):
         """Monitor workers and resources."""
+        _ = asyncio.create_task(self._monitor_status())
+        _ = asyncio.create_task(self._monitor_metrics())
         _ = asyncio.create_task(self._monitor_gpu())
         _ = asyncio.create_task(self._monitor_cpu())
-        # TODO: (priority: high) monitor workers
 
     async def _monitor_gpu(self):
         await self.gpu_monitor.start()
@@ -439,8 +446,6 @@ class Agent:
 
         if not await self._init_controller_session():
             return
-
-        _ = asyncio.create_task(self._get_worker_status())
 
         self.monitor()
 

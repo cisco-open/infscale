@@ -29,6 +29,7 @@ from infscale.common.job_msg import (
     WorkerStatus,
     WorkerStatusMessage,
 )
+from infscale.common.metrics import Metrics
 
 
 logger = None
@@ -55,6 +56,7 @@ class WorkerManager:
 
         self._workers: dict[int, WorkerMetaData] = {}
         self.status_q: asyncio.Queue[WorkerStatusMessage] = asyncio.Queue()
+        self.metrics_q: asyncio.Queue[tuple[str, str, Metrics]] = asyncio.Queue()
 
     def add(
         self,
@@ -135,6 +137,9 @@ class WorkerManager:
             case MessageType.STATUS:
                 self._handle_status(message, fd)
 
+            case MessageType.METRICS:
+                self._handle_metrics(message, fd)
+
     def _handle_status(self, message: Message, fd: int) -> None:
         """Handle status update from Workers."""
         self._update_worker_status(message, fd)
@@ -154,11 +159,20 @@ class WorkerManager:
             case WorkerStatus.FAILED:
                 pass
 
+    def _handle_metrics(self, message: Message, fd: int) -> None:
+        wrk = self._workers[fd]
+        data = (message.job_id, wrk.id, message.content)
+
+        loop = asyncio.get_running_loop()
+        asyncio.run_coroutine_threadsafe(self.metrics_q.put(data), loop)
+
     def _update_worker_status(self, message: Message, fd: int) -> None:
         """Update Worker status."""
         wrk = self._workers[fd]
         msg = WorkerStatusMessage(wrk.id, message.job_id, message.content)
-        _ = asyncio.create_task(self.status_q.put(msg))
+
+        loop = asyncio.get_running_loop()
+        asyncio.run_coroutine_threadsafe(self.status_q.put(msg), loop)
 
         self._workers[fd].status = message.content
 
