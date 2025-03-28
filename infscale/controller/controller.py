@@ -178,6 +178,20 @@ class Controller:
         except ValueError:
             logger.warning(f"'{status}' is not a valid WorkerStatus")
 
+    def handle_metrics(self, req: pb2.PerfMetrics) -> None:
+        """Handle performance metrics of a worker."""
+        # TODO: implement performance metrics aggregation mechanism
+        #       for now, let's log metrics.
+        jid, wid, qlevel, delay, thp = (
+            req.job_id,
+            req.worker_id,
+            req.qlevel,
+            req.delay,
+            req.thp,
+        )
+        log = f"jid: {jid}, wid: {wid}, qlevel: {qlevel}, delay: {delay}, thp: {thp}"
+        logger.debug(log)
+
     def _cleanup_job_ctx(self, agent_id: str) -> None:
         """Cleanup job context by agent id."""
         for k, v in list(self.job_contexts.items()):
@@ -341,6 +355,8 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
 
         await event.wait()
 
-    def update_metrics(self, request: pb2.JobMetrics, unused_context: ServicerContext):
+    async def update_metrics(self, request: pb2.PerfMetrics, unused: ServicerContext):
         """Handle message with job's performance metrics."""
+        self.ctrl.handle_metrics(request)
+
         return empty_pb2.Empty()

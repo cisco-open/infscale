@@ -122,8 +122,15 @@ class Agent:
     async def _monitor_metrics(self) -> None:
         while True:
             job_id, worker_id, metrics = await self.worker_mgr.metrics_q.get()
-            logger.info(f"job ID: {job_id}, worker id: {worker_id}, metrics: {metrics}")
-            # TODO: send metrics to controller
+
+            req = pb2.PerfMetrics(
+                job_id=job_id,
+                worker_id=worker_id,
+                qlevel=metrics.qlevel,
+                delay=metrics.delay,
+                thp=metrics.thp,
+            )
+            await self.stub.update_metrics(req)
 
     async def update_job_status(self, message: WorkerStatusMessage) -> None:
         """Send message with updated job status."""

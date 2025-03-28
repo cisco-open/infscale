@@ -90,7 +90,7 @@ class ManagementRouteStub(object):
                 _registered_method=True)
         self.update_metrics = channel.unary_unary(
                 '/management.ManagementRoute/update_metrics',
-                request_serializer=management__pb2.JobMetrics.SerializeToString,
+                request_serializer=management__pb2.PerfMetrics.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
 
@@ -150,7 +150,7 @@ class ManagementRouteServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def update_metrics(self, request, context):
-        """agent calls update_metrics rpc to provide performance metrics of a job
+        """agent calls update_metrics rpc to provide performance metrics of a worker
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -196,7 +196,7 @@ def add_ManagementRouteServicer_to_server(servicer, server):
             ),
             'update_metrics': grpc.unary_unary_rpc_method_handler(
                     servicer.update_metrics,
-                    request_deserializer=management__pb2.JobMetrics.FromString,
+                    request_deserializer=management__pb2.PerfMetrics.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
     }
@@ -416,7 +416,7 @@ class ManagementRoute(object):
             request,
             target,
             '/management.ManagementRoute/update_metrics',
-            management__pb2.JobMetrics.SerializeToString,
+            management__pb2.PerfMetrics.SerializeToString,
             google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
