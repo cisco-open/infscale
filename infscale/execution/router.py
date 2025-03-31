@@ -125,18 +125,11 @@ class Router:
                 self.__tx_qs[stage_cfg.start].append(tpl)
 
         for world_info in worlds_to_remove:
-            # reset tx q related to a given world info
-            self._cleanup_tx_q(world_info)
-
-            name = world_info.name
-            task = self._tasks.pop(name, None)
-            if task is None:
+            # do not remove recv tasks yet
+            if world_info.me == 0:
                 continue
-            try:
-                task.cancel()
-                logger.info(f"canceled task for world {name}")
-            except Exception as e:
-                logger.error(f"failed to cancel task for world {name}: {e}")
+
+            self._cleanup_world(world_info)
 
     async def _recv(self, world_info: WorldInfo) -> None:
         logger.debug(
@@ -171,6 +164,7 @@ class Router:
             await self.__rx_q.put((tensors, seqno))
             logger.debug(f"put tensors of seqno {seqno} into __rx_q")
 
+        self._cleanup_world(world_info, cancel_task=False)
         logger.warn(f"done with recv task for {world_info.name}")
 
     async def wait_on_term_ready(self) -> None:
@@ -181,6 +175,23 @@ class Router:
 
             if self.requests_count == 0:
                 break
+
+    def _cleanup_world(self, world_info: WorldInfo, cancel_task: bool = True) -> None:
+        """Cleanup state info on world."""
+        # reset tx q related to a given world info
+        self._cleanup_tx_q(world_info)
+
+        name = world_info.name
+        task = self._tasks.pop(name, None)
+
+        if not cancel_task or task is None:
+            return
+
+        try:
+            task.cancel()
+            logger.info(f"canceled task for world {name}")
+        except Exception as e:
+            logger.error(f"failed to cancel task for world {name}: {e}")
 
     def _find_tx_q(self, world_info: WorldInfo) -> asyncio.Queue:
         for _, v in self.__tx_qs.items():
