@@ -48,6 +48,7 @@ class Router:
 
         self.world_manager = world_manager
         self.mc = mc
+        self.requests_count = 0
 
         self._rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
         self._tx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
@@ -154,6 +155,7 @@ class Router:
         while True:
             try:
                 tensors, seqno = await receiver.recv()
+                self.requests_count += 1
             except Exception as e:
                 logger.warn(f"{world_info.name} error: {e}")
                 break
@@ -170,6 +172,15 @@ class Router:
             logger.debug(f"put tensors of seqno {seqno} into __rx_q")
 
         logger.warn(f"done with recv task for {world_info.name}")
+
+    async def wait_on_term_ready(self) -> None:
+        """Wait for pending requests to be processed."""
+        while True:
+            # wait a second to check the req status
+            await asyncio.sleep(1)
+
+            if self.requests_count == 0:
+                break
 
     def _find_tx_q(self, world_info: WorldInfo) -> asyncio.Queue:
         for _, v in self.__tx_qs.items():
@@ -211,6 +222,7 @@ class Router:
                 seqno, tensors, _ = await asyncio.wait_for(
                     tx_q.get(), QUEUE_WAIT_PERIOD
                 )
+                self.requests_count -= 1
             except asyncio.TimeoutError:
                 if not sender.is_broken():
                     continue

@@ -28,6 +28,7 @@ class MessageType(Enum):
 
     LOG = "log"
     TERMINATE = "terminate"
+    FORCE_TERMINATE = "force_terminate"
     STATUS = "status"
     CONFIG = "config"
     FINISH_JOB = "finish_job"

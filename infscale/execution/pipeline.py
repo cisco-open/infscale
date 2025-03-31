@@ -276,6 +276,18 @@ class Pipeline:
             # wait for an interval
             await asyncio.sleep(self.metrics_interval)
 
+    def _terminate_worker(self) -> None:
+        """Terminate worker."""
+        status = WorkerStatus.TERMINATED
+        resp = Message(MessageType.STATUS, status, self.job_id)
+        self.wcomm.send(resp)
+        logger.info("worker is terminated")
+
+        sys.stdout.flush()
+        # TODO: This forcibly terminates the entire process.
+        #       This is not graceful. Revisit this later.
+        os._exit(0)
+
     async def _handle_message(self) -> None:
         """Handle a message from an agent."""
         while True:
@@ -285,17 +297,12 @@ class Pipeline:
                 case MessageType.CONFIG:
                     await self._handle_config(msg.content)
 
-                case MessageType.TERMINATE:
-                    # TODO: do the clean-up / caching before termination
-                    status = WorkerStatus.TERMINATED
-                    resp = Message(MessageType.STATUS, status, self.job_id)
-                    self.wcomm.send(resp)
-                    logger.info("worker is terminated")
+                case MessageType.FORCE_TERMINATE:
+                    self._terminate_worker()
 
-                    sys.stdout.flush()
-                    # TODO: This forcibly terminates the entire process.
-                    #       This is not graceful. Revisit this later.
-                    os._exit(0)
+                case MessageType.TERMINATE:
+                    await self.router.wait_on_term_ready()
+                    self._terminate_worker()
 
                 case MessageType.FINISH_JOB:
                     # TODO: do the clean-up before transitioning to DONE

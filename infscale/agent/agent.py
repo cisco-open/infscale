@@ -323,10 +323,12 @@ class Agent:
 
                 self._update_workers(config.job_id)
 
-                self._stop_workers(config.job_id)
+                self._terminate_workers(config.job_id)
 
             case CommandAction.STOP:
-                self.worker_mgr._signal_terminate_wrkrs(action.job_id)
+                self.worker_mgr._signal_terminate_wrkrs(
+                    action.job_id, msg_type=MessageType.FORCE_TERMINATE
+                )
 
             case CommandAction.SETUP:
                 port_count = int.from_bytes(action.manifest, byteorder="big")
@@ -409,7 +411,7 @@ class Agent:
             msg = Message(MessageType.CONFIG, config, config.job_id)
             self.worker_mgr.send(w, msg)
 
-    def _stop_workers(self, job_id: str) -> None:
+    def _terminate_workers(self, job_id: str) -> None:
         stop_wrkrs = self.job_mgr.get_workers(job_id, CommandAction.STOP)
         self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs)
 

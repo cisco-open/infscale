@@ -177,7 +177,11 @@ class WorkerManager:
         self._workers[fd].status = message.content
 
     def _signal_terminate_wrkrs(
-        self, job_id: str, by_worker_id: bool = False, worker_ids=set()
+        self,
+        job_id: str,
+        by_worker_id: bool = False,
+        worker_ids=set(),
+        msg_type=MessageType.TERMINATE,
     ) -> None:
         """Signal workers that need to be terminated for a given job id.
 
@@ -192,11 +196,11 @@ class WorkerManager:
             if by_worker_id and worker.id not in worker_ids:
                 continue
 
-            self._signal_terminate_wrkr(worker)
+            self._signal_terminate_wrkr(worker, msg_type)
             terminated = True
 
         if not terminated:
-            # no worker is termianted; so no need to log below
+            # no worker is terminated; so no need to log below
             return
 
         if by_worker_id:
@@ -204,13 +208,15 @@ class WorkerManager:
         else:
             logger.info(f"all workers for job {job_id} terminated")
 
-    def _signal_terminate_wrkr(self, worker: WorkerMetaData) -> None:
+    def _signal_terminate_wrkr(
+        self, worker: WorkerMetaData, msg_type: MessageType
+    ) -> None:
         """Signal a worker that needs to be terminated."""
         valid = [WorkerStatus.READY, WorkerStatus.RUNNING]
         if worker.status in valid:
             worker.status = WorkerStatus.TERMINATED
 
-            msg = Message(MessageType.TERMINATE, "", worker.job_id)
+            msg = Message(msg_type, "", worker.job_id)
             self.send(worker, msg)
 
     def _print_message(self, content: str, process_id: int) -> None:
