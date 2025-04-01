@@ -66,6 +66,14 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             if ip not in agent_ip_to_id:
                 raise InvalidConfig(f"{ip} not a valid agent IP")
 
+            worker_in_use = next(
+                (data for data in agent_data if worker_id in data.wids_to_deploy), None
+            )
+
+            if worker_in_use:
+                # worker already processed
+                continue
+
             agent_id = agent_ip_to_id[ip]
             resources = agent_resources[agent_id]
             device = self._get_n_update_worker_device(
