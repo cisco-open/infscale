@@ -37,6 +37,7 @@ from infscale.controller.agent_context import (
     AgentResources,
     DeviceType,
 )
+from infscale.controller.autoscaler import PerfMetrics
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 
 
@@ -178,14 +179,17 @@ class RunningState(BaseJobState):
 
         await asyncio.gather(*tasks)
 
+        # update server ids
+        self.context.update_server_ids()
+
         self.context.set_state(JobStateEnum.UPDATING)
 
     async def cond_completing(self):
         """Handle the transition to completing."""
-        server_wids = self.context.get_server_wids()
+        server_ids = self.context.get_server_ids()
 
         verdict = all(
-            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_wids
+            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_ids
         )
 
         if not verdict:
@@ -287,10 +291,10 @@ class UpdatingState(BaseJobState):
 
     async def cond_completing(self):
         """Handle the transition to completing."""
-        server_wids = self.context.get_server_wids()
+        server_ids = self.context.get_server_ids()
 
         verdict = all(
-            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_wids
+            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_ids
         )
 
         if not verdict:
@@ -354,6 +358,9 @@ class JobContext:
         self.agent_info: dict[str, AgentMetaData] = {}
         self.req: CommandActionModel = None
         self.wrk_status: dict[str, WorkerStatus] = {}
+        self.wrkr_metrics: dict[str, PerfMetrics] = {}
+        self._server_ids: set[str] = set()
+
         # event to update the config after all agents added ports and ip address
         self.agents_setup_event = asyncio.Event()
         # list of agent ids that will deploy workers
@@ -431,6 +438,21 @@ class JobContext:
     def set_wrk_status(self, wrk_id: str, status: WorkerStatus) -> None:
         """Set worker status."""
         self.wrk_status[wrk_id] = status
+
+    def get_wrkr_metrics(self, wrkr_id: str) -> PerfMetrics:
+        """Get worker's performance metrics.
+
+        If the metrics object doesn't exist, create a new one and return it.
+        """
+        return (
+            self.wrkr_metrics[wrkr_id]
+            if wrkr_id in self.wrkr_metrics
+            else PerfMetrics()
+        )
+
+    def set_wrkr_metrics(self, wrkr_id: str, metrics: PerfMetrics) -> None:
+        """Set worker's performance metrics."""
+        self.wrkr_metrics[wrkr_id] = metrics
 
     def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller and set a deployer of agent ids."""
@@ -720,17 +742,31 @@ class JobContext:
                 detail="No agent found",
             )
 
-    def get_server_wids(self) -> list[str]:
-        """Return a list of worker ids whose role is a server."""
+    def is_server(self, wrkr_id: str) -> bool:
+        """Confirm if a given worker is a server (dispatcher) or not."""
+        return wrkr_id in self._server_ids
+
+    def update_server_ids(self) -> None:
+        """Update server's worker ids."""
+        # reset server_ids set
+        self._server_ids.clear()
+
         config = next(iter(self.running_agent_info)).config
-        wids = set()
 
         for worker in config.workers:
             if not worker.is_server:
                 continue
-            wids.add(worker.id)
+            self._server_ids.add(worker.id)
 
-        return list(wids)
+    def get_server_ids(self) -> set[str]:
+        """Return a set of worker ids whose role is a server."""
+        # if we already have server ids stored, return them
+        if len(self._server_ids) > 0:
+            return self._server_ids
+
+        self.update_server_ids()
+
+        return self._server_ids
 
     def cleanup(self) -> None:
         """Do cleanup on context resources."""
@@ -825,3 +861,6 @@ class JobContext:
             tasks.append(task)
 
         await asyncio.gather(*tasks)
+
+        # update server ids
+        self.update_server_ids()

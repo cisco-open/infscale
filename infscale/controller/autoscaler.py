@@ -33,25 +33,24 @@ logger = None
 class PerfMetrics:
     """PerfMetrics class."""
 
-    def __init__(
-        self,
-        qlevel: float = -1,
-        thp: float = -1,
-        rtt: float = -1,
-    ):
+    def __init__(self):
         """Initialize an instance."""
         # length of queue, i.e., number of requests waiting to be served
-        self.qlevel = qlevel
-
-        # the number of requests served per second
-        self.thp = thp
-
+        self.qlevel = 0.0
         # second to serve one request
-        self.rtt = rtt
+        self.delay = 0.0
+        # the number of requests served per second
+        self.thp = 0.0
+
+    def update(self, qlevel: float, delay: float, thp: float):
+        """Update metric's values."""
+        self.qlevel = qlevel
+        self.delay = delay
+        self.thp = thp
 
     def __str__(self) -> str:
         """Return string representation for the object."""
-        return f"qlevel: {self.qlevel}, thp: {self.thp}, rtt: {self.rtt}"
+        return f"qlevel: {self.qlevel}, delay: {self.delay}, thp: {self.thp}"
 
 
 class AutoScaler:
@@ -62,16 +61,15 @@ class AutoScaler:
         global logger
         logger = get_logger()
 
-        self.metrics_queue = asyncio.Queue()
+        self._event_queue = asyncio.Queue()
         self._ctrl = controller
 
     async def run(self) -> None:
         """Run autoscaling functionality."""
         while True:
-            job_id, metrics = await self.metrics_queue.get()
-            logger.debug(f"do dummy scaling work for {job_id}")
-            logger.debug(f"got metrics: {job_id}")
+            job_id, wrkr_id = await self._event_queue.get()
+            logger.debug(f"do dummy scaling work for {job_id}-{wrkr_id}")
 
-    async def set_metrics(self, job_id: str, metrics: PerfMetrics) -> None:
-        """Set performance metrics for a given job."""
-        await self.metrics_queue.put((job_id, metrics))
+    async def set_event(self, job_id: str, wrkr_id: str) -> None:
+        """Set an autoscaling event for a given job and worker."""
+        await self._event_queue.put((job_id, wrkr_id))
