@@ -444,11 +444,10 @@ class JobContext:
 
         If the metrics object doesn't exist, create a new one and return it.
         """
-        return (
-            self.wrkr_metrics[wrkr_id]
-            if wrkr_id in self.wrkr_metrics
-            else PerfMetrics()
-        )
+        if wrkr_id not in self.wrkr_metrics:
+            self.wrkr_metrics[wrkr_id] = PerfMetrics()
+
+        return self.wrkr_metrics[wrkr_id]
 
     def set_wrkr_metrics(self, wrkr_id: str, metrics: PerfMetrics) -> None:
         """Set worker's performance metrics."""

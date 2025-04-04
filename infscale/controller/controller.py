@@ -185,10 +185,13 @@ class Controller:
         metrics = job_ctx.get_wrkr_metrics(req.worker_id)
         metrics.update(req.qlevel, req.delay, req.thp)
 
-        job_ctx.set_wrkr_metrics(req.worker_id, metrics)
-
         if not self.autoscaler or not job_ctx.is_server(req.worker_id):
             return
+
+        # if the worker is server, we want to compute change rate of
+        # performance metrics (qlevel and thp). So, update_rate() is
+        # called.
+        metrics.update_rate()
 
         await self.autoscaler.set_event(req.job_id, req.worker_id)
 
