@@ -205,6 +205,8 @@ class Pipeline:
             if batch is None:
                 break
 
+            self.mc.update(seqno)
+
             await self._wait_tx_permission()
 
             logger.info(f"sending batch {seqno}")
@@ -231,6 +233,8 @@ class Pipeline:
             results = self._predict_fn(outputs)
             logger.info(f"response for {seqno}: {results}")
 
+            self.mc.update(seqno)
+
             await self._check_n_enable_tx_permission()
 
             idx += 1
@@ -245,6 +249,10 @@ class Pipeline:
         logger.info("_server_recv task done")
 
     async def _run_server(self):
+        # we disable metrics collection in router in case the worker is server
+        # so that we can collect metrics at _server_send and _server_recv tasks
+        self.mc.enable_in_router(False)
+
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
