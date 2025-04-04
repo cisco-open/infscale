@@ -153,8 +153,9 @@ class Router:
                 logger.warn(f"{world_info.name} error: {e}")
                 break
 
-            # update metrics for request
-            self.mc.update(seqno)
+            if self.mc.can_collect_in_router():
+                # update metrics for request
+                self.mc.update(seqno)
 
             if recv_dev != self.device:
                 for k in tensors.keys():
@@ -252,8 +253,9 @@ class Router:
                 break
             logger.debug(f"sent tensors of seqno {seqno}")
 
-            # update metrics for request
-            self.mc.update(seqno)
+            if self.mc.can_collect_in_router():
+                # update metrics for request
+                self.mc.update(seqno)
 
         # remove tx queue for the world
         self._cleanup_tx_q(world_info)

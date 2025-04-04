@@ -38,7 +38,18 @@ class MetricsCollector:
         self._served_count = 0
         self._last_time = time.perf_counter()
 
-    def update(self, seqno: int):
+        # a flag to enable/disable metrics collection in router
+        self._enable = True
+
+    def enable_in_router(self, val: bool) -> None:
+        """Enable or disable metrics collection."""
+        self._enable = val
+
+    def can_collect_in_router(self) -> bool:
+        """Return true if metric collection is allowed in router."""
+        return self._enable
+
+    def update(self, seqno: int) -> None:
         """Update metrics."""
         if seqno not in self._metrics_map:
             self._metrics_map[seqno] = time.perf_counter()
