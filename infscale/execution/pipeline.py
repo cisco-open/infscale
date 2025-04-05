@@ -35,6 +35,7 @@ from infscale.execution.world import WorldInfo
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
+from infscale.request.generator import GeneratorFactory, ReqGenEnum
 from infscale.worker.worker_comm import WorkerCommunicator
 
 
@@ -201,7 +202,7 @@ class Pipeline:
         seqno = 0
         start_time = time.perf_counter()
         while True:
-            batch = self.dataset.next_batch(self.device)
+            batch = self.req_generator.get()
             if batch is None:
                 break
 
@@ -257,6 +258,9 @@ class Pipeline:
         #       in the future, we need to take dataset from stream as well.
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
         max_count = self.dataset.num_of_batches()
+
+        self.req_generator = GeneratorFactory.get(ReqGenEnum.DEFAULT)
+        self.req_generator.initialize(self.device, self.dataset)
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))
@@ -422,7 +426,6 @@ class Pipeline:
     def _prepare_worker(self) -> None:
         if self.spec.is_server:
             logger.info("I am server and leader")
-            self.dataset = self.dataset
             self._predict_fn = self.modelir.predict_fn
         else:
             logger.info("I am a worker")
