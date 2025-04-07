@@ -16,7 +16,7 @@
 
 """Static deployment policy."""
 
-from infscale.common.exceptions import InvalidConfig
+from infscale.common.exceptions import InsufficientResources, InvalidConfig
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
@@ -111,6 +111,11 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             return device
 
         gpu_id = int(device.split(":")[1])
+
+        if not resources.gpu_stats:
+            raise InsufficientResources(
+                f"insufficient resources to start {len(workers)} workers."
+            )
 
         gpu_stat = next(
             gpu_stat for gpu_stat in resources.gpu_stats if gpu_stat.id == gpu_id

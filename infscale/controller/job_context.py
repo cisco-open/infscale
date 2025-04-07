@@ -278,6 +278,14 @@ class UpdatingState(BaseJobState):
 
     def cond_updated(self):
         """Handle the transition to running."""
+        # cleanup on agents after update in case there's no running workers
+        # we rely on running agents to decide state transitions
+        self.context.running_agent_info = [
+            agent_info
+            for agent_info in self.context.running_agent_info
+            if len(agent_info.assignment_set)
+        ]
+
         all_agents_running = self.context._check_job_status_on_all_agents(
             JobStatus.UPDATED
         )
