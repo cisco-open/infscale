@@ -1,0 +1,38 @@
+- name: start controller and agent on cisco-research-7
+  hosts: cisco-research-7
+  become: false
+  vars:
+    project_dir: ~/projects/infscale
+  tasks:
+    - name: start controller on cisco-research-7
+      shell: >
+        bash -l -c "conda activate pytorch-dev &&
+        cd {{ project_dir }} &&
+        export INFSCALE_LOG_LEVEL=DEBUG &&
+        nohup python -m infscale start controller > /dev/null 2>&1 &"
+      async: 1
+      poll: 0
+
+    - name: start agent 1 on cisco-research-7
+      shell: >
+        bash -l -c "conda activate pytorch-dev &&
+        cd {{ project_dir }} &&
+        export INFSCALE_LOG_LEVEL=DEBUG &&
+        nohup python -m infscale start agent A1 > /dev/null 2>&1 &"
+      async: 1
+      poll: 0
+
+- name: start agent 2 on on cisco-research-8
+  hosts: cisco-research-8
+  become: false
+  vars:
+    project_dir: ~/projects/infscale
+  tasks:
+    - name: start agent 2 on cisco-research-8
+      shell: >
+        bash -l -c "conda activate pytorch-dev &&
+        cd {{ project_dir }} &&
+        export INFSCALE_LOG_LEVEL=DEBUG &&
+        nohup python -m infscale start agent A2 --host 10.20.1.15 > /dev/null 2>&1 &"
+      async: 1
+      poll: 0

@@ -1,0 +1,14 @@
+- name: start job
+  hosts: cisco-research-7
+  become: false
+  vars:
+    project_dir: ~/projects/infscale
+  tasks:
+    - name: start controller on cisco-research-7
+      shell: >
+        bash -l -c "conda activate pytorch-dev &&
+        cd {{ project_dir }} &&
+        export INFSCALE_LOG_LEVEL=DEBUG &&
+        nohup python -m infscale start job examples/resnet152/auto/diamond.yaml > /dev/null 2>&1 &"
+      async: 1
+      poll: 0
