@@ -24,7 +24,7 @@ SOFTWARE.
 # https://github.com/SymbioticLab/Oobleck/blob/3b7a0c2f19bff0991e623ffbeb8a5b365853bf3a/oobleck/execution/dataset.py
 
 import math
-from typing import Optional, Tuple, Type, Union
+from typing import Optional, Tuple, Type
 
 import torch
 from datasets import Dataset, load_dataset
@@ -35,7 +35,11 @@ from transformers import AutoImageProcessor, AutoTokenizer
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
+from infscale import get_logger
 from infscale.module.model_metadata import BaseModelMetaData, ModelGroup
+
+
+logger = None
 
 
 class HuggingFaceDataset:
@@ -53,6 +57,9 @@ class HuggingFaceDataset:
         max_seq_length: Optional[int] = None,
     ):
         """Initialize the class."""
+        global logger
+        logger = get_logger()
+
         if mmd.model_group == ModelGroup.LANG:
             self.tokenizer, self.dataset = HuggingFaceDataset.create_language_dataset(
                 mmd.name,
@@ -105,35 +112,55 @@ class HuggingFaceDataset:
         trace_inputs = list(sample.keys())
         mmd.trace_inputs = trace_inputs
 
-        self.data_iter = None
         self.model_group = mmd.model_group
 
-    def set_micro_batch_size(self, micro_batch_size: int) -> None:
-        """Set micro batch size."""
+    def configure(
+        self, micro_batch_size: int, device: torch.device, in_memory: bool
+    ) -> None:
+        """Configure dataset."""
         self.micro_batch_size = micro_batch_size
+        self.device = device
 
-    def next_batch(self, device: torch.device) -> Union[Tensor, None]:
+        dataloader = DataLoader(
+            self.dataset,
+            self.micro_batch_size,
+            collate_fn=self.data_collator,
+        )
+        self.data_iter = iter(dataloader)
+
+        def _inner_send_b2d(batch):
+            for k in batch.keys():
+                batch[k] = batch[k].to(self.device)
+
+        if not in_memory:
+            self._send_batch_to_device = _inner_send_b2d
+            return
+
+        # do nothing in case of in-memory loading
+        self._send_batch_to_device = lambda batch: None
+
+        # load dataset into memory
+        self.batches = []
+        for batch in self.data_iter:
+            _inner_send_b2d(batch)
+            self.batches.append(batch)
+
+        self.data_iter = iter(self.batches)
+
+        logger.debug("loaded dataset into memory")
+
+    def next_batch(self) -> Tensor | None:
         """Return next data tensor.
 
         Once all the data is consumed, it returns None.
         """
-        if self.data_iter is None:
-            dataloader = DataLoader(
-                self.dataset,
-                self.micro_batch_size,
-                collate_fn=self.data_collator,
-            )
-            self.data_iter = iter(dataloader)
-
         try:
             batch = next(self.data_iter)
         except StopIteration:
-            self.data_iter = None
             return None
 
-        # send batch to a right device
-        for k in batch.keys():
-            batch[k] = batch[k].to(device)
+        # noop for in-memory case; otherwise, load batch to a correct device
+        self._send_batch_to_device(batch)
 
         return batch
 

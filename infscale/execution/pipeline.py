@@ -201,6 +201,17 @@ class Pipeline:
         logger.info("start to send requests")
         seqno = 0
 
+        def _inner_mc_update(batches: list[torch.Tensor | None]) -> None:
+            nonlocal seqno
+
+            i = 0
+            for batch in batches:
+                if batch is None:
+                    break
+
+                self.mc.update(seqno + i)
+                i += 1
+
         async def _inner_send(batches: list[torch.Tensor | None]) -> bool:
             nonlocal seqno
 
@@ -210,8 +221,6 @@ class Pipeline:
                     end_of_send = True
                     break
 
-                self.mc.update(seqno)
-
                 await self._wait_tx_permission()
 
                 logger.info(f"sending batch {seqno}")
@@ -219,12 +228,15 @@ class Pipeline:
                 await router.send(seqno, batch, 0)
                 seqno += 1
 
-            # end_of_send == true means that  we consumed all the dataset
+            # end_of_send == true means that we consumed all the dataset
             return end_of_send
 
         start_time = time.perf_counter()
         while True:
             batches = await self.req_generator.get()
+
+            # update metrics collector before we send batches
+            _inner_mc_update(batches)
 
             eos = await _inner_send(batches)
             if eos:
@@ -272,13 +284,15 @@ class Pipeline:
 
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
-        self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
+        self.dataset.configure(
+            self.spec.micro_batch_size,
+            self.device,
+            self.spec.reqgen_config.params.in_memory,
+        )
         max_count = self.dataset.num_of_batches()
 
         self.req_generator = GeneratorFactory.get(self.spec.reqgen_config.sort)
-        self.req_generator.initialize(
-            self.device, self.dataset, self.spec.reqgen_config.params
-        )
+        self.req_generator.initialize(self.dataset, self.spec.reqgen_config.params)
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))

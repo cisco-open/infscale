@@ -30,15 +30,9 @@ from infscale.request.config import GenParams, ReqGenEnum
 class Generator(ABC):
     """Abstact Generator class."""
 
-    def initialize(
-        self,
-        device: torch.device,
-        dataset: HuggingFaceDataset,
-        params: GenParams,
-    ) -> None:
+    def initialize(self, dataset: HuggingFaceDataset, params: GenParams) -> None:
         """Initialize a generator."""
         self._dataset = dataset
-        self._device = device
         self._params = params
 
     @abstractmethod
@@ -55,23 +49,18 @@ class DefaultGenerator(Generator):
 
         initialize() method must be called once before calling this method.
         """
-        return [self._dataset.next_batch(self._device)]
+        return [self._dataset.next_batch()]
 
 
 class ExponentialGenerator(Generator):
     """ExponentialGenerator class."""
 
-    def initialize(
-        self,
-        device: torch.device,
-        dataset: HuggingFaceDataset,
-        params: GenParams,
-    ) -> None:
+    def initialize(self, dataset: HuggingFaceDataset, params: GenParams) -> None:
         """Initialize the generator with exponential distribution."""
         # For exponential generator, params can't be None
         assert params is not None
 
-        super().initialize(device, dataset, params)
+        super().initialize(dataset, params)
 
         self._queue = asyncio.Queue()
         self._gen_evt = asyncio.Event()
@@ -83,7 +72,7 @@ class ExponentialGenerator(Generator):
         await self._gen_evt.wait()
 
         while True:
-            batch = self._dataset.next_batch(self._device)
+            batch = self._dataset.next_batch()
             await self._queue.put(batch)
 
             if batch is None:
