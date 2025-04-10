@@ -33,6 +33,7 @@ from infscale.common.constants import (
 from infscale.common.exceptions import InvalidConfig
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
+from infscale.request.config import GenConfig, ReqGenEnum
 
 
 @click.group()
@@ -50,10 +51,23 @@ def start():
     help="deployment policy; options: even (default), random, static",
 )
 @click.option("--autoscaler", is_flag=True, help="enable autoscaler")
-def controller(port: int, apiport: int, policy: str, autoscaler: bool):
+@click.option("--reqgen", default="", help="Request generator config file path")
+def controller(port: int, apiport: int, policy: str, autoscaler: bool, reqgen: str):
     """Run controller."""
+    reqgen_config = GenConfig(sort=ReqGenEnum.DEFAULT.value)
+
+    if reqgen != "":
+        with open(reqgen) as f:
+            req_gen_yaml = yaml.safe_load(f)
+
+        reqgen_config = GenConfig(**req_gen_yaml)
+
     controller = ctrl.Controller(
-        port=port, apiport=apiport, policy=policy, enable_as=autoscaler
+        reqgen_config=reqgen_config,
+        port=port,
+        apiport=apiport,
+        policy=policy,
+        enable_as=autoscaler,
     )
     loop = asyncio.get_event_loop()
     loop.run_until_complete(controller.run())

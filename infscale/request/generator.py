@@ -16,33 +16,33 @@
 
 """generator.py."""
 
+import asyncio
 from abc import ABC, abstractmethod
-from enum import Enum
 
+import numpy as np
 import torch
 from torch import Tensor
 
 from infscale.module.dataset import HuggingFaceDataset
-
-
-class ReqGenEnum(Enum):
-    """Request generation enum."""
-
-    DEFAULT = "default"
+from infscale.request.config import GenParams, ReqGenEnum
 
 
 class Generator(ABC):
     """Abstact Generator class."""
 
-    def initialize(self, device: torch.device, dataset: HuggingFaceDataset) -> None:
+    def initialize(
+        self,
+        device: torch.device,
+        dataset: HuggingFaceDataset,
+        params: GenParams,
+    ) -> None:
         """Initialize a generator."""
-        self._initialized = True
-
-        self.dataset = dataset
-        self.device = device
+        self._dataset = dataset
+        self._device = device
+        self._params = params
 
     @abstractmethod
-    def get(self) -> Tensor | None:
+    async def get(self) -> list[Tensor | None]:
         """Return generated requests as batch."""
         pass
 
@@ -50,12 +50,65 @@ class Generator(ABC):
 class DefaultGenerator(Generator):
     """DefaultGenerator class."""
 
-    def get(self) -> Tensor | None:
+    async def get(self) -> list[Tensor | None]:
+        """Return one batch of requests as a list.
+
+        initialize() method must be called once before calling this method.
+        """
+        return [self._dataset.next_batch(self._device)]
+
+
+class ExponentialGenerator(Generator):
+    """ExponentialGenerator class."""
+
+    def initialize(
+        self,
+        device: torch.device,
+        dataset: HuggingFaceDataset,
+        params: GenParams,
+    ) -> None:
+        """Initialize the generator with exponential distribution."""
+        # For exponential generator, params can't be None
+        assert params is not None
+
+        super().initialize(device, dataset, params)
+
+        self._queue = asyncio.Queue()
+        self._gen_evt = asyncio.Event()
+        _ = asyncio.create_task(self._generate())
+
+    async def _generate(self) -> None:
+        # wait for a generation event
+        # we'd like to generate data once get() is called
+        await self._gen_evt.wait()
+
+        while True:
+            batch = self._dataset.next_batch(self._device)
+            await self._queue.put(batch)
+
+            if batch is None:
+                break
+
+            iat = np.random.exponential(scale=1 / self._params.rate)
+            await asyncio.sleep(iat)
+
+    async def get(self) -> list[Tensor | None]:
         """Return one batch of requests.
 
         initialize() method must be called once before calling this method.
         """
-        return self.dataset.next_batch(self.device)
+        self._gen_evt.set()
+
+        batches = []
+        while True:
+            # this guarantees at least one batch of requests is returned
+            batch = await self._queue.get()
+            batches.append(batch)
+
+            if self._queue.empty():
+                break
+
+        return batches
 
 
 class GeneratorFactory:
@@ -66,6 +119,7 @@ class GeneratorFactory:
         """Return request generator instance of a chosen type."""
         generators = {
             ReqGenEnum.DEFAULT: DefaultGenerator(),
+            ReqGenEnum.EXP: ExponentialGenerator(),
         }
 
         return generators[sort]

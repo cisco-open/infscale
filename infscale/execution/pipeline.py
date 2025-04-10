@@ -35,7 +35,7 @@ from infscale.execution.world import WorldInfo
 from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
-from infscale.request.generator import GeneratorFactory, ReqGenEnum
+from infscale.request.generator import GeneratorFactory
 from infscale.worker.worker_comm import WorkerCommunicator
 
 
@@ -200,20 +200,36 @@ class Pipeline:
 
         logger.info("start to send requests")
         seqno = 0
+
+        async def _inner_send(batches: list[torch.Tensor | None]) -> bool:
+            nonlocal seqno
+
+            end_of_send = False
+            for batch in batches:
+                if batch is None:
+                    end_of_send = True
+                    break
+
+                self.mc.update(seqno)
+
+                await self._wait_tx_permission()
+
+                logger.info(f"sending batch {seqno}")
+                # send batch to the first stage
+                await router.send(seqno, batch, 0)
+                seqno += 1
+
+            # end_of_send == true means that  we consumed all the dataset
+            return end_of_send
+
         start_time = time.perf_counter()
         while True:
-            batch = self.req_generator.get()
-            if batch is None:
+            batches = await self.req_generator.get()
+
+            eos = await _inner_send(batches)
+            if eos:
                 break
 
-            self.mc.update(seqno)
-
-            await self._wait_tx_permission()
-
-            logger.info(f"sending batch {seqno}")
-            # send batch to the first stage
-            await router.send(seqno, batch, 0)
-            seqno += 1
         logger.info("_server_send task done")
 
     async def _server_recv(self, router: Router, max_count: int = -1):
@@ -259,8 +275,10 @@ class Pipeline:
         self.dataset.set_micro_batch_size(self.spec.micro_batch_size)
         max_count = self.dataset.num_of_batches()
 
-        self.req_generator = GeneratorFactory.get(ReqGenEnum.DEFAULT)
-        self.req_generator.initialize(self.device, self.dataset)
+        self.req_generator = GeneratorFactory.get(self.spec.reqgen_config.sort)
+        self.req_generator.initialize(
+            self.device, self.dataset, self.spec.reqgen_config.params
+        )
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))

@@ -1,0 +1,5 @@
+---
+sort: exponential
+params:
+  in_memory: true
+  rate: 100.0

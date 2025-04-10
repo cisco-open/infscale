@@ -19,7 +19,7 @@ import asyncio
 import json
 import os
 from dataclasses import asdict
-from typing import Any, AsyncIterable, Union
+from typing import Any, AsyncIterable
 
 import grpc
 from fastapi import Request
@@ -45,11 +45,12 @@ from infscale.controller.job_context import AgentMetaData, JobContext
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2, management_pb2_grpc as pb2_grpc
+from infscale.request.config import GenConfig
 
 
 logger = None
 
-CtrlRequest = Union[Request | CommandActionModel]
+CtrlRequest = Request | CommandActionModel
 
 
 class Controller:
@@ -57,6 +58,7 @@ class Controller:
 
     def __init__(
         self,
+        reqgen_config: GenConfig,
         port: int = CONTROLLER_PORT,
         apiport: int = APISERVER_PORT,
         policy: str = DEFAULT_DEPLOYMENT_POLICY,
@@ -66,6 +68,7 @@ class Controller:
         global logger
         logger = get_logger(f"{os.getpid()}", "controller.log")
 
+        self.reqgen_config = reqgen_config
         self.port = port
 
         self.agent_contexts: dict[str, AgentContext] = dict()

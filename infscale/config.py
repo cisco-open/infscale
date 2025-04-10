@@ -21,6 +21,7 @@ from typing import Optional
 
 from infscale import get_logger
 from infscale.common.exceptions import InvalidConfig
+from infscale.request.config import GenConfig
 
 
 logger = None
@@ -96,6 +97,8 @@ class ServeConfig:
 
     job_id: str
 
+    reqgen_config: GenConfig
+
     device: str = "gpu"
 
     nfaults: int = 0  # no of faults to tolerate, default: 0 (no fault tolerance)
@@ -133,6 +136,8 @@ class ServeConfig:
                 if self.stage.id == k and world_info.backend == "nccl":
                     assert "cuda" in self.device, "nccl requires cuda device"
 
+        self.reqgen_config = GenConfig(**self.reqgen_config)
+
 
 @dataclass
 class JobConfig:
@@ -148,6 +153,9 @@ class JobConfig:
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
+
+    # this will be set by controller  based on its configuration
+    reqgen_config: GenConfig | None = None
 
     def __post_init__(self) -> None:
         """Handle post init class variables."""
@@ -232,6 +240,7 @@ class JobConfig:
                 "job_id": self.job_id,
                 "max_inflight": self.max_inflight,
                 "is_server": item.is_server,
+                "reqgen_config": self.reqgen_config,
             }
             serve_configs.append(ServeConfig(**config))
 

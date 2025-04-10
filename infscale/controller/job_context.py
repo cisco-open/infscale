@@ -463,17 +463,19 @@ class JobContext:
 
     def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller and set a deployer of agent ids."""
-        config = self.req.config
+        # set request generator configuration
+        self.req.config.reqgen_config = self.ctrl.reqgen_config
+
         agent_data = self._get_agents_data(agent_ids)
         agent_resources = self._get_agent_resources_map(agent_ids)
 
-        dev_type = self._decide_dev_type(agent_resources, config)
+        dev_type = self._decide_dev_type(agent_resources, self.req.config)
 
         agent_cfg, assignment_map = self.ctrl.deploy_policy.split(
             dev_type,
             agent_data,
             agent_resources,
-            config,
+            self.req.config,
         )
 
         self._update_agent_data(agent_cfg, assignment_map)
