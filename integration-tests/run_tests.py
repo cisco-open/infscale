@@ -8,7 +8,8 @@ def run_tests():
     # start job
     _run("start_job.yml")
 
-    # TODO: run cleanup processes after job is done
+    # poll job status endpoint
+    _run("poll_job_status.yml")
 
 def _run(config_path: str) -> None:
     command = [
