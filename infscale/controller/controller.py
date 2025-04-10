@@ -41,7 +41,7 @@ from infscale.controller.autoscaler import AutoScaler
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.deployment.policy import DeploymentPolicyEnum
-from infscale.controller.job_context import AgentMetaData, JobContext
+from infscale.controller.job_context import AgentMetaData, JobContext, JobStateEnum
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2, management_pb2_grpc as pb2_grpc
@@ -211,6 +211,15 @@ class Controller:
         context.reset()
         del self.agent_contexts[id]
         self._cleanup_job_ctx(id)
+
+    def get_job_status(self, job_id: str) -> JobStateEnum | None:
+        """Return current job status."""
+        job_ctx = self.job_contexts.get(job_id)
+
+        if not job_ctx:
+            return None
+
+        return job_ctx.state_enum.name.lower()
 
     async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""
