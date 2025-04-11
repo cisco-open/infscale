@@ -1,4 +1,3 @@
-
 - name: poll job status
   hosts: cisco-research-7
   gather_facts: false
