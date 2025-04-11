@@ -1,0 +1,47 @@
+---
+- name: start controller
+  host: cisco-research-7
+  tasks:
+    - name: start controller
+      shell:
+        work_dir: ~/projects/infscale
+        env_activate_command: conda activate pytorch-dev
+        log_level: INFO
+        action: start
+        entity: controller
+
+- name: start agent 1
+  host: cisco-research-7
+  tasks:
+    - name: start agent 1
+      shell:
+        work_dir: ~/projects/infscale
+        env_activate_command: conda activate pytorch-dev
+        log_level: INFO
+        action: start
+        entity: agent
+        extra_args: agent_id_1
+
+- name: start agent 2
+  host: cisco-research-8
+  tasks:
+    - name: start agent 2
+      shell:
+        work_dir: ~/projects/infscale
+        env_activate_command: conda activate pytorch-dev
+        log_level: INFO
+        action: start
+        entity: agent a2
+        extra_args: agent_id_1 --host 10.20.1.15
+
+- name: run resnet linear
+  host: cisco-research-7
+  tasks:
+    - name: run job
+      shell:
+        work_dir: ~/projects/infscale
+        env_activate_command: conda activate pytorch-dev
+        log_level: INFO
+        action: start
+        entity: job
+        extra_args: examples/resnet152/auto/linear.yaml

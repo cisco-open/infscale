@@ -1,0 +1,5 @@
+- name: {{ name }}
+  hosts: {{ host }}
+  become: false
+  tasks:
+{{{ tasks }}}

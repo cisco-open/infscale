@@ -1,0 +1,5 @@
+- name: {{ name }}
+  shell: >
+    {{{ shell }}}
+  async: 1
+  poll: 0

@@ -14,45 +14,61 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import subprocess
+import sys
+import tempfile
+
+import yaml
+from tests_dtype import TestConfig
 
 
-def run_tests():
-    # start controller and agents
-    _run("start_processes.yml")
+def run_tests(config: str):
+    """Run tests based on config."""
+    with open(config) as f:
+        config = yaml.safe_load(f)
 
-    # start job
-    _run("start_job.yml")
-
-    # poll job status endpoint
-    _run("poll_job_status.yml")
-
-def _run(config_path: str) -> None:
-    command = [
-        "ansible-playbook",
-        "-i", "inventory.yaml",
-        config_path,
-    ]
+    for item in config:
+        cfg = str(TestConfig(**item))
+        _run(cfg)
 
 
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=1,
-        universal_newlines=True,
-    )
+def _run(test_content: str) -> None:
+    """Run single test using config."""
+    with tempfile.NamedTemporaryFile(
+        delete=False, mode="w", suffix=".yml"
+    ) as temp_file:
+        temp_file.write(test_content)
+        temp_file.close()
 
-    # re-route output to the terminal for visual feedback
-    for line in process.stdout:
-        print(line, end="")
+        command = [
+            "ansible-playbook",
+            "-i",
+            "inventory.yaml",
+            temp_file.name,
+        ]
 
-    process.wait()
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+            universal_newlines=True,
+        )
 
-    if process.returncode != 0:
-        print(f"\n {config_path} failed with exit code {process.returncode}")
-    else:
-        print(f"\n {config_path} completed successfully.")
+        # re-route output to the terminal for visual feedback
+        for line in process.stdout:
+            print(line, end="")
+
+        process.wait()
+
+        if process.returncode != 0:
+            print(f"\n {temp_file.name} failed with exit code {process.returncode}")
+        else:
+            print(f"\n {temp_file.name} completed successfully.")
+
+        os.remove(temp_file.name)
+
 
 if __name__ == "__main__":
-    run_tests()
+    run_tests(sys.argv[1])

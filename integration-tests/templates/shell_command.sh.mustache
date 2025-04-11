@@ -1,0 +1,1 @@
+bash -l -c "{{ env_activate_command }} && cd {{ work_dir }} && export INFSCALE_LOG_LEVEL={{ log_level }} && nohup python -m infscale {{ action }} {{ entity }} {{ extra_args }} > /dev/null 2>&1 &"
