@@ -1,3 +1,6 @@
+# run this script by running the controller in a static deployment model
+# python -m infscale start controller --policy static
+
 ---
 name: resnet152_example
 model: microsoft/resnet-152
@@ -19,6 +22,10 @@ flow_graph:
       peers: [1-0]
       addr: 10.20.1.72
       backend: nccl
+    - name: w3
+      peers: [1-1]
+      addr: 10.20.1.72
+      backend: nccl
   0-0:
     - name: w1
       peers: [s-0]
@@ -28,6 +35,16 @@ flow_graph:
     - name: w2
       peers: [0-0]
       addr: 10.20.1.72
+      backend: nccl
+  0-1:
+    - name: w4
+      peers: [s-0]
+      addr: 10.20.1.50
+      backend: nccl
+  1-1:
+    - name: w5
+      peers: [0-1]
+      addr: 10.20.1.50
       backend: nccl
 
 dataset: # huggingface dataset
@@ -48,7 +65,17 @@ workers:
       start: 0
       end: 25
   - id: 1-0
-    device: cuda:3
+    device: cuda:2
+    stage:
+      start: 26
+      end: 51
+  - id: 0-1
+    device: cuda:1
+    stage:
+      start: 0
+      end: 25
+  - id: 1-1
+    device: cuda:2
     stage:
       start: 26
       end: 51
