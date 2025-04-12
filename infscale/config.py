@@ -75,7 +75,7 @@ class WorkerData:
     id: str
     stage: StageData
     is_server: bool = False
-    deploy: bool = True
+    deploy: bool = False
     device: Optional[str] = ""
 
 

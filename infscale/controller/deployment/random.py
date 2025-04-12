@@ -34,7 +34,7 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
+    ) -> dict[str, set[AssignmentData]]:
         """
         Split the job config using random deployment policy
         and update config and worker assignment map for each agent.
@@ -80,4 +80,4 @@ class RandomDeploymentPolicy(DeploymentPolicy):
             else:
                 assignment_map[data.id] = {assignment_data}
 
-        return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
+        return assignment_map

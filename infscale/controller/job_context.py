@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from enum import Enum
 from typing import TYPE_CHECKING, Iterator
 
@@ -31,7 +32,7 @@ from infscale.common.exceptions import (
     InvalidJobStateAction,
 )
 from infscale.common.job_msg import JobStatus, WorkerStatus
-from infscale.config import JobConfig, WorkerData, WorldInfo
+from infscale.config import JobConfig, WorldInfo
 from infscale.controller.agent_context import (
     CPU_LOAD_THRESHOLD,
     AgentResources,
@@ -56,8 +57,6 @@ class AgentMetaData:
         id: str = None,
         ip: str = None,
         job_status: JobStatus = None,
-        config: JobConfig = None,
-        new_config: JobConfig = None,
         num_new_worlds: int = 0,
         ports: list[int] = None,
     ):
@@ -65,13 +64,11 @@ class AgentMetaData:
         self.id = id
         self.ip = ip
         self.job_status = job_status
-        self.config = config
-        self.new_config = new_config
         self.num_new_worlds = num_new_worlds
         self.ports = ports
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
-        self.wids_to_deploy: list[str] = []
+        self.wids_to_deploy: set[str] = set()
         self.assignment_set: set[AssignmentData] = set()
 
 
@@ -178,6 +175,11 @@ class RunningState(BaseJobState):
             tasks.append(task)
 
         await asyncio.gather(*tasks)
+
+        # after prepare_config execution is done across all running agents,
+        # we reset flow_graph patch flag so that it can be checked again
+        # when a new config arrives to the job.
+        self.context.reset_flow_graph_patch_flag()
 
         # update server ids
         self.context.update_server_ids()
@@ -369,6 +371,10 @@ class JobContext:
         self.wrkr_metrics: dict[str, PerfMetrics] = {}
         self._server_ids: set[str] = set()
 
+        self._cur_cfg = None
+        self._new_cfg = None
+        self._flow_graph_patched = False
+
         # event to update the config after all agents added ports and ip address
         self.agents_setup_event = asyncio.Event()
         # list of agent ids that will deploy workers
@@ -464,21 +470,19 @@ class JobContext:
     def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller and set a deployer of agent ids."""
         # set request generator configuration
-        self.req.config.reqgen_config = self.ctrl.reqgen_config
+        self._new_cfg = self.req.config
+        self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
         agent_data = self._get_agents_data(agent_ids)
         agent_resources = self._get_agent_resources_map(agent_ids)
 
-        dev_type = self._decide_dev_type(agent_resources, self.req.config)
+        dev_type = self._decide_dev_type(agent_resources, self._new_cfg)
 
-        agent_cfg, assignment_map = self.ctrl.deploy_policy.split(
-            dev_type,
-            agent_data,
-            agent_resources,
-            self.req.config,
+        assignment_map = self.ctrl.deploy_policy.split(
+            dev_type, agent_data, agent_resources, self._new_cfg
         )
 
-        self._update_agent_data(agent_cfg, assignment_map)
+        self._update_agent_data(assignment_map)
 
         # create a list of agent info that will deploy workers
         running_agent_info = [
@@ -550,24 +554,23 @@ class JobContext:
         return result
 
     def _update_agent_data(
-        self,
-        agent_cfg: dict[str, JobConfig],
-        assignment_map: dict[str, set[AssignmentData]],
+        self, assignment_map: dict[str, set[AssignmentData]]
     ) -> None:
         """Update agent data based on deployment policy split."""
-        for agent_id, new_cfg in agent_cfg.items():
+        for agent_id, assignment_set in assignment_map.items():
             agent_data = self.agent_info[agent_id]
-            agent_data.new_config = new_cfg
+
+            new_assignment_set = assignment_map[agent_id]
             agent_data.num_new_worlds = self._count_new_worlds(
-                agent_data.config, new_cfg
+                agent_data.assignment_set, new_assignment_set
             )
-            agent_data.wids_to_deploy = self._get_deploy_worker_ids(new_cfg.workers)
-            agent_data.assignment_set = assignment_map[agent_id]
+            agent_data.wids_to_deploy = {data.wid for data in new_assignment_set}
+            agent_data.assignment_set = new_assignment_set
 
     async def prepare_config(self, agent_data: AgentMetaData) -> None:
         """Prepare config for deploy."""
         # fetch port numbers from agent
-        await self.ctrl._job_setup(agent_data)
+        await self.ctrl.job_setup(self.job_id, agent_data)
 
         await agent_data.job_setup_event.wait()
 
@@ -580,31 +583,62 @@ class JobContext:
         self.agents_setup_event.set()
 
         # update job config
-        await self._patch_job_cfg(agent_data)
+        cfg = self._patch_job_cfg(agent_data)
 
         agent_data.ready_to_config = False
 
         # schedule config transfer to agent after job setup is done
-        await self.ctrl._send_config_to_agent(agent_data, self.req)
+        await self.ctrl.send_config_to_agent(agent_data.id, cfg, self.req)
 
         # block agent setup event until new config is received
         self.agents_setup_event.clear()
 
-    async def _patch_job_cfg(self, agent_data: AgentMetaData) -> None:
-        """Patch config for updated job."""
-        config, new_config = agent_data.config, agent_data.new_config
+    def _patch_job_cfg(self, agent_data: AgentMetaData) -> JobConfig:
+        """Patch a config for a specific agent."""
+        self._patch_flow_graph_once()
+
+        # since we updated flow graph and the update has been reflected
+        # into _cur_cfg, now we need to create a agent-specific config
+        # by deepcopying _cur_cfg. And we need to update agent-specific
+        # variables (i.e., to set deploy flag and device).
+        cfg = copy.deepcopy(self._cur_cfg)
+
+        # step 2: update workers devices
+        for w in cfg.workers:
+            try:
+                assignment_data = self._get_worker_assignment_data(agent_data, w.id)
+            except StopIteration:
+                log = f"not setting device for {w.id}"
+                log += f" since it's not deployed in {agent_data.id}"
+                logger.debug(log)
+                continue
+
+            w.device = assignment_data.device
+            w.deploy = True
+
+        agent_data.num_new_worlds = 0
+
+        agent_data.job_setup_event.clear()
+
+        return cfg
+
+    def _patch_flow_graph_once(self) -> None:
+        if self._flow_graph_patched:
+            # a flow graph is identical across agent
+            # so, we only need to patch flow_graph once
+            return
 
         curr_worlds: dict[str, WorldInfo] = {}
-        if config is not None:
-            for world_list in config.flow_graph.values():
+        if self._cur_cfg is not None:
+            for world_list in self._cur_cfg.flow_graph.values():
                 for world in world_list:
                     curr_worlds[world.name] = world
 
-        world_agent_map = self._get_world_agent_map(new_config)
+        world_agent_map = self._get_world_agent_map(self._new_cfg)
         agent_port_map = self._get_agent_port_map()
 
         # step 1: patch new config with existing world ports and assign ports to new ones
-        for wid, world_list in new_config.flow_graph.items():
+        for wid, world_list in self._new_cfg.flow_graph.items():
             for world in world_list:
                 if world.name in curr_worlds:
                     # keep existing ports
@@ -613,11 +647,11 @@ class JobContext:
                     world.ctrl_port = curr_worlds[world.name].ctrl_port
                     world.backend = curr_worlds[world.name].backend
                 else:
-                    agent_info = world_agent_map[world.name]
+                    agent_data = world_agent_map[world.name]
 
-                    addr = self.ctrl.agent_contexts[agent_info.id].ip
-                    port_iter = agent_port_map[agent_info.id]
-                    assignment_data = self._get_worker_assignment_data(agent_info, wid)
+                    addr = self.ctrl.agent_contexts[agent_data.id].ip
+                    port_iter = agent_port_map[agent_data.id]
+                    assignment_data = self._get_worker_assignment_data(agent_data, wid)
                     backend = assignment_data.worlds_map[world.name].backend
 
                     # assign new ports to new worlds
@@ -626,22 +660,14 @@ class JobContext:
                     world.ctrl_port = next(port_iter)
                     world.backend = backend
 
-        # step 2: update workers devices
-        for w in new_config.workers:
-            if not w.deploy:
-                log = f"not setting device for {w.id}"
-                log += f" since it's not deployed in {agent_data.id}"
-                logger.debug(log)
-                continue
+        # back up new config to current config
+        self._cur_cfg = self._new_cfg
 
-            assignment_data = self._get_worker_assignment_data(agent_data, w.id)
-            w.device = assignment_data.device
+        self._flow_graph_patched = True
 
-        agent_data.config = new_config
-        agent_data.new_config = None
-        agent_data.num_new_worlds = 0
-
-        agent_data.job_setup_event.clear()
+    def reset_flow_graph_patch_flag(self) -> None:
+        """Reset flow graph patch flag."""
+        self._flow_graph_patched = False
 
     def _get_worker_assignment_data(
         self, agent_data: AgentMetaData, wid: str
@@ -680,30 +706,32 @@ class JobContext:
             None,
         )
 
-    def _count_new_worlds(self, config: JobConfig, new_cfg: JobConfig) -> int:
+    def _count_new_worlds(
+        self, cur_set: set[AssignmentData], new_set: set[AssignmentData]
+    ) -> int:
         """Return the number of new worlds between and old and new config."""
-        curr_worlds = []
-        if config is not None:
-            curr_worlds = self._get_world_names_to_setup(config)
+        curr_worlds = self._get_world_names_to_setup(self._cur_cfg, cur_set)
 
-        new_worlds = self._get_world_names_to_setup(new_cfg)
-        return len(set(new_worlds) - set(curr_worlds))
+        new_worlds = self._get_world_names_to_setup(self._new_cfg, new_set)
+        return len(new_worlds - curr_worlds)
 
-    def _get_world_names_to_setup(self, config: JobConfig) -> list[str]:
-        """Return a list of world names to be set up."""
-        worker_ids = self._get_deploy_worker_ids(config.workers)
-        world_names = [
+    def _get_world_names_to_setup(
+        self, config: JobConfig, assignment_set: set[AssignmentData]
+    ) -> set[str]:
+        """Return a set of world names to be set up."""
+        if config is None:
+            # no world to set up; so, return an empty set
+            return set()
+
+        worker_ids_to_deploy = {data.wid for data in assignment_set}
+        world_names = {
             world.name
             for wid, world_list in config.flow_graph.items()
             for world in world_list
-            if wid in worker_ids
-        ]
+            if wid in worker_ids_to_deploy
+        }
 
         return world_names
-
-    def _get_deploy_worker_ids(self, workers: list[WorkerData]) -> list[str]:
-        """Return a list of worker ids to be deployed."""
-        return [w.id for w in workers if w.deploy]
 
     def _get_state_class(self, state_enum):
         """Map a JobStateEnum to its corresponding state class."""
@@ -760,9 +788,7 @@ class JobContext:
         # reset server_ids set
         self._server_ids.clear()
 
-        config = next(iter(self.running_agent_info)).config
-
-        for worker in config.workers:
+        for worker in self._cur_cfg.workers:
             if not worker.is_server:
                 continue
             self._server_ids.add(worker.id)
@@ -784,6 +810,9 @@ class JobContext:
         self.req = None
         self.wrk_status = {}
         self.running_agent_info = []
+        self._cur_cfg = None
+        self._new_cfg = None
+        self._flow_graph_patched = False
 
     def _release_gpu_resources(self) -> None:
         """Mark GPU resources as not used."""
@@ -870,6 +899,11 @@ class JobContext:
             tasks.append(task)
 
         await asyncio.gather(*tasks)
+
+        # after prepare_config execution is done across all running agents,
+        # we reset flow_graph patch flag so that it can be checked again
+        # when a new config arrives to the job.
+        self.reset_flow_graph_patch_flag()
 
         # update server ids
         self.update_server_ids()

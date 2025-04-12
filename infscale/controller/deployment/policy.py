@@ -16,7 +16,6 @@
 
 """policy.py"""
 
-import copy
 from abc import ABC, abstractmethod
 from enum import Enum
 
@@ -62,7 +61,7 @@ class DeploymentPolicy(ABC):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
+    ) -> dict[str, set[AssignmentData]]:
         """
         Split the job config using a deployment policy
         and return updated job config and worker assignment map for each agent.
@@ -86,12 +85,12 @@ class DeploymentPolicy(ABC):
         return new_workers
 
     def get_curr_assignment_map(
-        self, agent_data: list[AgentMetaData]
+        self, agent_data_list: list[AgentMetaData]
     ) -> dict[str, set[AssignmentData]]:
         """Return current assignment map for each agent."""
         results = {}
 
-        for data in agent_data:
+        for data in agent_data_list:
             if len(data.assignment_set):
                 results[data.id] = data.assignment_set
 
@@ -112,7 +111,7 @@ class DeploymentPolicy(ABC):
         }
 
         # compute removed workers
-        removed_workers = set(current_workers) - set(worker_ids)
+        removed_workers = current_workers - worker_ids
 
         # update assignment map
         for agent_id, assignment_set in assignment_map.items():
@@ -125,25 +124,6 @@ class DeploymentPolicy(ABC):
                 if data.wid not in removed_workers
             }
             assignment_map[agent_id] = assignment_set
-
-    def _get_agent_updated_cfg(
-        self, assignment_map: dict[str, set[AssignmentData]], job_config: JobConfig
-    ) -> dict[str, JobConfig]:
-        """Return updated job config for each agent."""
-        logger.info(f"got new worker assignment map for agents: {assignment_map}")
-
-        agents_config = {}
-        for agent_id, assignment_set in assignment_map.items():
-            # create a job_config copy to update and pass it to the agent.
-            cfg = copy.deepcopy(job_config)
-
-            for w in cfg.workers:
-                # set the deploy flag if the worker is in worker assignment for this agent
-                w.deploy = w.id in {data.wid for data in assignment_set}
-
-            agents_config[agent_id] = cfg
-
-        return agents_config
 
     def _get_worker_worlds_map(
         self, worker_id: str, config: JobConfig

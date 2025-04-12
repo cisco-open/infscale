@@ -32,7 +32,7 @@ class PackingPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
+    ) -> dict[str, set[AssignmentData]]:
         """
         Split the job config using packing policy.
 
@@ -58,7 +58,7 @@ class PackingPolicy(DeploymentPolicy):
                 dev_type, agent_id, job_config, workers, assignment_map, resources
             )
 
-        return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
+        return assignment_map
 
     def _assign_workers(
         self,

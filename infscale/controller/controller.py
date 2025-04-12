@@ -240,11 +240,10 @@ class Controller:
         job_ctx = self.job_contexts.get(job_id)
         await job_ctx.do(req)
 
-    async def _job_setup(self, agent_data: AgentMetaData) -> None:
-        """Send job setup request to agent."""
-        agent_id, config, num_new_worlds, job_setup_event = (
+    async def job_setup(self, job_id: str, agent_data: AgentMetaData) -> None:
+        """Send a job setup request to agent."""
+        agent_id, num_new_worlds, job_setup_event = (
             agent_data.id,
-            agent_data.new_config,
             agent_data.num_new_worlds,
             agent_data.job_setup_event,
         )
@@ -255,23 +254,20 @@ class Controller:
 
         # we need two ports  (channel and multiworld) for each world
         msg = (num_new_worlds * 2).to_bytes(1, byteorder="big")
-        payload = pb2.Action(
-            type=CommandAction.SETUP, job_id=config.job_id, manifest=msg
-        )
+        payload = pb2.Action(type=CommandAction.SETUP, job_id=job_id, manifest=msg)
 
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
         await context.write(payload)
 
-    async def _send_config_to_agent(
-        self, agent_data: AgentMetaData, action: CommandActionModel
+    async def send_config_to_agent(
+        self, agent_id: str, cfg: JobConfig, action: CommandActionModel
     ) -> None:
         """Send config to agent."""
-        agent_id, config = agent_data.id, agent_data.config
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
 
-        manifest_bytes = json.dumps(asdict(config)).encode("utf-8")
+        manifest_bytes = json.dumps(asdict(cfg)).encode("utf-8")
 
         payload = pb2.Action(
             type=action.action, job_id=action.job_id, manifest=manifest_bytes

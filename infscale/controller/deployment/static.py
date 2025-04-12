@@ -36,7 +36,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> tuple[dict[str, JobConfig], dict[str, set[AssignmentData]]]:
+    ) -> dict[str, set[AssignmentData]]:
         """Split the job config statically based on its details."""
         assignment_map = self.get_curr_assignment_map(agent_data)
 
@@ -97,7 +97,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             # an entry for new workers
             raise InvalidConfig(f"failed to assign {worker.id} to an agent")
 
-        return self._get_agent_updated_cfg(assignment_map, job_config), assignment_map
+        return assignment_map
 
     def _get_n_update_worker_device(
         self, worker_id: str, workers: list[WorkerData], resources: AgentResources
