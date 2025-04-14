@@ -172,6 +172,10 @@ class Pipeline:
             end=self.spec.stage.end,
             device=self.device,
             max_inflight=self.max_inflight,
+            profile=self.spec.profile,
+            max_profile_count=self.spec.max_profile_count,
+            model_name=self.spec.model,
+            batch_size=self.spec.micro_batch_size,
         )
 
     async def _wait_tx_permission(self):

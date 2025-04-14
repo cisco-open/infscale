@@ -24,3 +24,6 @@ yapf*.py
 # dataset
 data/
 examples/resnet_profiling/*
+
+# profile results
+profile_data/

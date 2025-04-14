@@ -112,6 +112,12 @@ class ServeConfig:
     # max_number_of_batches for testing
     max_count: int = 200
 
+    # number of batches to profile
+    max_profile_count: int = 100
+    
+    # enable profiling of layer execution times
+    profile: bool = False
+
     def __post_init__(self):
         """Convert stage dict into stage object."""
         # TODO - remove isinstance check when the config file is being sent through the api call
@@ -159,6 +165,12 @@ class JobConfig:
 
     # max_number_of_batches for testing
     max_count: int = 200
+
+    # enable profiling of layer execution times
+    profile: bool = False
+
+    # number of batches to profile
+    max_profile_count: int = 100
 
     def __post_init__(self) -> None:
         """Handle post init class variables."""
@@ -208,6 +220,8 @@ class JobConfig:
                 "is_server": item.is_server,
                 "warmup": self.warmup,
                 "max_count": self.max_count,
+                "max_profile_count": self.max_profile_count,
+                "profile": self.profile,
             }
             serve_configs.append(ServeConfig(**config))
 

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Set the environment variables
-export INFSCALE_LOG_LEVEL=PROFILE
-export CUDA_VISIBLE_DEVICES=1,2,3
+# export INFSCALE_LOG_LEVEL=PROFILE
+export CUDA_VISIBLE_DEVICES=0,1,3
 
 # Function to handle termination
 cleanup() {

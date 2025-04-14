@@ -18,8 +18,12 @@
 
 from __future__ import annotations
 
+import statistics
 import traceback
-from typing import TYPE_CHECKING, Callable, Union
+import json
+import os
+from typing import TYPE_CHECKING, Callable, Union, Dict, List
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -49,6 +53,10 @@ class Stage(nn.Module):
         end: int,
         device: torch.device = torch.device("cpu"),
         max_inflight: int = 1,
+        profile: bool = False,
+        max_profile_count: int = 100,
+        model_name: str = "",
+        batch_size: int = 1,
     ):
         """Initialize stage class instance."""
         super().__init__()
@@ -65,6 +73,21 @@ class Stage(nn.Module):
         self.device = device
 
         self.max_inflight = max_inflight
+        
+        self.profile = profile
+        self.layer_profile_data = []
+        self.profile_count = 0
+        self.max_profile_count = max_profile_count
+        self.profile_data_saved = False
+
+        self.model_name = model_name.split("/")[-1]
+        self.batch_size = batch_size
+        
+        # If profiling is enabled, create events for each layer
+        if self.profile and torch.cuda.is_available():
+            self.start_events = {}
+            self.end_events = {}
+            self.layer_times = {}
 
         # decide if this stage contains the first layer of a model
         self.is_first = start == 0
@@ -96,6 +119,14 @@ class Stage(nn.Module):
             raise e
 
         self._init_llm_config()
+        
+        # Initialize profiling events if enabled
+        if self.profile and torch.cuda.is_available():
+            for i, layer in enumerate(self.layers):
+                layer_idx = i + self.start
+                self.start_events[layer_idx] = torch.cuda.Event(enable_timing=True)
+                self.end_events[layer_idx] = torch.cuda.Event(enable_timing=True)
+                self.layer_times[layer_idx] = []
 
     def _init_llm_config(self):
         if not isinstance(self.modelir.mmd, Llama3ModelMetaData):
@@ -243,6 +274,42 @@ class Stage(nn.Module):
 
         return outputs, next_layer
 
+    def _save_profile_data(self):
+        """Save profiling data to JSON file."""
+        if not self.profile or not self.layer_times:
+            return
+            
+        profile_dir = Path("profile_data") / self.model_name / f"batch_size_{self.batch_size}"
+        profile_dir.mkdir(exist_ok=True, parents=True)
+        
+        profile_data = []
+        
+        for layer_idx, times in self.layer_times.items():
+            if not times:
+                continue
+                
+            # Calculate average time where the max and min two values are removed
+            times.sort()
+            assert len(times) > 20, f"max_profile_count is too small, should be more than 20 as we remove the max and min 10 values"
+            times = times[10:-10] # remove the max and min five values
+            avg_time = sum(times) / len(times)
+            
+            layer_data = {
+                "layer_num": layer_idx,
+                "layer_name": self.layers[layer_idx - self.start].__class__.__name__,
+                "forward_latency_ms": avg_time,
+                "min": min(times),
+                "max": max(times),
+                "std": statistics.stdev(times),
+            }
+            profile_data.append(layer_data)
+        
+        # Save to file
+        with open(profile_dir / f"profile_stage_{self.id}.json", 'w') as f:
+            json.dump(profile_data, f, indent=2)
+        
+        print(f"Saved profiling data for stage {self.id} to profile_data/infscale_profile/{self.model_name}/batch_size_{self.batch_size}/profile_stage_{self.id}.json")
+
     def predict(self, seqno: int, **inputs) -> tuple[dict[str, Tensor], int]:
         """Coduct inference."""
         if isinstance(self.modelir.mmd, Llama3ModelMetaData):
@@ -261,11 +328,39 @@ class Stage(nn.Module):
 
     def forward(self, **inputs) -> dict[str, Tensor]:
         """Run layers in the stage."""
-        for layer in self.layers:
+        if not self.profile or not torch.cuda.is_available():
+            # Standard forward pass without profiling
+            for layer in self.layers:
+                inputs = layer(**inputs)
+            return inputs
+        
+        # Forward pass with profiling
+        for i, layer in enumerate(self.layers):
+            layer_idx = i + self.start
+            self.start_events[layer_idx].record()
+            
             inputs = layer(**inputs)
+            
+            self.end_events[layer_idx].record()
+        
+        # Synchronize CUDA and calculate times
+        torch.cuda.synchronize()
+        
+        for i, _ in enumerate(self.layers):
+            layer_idx = i + self.start
+            elapsed_time = self.start_events[layer_idx].elapsed_time(self.end_events[layer_idx])
+            self.layer_times[layer_idx].append(elapsed_time)
+        
+        # Increment profile count
+        self.profile_count += 1
+        
+        # Save profiling data if we've reached max_count
+        if self.profile_count >= self.max_profile_count and self.max_profile_count > 0 and not self.profile_data_saved:
+            self._save_profile_data()
+            self.profile_data_saved = True
 
         return inputs
-
+    
     def _init_layers(self):
         """Initialize meta layers and move them to a device."""
         model = self.modelir.mmd.load_model()

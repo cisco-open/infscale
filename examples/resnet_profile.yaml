@@ -1,0 +1,48 @@
+name: resnet152_example
+model: microsoft/resnet-152
+nfaults: 1
+micro_batch_size: 128
+fwd_policy: rr
+job_id: job1
+max_inflight: 1
+warmup: 8  # number of warmup batches
+max_count: 200  # number of actual batches to run
+max_profile_count: 100  # number of batches to profile
+profile: true
+
+flow_graph:
+  s-0:
+    - name: w0
+      peers: [1-0]
+      backend: gloo
+  0-0:
+    - name: w1
+      peers: [s-0]
+      backend: gloo
+  1-0:
+    - name: w2
+      peers: [0-0]
+      backend: nccl
+
+dataset: # huggingface dataset
+  path: "cifar10"
+  name: ""
+  split: test
+
+workers:
+  - id: s-0
+    device: cpu
+    is_server: True
+    stage:
+      start: -1
+      end: -1
+  - id: 0-0
+    device: cuda:0
+    stage:
+      start: 0
+      end: 25
+  - id: 1-0
+    device: cuda:1
+    stage:
+      start: 26
+      end: 51
