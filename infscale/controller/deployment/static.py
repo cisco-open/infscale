@@ -16,7 +16,11 @@
 
 """Static deployment policy."""
 
-from infscale.common.exceptions import InsufficientResources, InvalidConfig
+from infscale.common.exceptions import (
+    InfScaleException,
+    InsufficientResources,
+    InvalidConfig,
+)
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
@@ -36,6 +40,29 @@ class StaticDeploymentPolicy(DeploymentPolicy):
         agent_data: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
+    ) -> dict[str, set[AssignmentData]]:
+        """Split the job config statically based on its details."""
+        temp_res = {}
+        try:
+            return self._split(
+                dev_type,
+                agent_data,
+                agent_resources,
+                job_config,
+                temp_res
+            )
+        except InfScaleException as e:
+            self._rollback_device_state(temp_res)
+
+            raise InfScaleException(e)
+
+    def _split(
+        self,
+        dev_type: DeviceType,
+        agent_data: list[AgentMetaData],
+        agent_resources: dict[str, AgentResources],
+        job_config: JobConfig,
+        temp_res: dict[AgentResources, set[str]] = None
     ) -> dict[str, set[AssignmentData]]:
         """Split the job config statically based on its details."""
         assignment_map = self.get_curr_assignment_map(agent_data)
@@ -79,6 +106,9 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             device = self._get_n_update_worker_device(
                 worker_id, job_config.workers, resources
             )
+
+            self._set_rollback_data(resources, device, temp_res)
+
             worlds_map = self._get_worker_worlds_map(worker_id, job_config)
 
             assignment_data = AssignmentData(worker_id, device, worlds_map)

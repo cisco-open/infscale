@@ -141,3 +141,23 @@ class DeploymentPolicy(ABC):
         """Update backend value based on device."""
         for world in worlds_map.values():
             world.backend = "gloo" if device == "cpu" else "nccl"
+
+    def _set_rollback_data(
+        self,
+        resources: AgentResources,
+        device: str,
+        temp_res: dict[AgentResources, set[str]],
+    ) -> None:
+        """Set temporary resources."""
+        if resources in temp_res:
+            temp_res[resources].add(device)
+        else:
+            temp_res[resources] = {device}
+
+    def _rollback_device_state(self, temp_res: dict[AgentResources, set[str]]) -> None:
+        """Rollback device state for job id."""
+        for res, devices in temp_res.items():
+            for gpu_stat in res.gpu_stats:
+                if f"cuda:{gpu_stat.id}" not in devices:
+                    continue
+                gpu_stat.used = False  
