@@ -118,6 +118,9 @@ class ServeConfig:
     # enable profiling of layer execution times
     profile: bool = False
 
+    # maximum sequence length
+    max_seq_length: int = -1
+
     def __post_init__(self):
         """Convert stage dict into stage object."""
         # TODO - remove isinstance check when the config file is being sent through the api call
@@ -172,6 +175,9 @@ class JobConfig:
     # number of batches to profile
     max_profile_count: int = 100
 
+    # maximum sequence length
+    max_seq_length: int = -1
+
     def __post_init__(self) -> None:
         """Handle post init class variables."""
         for k in list(self.flow_graph.keys()):
@@ -222,6 +228,7 @@ class JobConfig:
                 "max_count": self.max_count,
                 "max_profile_count": self.max_profile_count,
                 "profile": self.profile,
+                "max_seq_length": self.max_seq_length,
             }
             serve_configs.append(ServeConfig(**config))
 

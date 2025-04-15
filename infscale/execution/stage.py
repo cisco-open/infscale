@@ -57,6 +57,7 @@ class Stage(nn.Module):
         max_profile_count: int = 100,
         model_name: str = "",
         batch_size: int = 1,
+        seq_length: int = -1,
     ):
         """Initialize stage class instance."""
         super().__init__()
@@ -75,19 +76,27 @@ class Stage(nn.Module):
         self.max_inflight = max_inflight
         
         self.profile = profile
-        self.layer_profile_data = []
         self.profile_count = 0
         self.max_profile_count = max_profile_count
         self.profile_data_saved = False
+        # For non-LLM or overall timing
+        self.layer_times = {}
+        # For LLM specific timing
+        self.layer_times_prefill = {}
+        self.layer_times_decode = {}
+        self.seqno_counters = {}
+        self.sequences_being_profiled = set()
+        self.profiled_prefill_count = 0
 
         self.model_name = model_name.split("/")[-1]
         self.batch_size = batch_size
-        
+        self.seq_length = seq_length if seq_length != -1 else None
+
         # If profiling is enabled, create events for each layer
-        if self.profile and torch.cuda.is_available():
+        if self.profile:
+            assert torch.cuda.is_available(), "Profiling requires CUDA"
             self.start_events = {}
             self.end_events = {}
-            self.layer_times = {}
 
         # decide if this stage contains the first layer of a model
         self.is_first = start == 0
@@ -126,7 +135,6 @@ class Stage(nn.Module):
                 layer_idx = i + self.start
                 self.start_events[layer_idx] = torch.cuda.Event(enable_timing=True)
                 self.end_events[layer_idx] = torch.cuda.Event(enable_timing=True)
-                self.layer_times[layer_idx] = []
 
     def _init_llm_config(self):
         if not isinstance(self.modelir.mmd, Llama3ModelMetaData):
@@ -186,12 +194,12 @@ class Stage(nn.Module):
             + f"attention_mask's size: {attention_mask.size()}"
         )
 
-        outputs = self.forward(**inputs, use_cache=True, past_key_values=cache)
+        outputs, measured_times = self.forward(**inputs, use_cache=True, past_key_values=cache)
 
         # add attention mask to outputs to pass it to next stage
         outputs["attention_mask"] = attention_mask
 
-        return outputs
+        return outputs, measured_times
 
     def _run_llm_middle_stage(
         self, seqno: int, cache: DynamicCache, **inputs
@@ -203,12 +211,12 @@ class Stage(nn.Module):
         attention_mask = inputs["attention_mask"]
         del inputs["attention_mask"]
 
-        outputs = self.forward(**inputs, past_key_values=cache)
+        outputs, measured_times = self.forward(**inputs, past_key_values=cache)
 
         # add attention mask to outputs to pass it to next stage
         outputs["attention_mask"] = attention_mask
 
-        return outputs
+        return outputs, measured_times
 
     def _run_llm_last_stage(
         self, seqno: int, cache: DynamicCache, **inputs
@@ -220,11 +228,11 @@ class Stage(nn.Module):
         attention_mask = inputs["attention_mask"]
         del inputs["attention_mask"]
 
-        outputs = self.forward(**inputs, past_key_values=cache)
+        outputs, measured_times = self.forward(**inputs, past_key_values=cache)
 
         outputs = self._output_parser(seqno, outputs, attention_mask)
 
-        return outputs
+        return outputs, measured_times
 
     def _llm_generate(self, seqno: int, **inputs) -> tuple[dict[str, Tensor], int]:
         """Return generated intermediate results or all the tokens.
@@ -254,7 +262,39 @@ class Stage(nn.Module):
             self.caches[seqno] = DynamicCache()
         cache = self.caches[seqno]
 
-        outputs = self._run_llm(seqno, cache, **inputs)
+        outputs, measured_times = self._run_llm(seqno, cache, **inputs)
+
+        # Handle profiling for LLMs
+        if self.profile and measured_times is not None:
+            
+            # Determine if this sequence should be profiled by this stage
+            should_profile_this_seqno = False
+            if seqno in self.sequences_being_profiled:
+                should_profile_this_seqno = True
+            elif len(self.sequences_being_profiled) < self.max_profile_count:
+                # Start profiling this new sequence if we haven't reached the limit
+                should_profile_this_seqno = True
+                self.sequences_being_profiled.add(seqno)
+
+            if should_profile_this_seqno:
+                self.seqno_counters[seqno] = self.seqno_counters.get(seqno, 0) + 1
+                is_prefill = self.seqno_counters[seqno] == 1
+
+                # Record timings
+                for layer_idx, time in measured_times.items():
+                    if is_prefill:
+                        self.layer_times_prefill.setdefault(layer_idx, []).append(time)
+                    else:
+                        self.layer_times_decode.setdefault(layer_idx, []).append(time)
+
+                # If this was a prefill step, increment count and check save condition
+                if is_prefill:
+                    self.profiled_prefill_count += 1
+                    # Save profiling data if we've recorded enough prefill steps
+                    if self.profiled_prefill_count >= self.max_profile_count and self.max_profile_count > 0 and not self.profile_data_saved:
+                        self._save_profile_data()
+                        # self.profile_data_saved is set within _save_profile_data()
+
         # If DynamicCache is returned in outputs, it can't be forwarded
         # to other workers since it is not a tensor; so, we remove it
         # from outputs; this is a HACK; need to think about if there is
@@ -276,49 +316,157 @@ class Stage(nn.Module):
 
     def _save_profile_data(self):
         """Save profiling data to JSON file."""
-        if not self.profile or not self.layer_times:
+        is_llm = isinstance(self.modelir.mmd, Llama3ModelMetaData)
+
+        if not self.profile:
             return
             
-        profile_dir = Path("profile_data") / self.model_name / f"batch_size_{self.batch_size}"
-        profile_dir.mkdir(exist_ok=True, parents=True)
-        
+        layer_indices = set(self.start_events.keys()) # Get all layer indices in this stage
+
         profile_data = []
-        
-        for layer_idx, times in self.layer_times.items():
-            if not times:
-                continue
-                
-            # Calculate average time where the max and min two values are removed
-            times.sort()
-            assert len(times) > 20, f"max_profile_count is too small, should be more than 20 as we remove the max and min 10 values"
-            times = times[10:-10] # remove the max and min five values
-            avg_time = sum(times) / len(times)
-            
-            layer_data = {
-                "layer_num": layer_idx,
-                "layer_name": self.layers[layer_idx - self.start].__class__.__name__,
-                "forward_latency_ms": avg_time,
-                "min": min(times),
-                "max": max(times),
-                "std": statistics.stdev(times),
-            }
-            profile_data.append(layer_data)
-        
+        profile_data_prefill = []
+        profile_data_decode = []
+
+
+        for layer_idx in sorted(list(layer_indices)):
+
+            if is_llm:
+                layer_data_prefill = {
+                    "layer_num": layer_idx,
+                    "layer_name": self.layers[layer_idx - self.start].__class__.__name__,
+                    "type": "prefill",
+                }
+                layer_data_decode = {
+                    "layer_num": layer_idx,
+                    "layer_name": self.layers[layer_idx - self.start].__class__.__name__,
+                    "type": "decode",
+                }
+
+                times_prefill = self.layer_times_prefill.get(layer_idx, [])
+                times_decode = self.layer_times_decode.get(layer_idx, [])
+
+                def calculate_stats(times):
+                    assert len(times) > 20, f"max_profile_count is too small, should be more than 20 as we remove the max and min 10 values"
+                    times.sort()
+                    # TODO: Consider making the number of points to remove configurable
+                    times_trimmed = times[10:-10] # remove the max and min ten values
+                    if not times_trimmed:
+                        return None, None, None, None # Handle case where trimming removed everything
+                    avg_time = sum(times_trimmed) / len(times_trimmed)
+                    min_time = min(times_trimmed)
+                    max_time = max(times_trimmed)
+                    std_dev = statistics.stdev(times_trimmed) if len(times_trimmed) > 1 else 0
+                    return avg_time, min_time, max_time, std_dev
+
+                avg_prefill, min_prefill, max_prefill, std_prefill = calculate_stats(times_prefill)
+                avg_decode, min_decode, max_decode, std_decode = calculate_stats(times_decode)
+
+                if avg_prefill is not None:
+                    layer_data_prefill.update({
+                        "forward_latency_ms": avg_prefill,
+                        "min_prefill": min_prefill,
+                        "max_prefill": max_prefill,
+                        "std_prefill": std_prefill,
+                        "count_prefill": len(times_prefill),
+                    })
+                if avg_decode is not None:
+                    layer_data_decode.update({
+                        "forward_latency_ms": avg_decode,
+                        "min_decode": min_decode,
+                        "max_decode": max_decode,
+                        "std_decode": std_decode,
+                        "count_decode": len(times_decode),
+                    })
+                # Only add layer if we have either prefill or decode data
+                if avg_prefill is not None or avg_decode is not None:
+                   profile_data_prefill.append(layer_data_prefill)
+                   profile_data_decode.append(layer_data_decode)
+
+            else: # Not LLM
+                layer_data = {
+                    "layer_num": layer_idx,
+                    "layer_name": self.layers[layer_idx - self.start].__class__.__name__,
+                }
+
+                times = self.layer_times.get(layer_idx, [])
+                # Calculate average time where the max and min ten values are removed
+                times.sort()
+                assert len(times) > 20, f"max_profile_count is too small, should be more than 20 as we remove the max and min 10 values"
+                times_trimmed = times[10:-10] # remove the max and min ten values
+                if not times_trimmed:
+                    continue
+                avg_time = sum(times_trimmed) / len(times_trimmed)
+                min_time = min(times_trimmed)
+                max_time = max(times_trimmed)
+                std_dev = statistics.stdev(times_trimmed) if len(times_trimmed) > 1 else 0
+
+                layer_data.update({
+                    "forward_latency_ms": avg_time,
+                    "min": min_time,
+                    "max": max_time,
+                    "std": std_dev,
+                    "count": len(times),
+                })
+                profile_data.append(layer_data)
+
         # Save to file
-        with open(profile_dir / f"profile_stage_{self.id}.json", 'w') as f:
-            json.dump(profile_data, f, indent=2)
         
-        print(f"Saved profiling data for stage {self.id} to profile_data/infscale_profile/{self.model_name}/batch_size_{self.batch_size}/profile_stage_{self.id}.json")
+        if is_llm:
+            profile_dir_decode = Path("profile_data") / "infscale" / f"{self.model_name}_decode"
+            profile_dir_decode.mkdir(exist_ok=True, parents=True)
+            profile_dir_prefill = Path("profile_data") / "infscale" / f"{self.model_name}_prefill"
+            profile_dir_prefill.mkdir(exist_ok=True, parents=True)
+        else:
+            profile_dir = Path("profile_data") / "infscale" / self.model_name
+            profile_dir.mkdir(exist_ok=True, parents=True)
+        
+        output_filename = f"batch_size_{self.batch_size}_stage_{self.id}.json"
+
+        if is_llm and self.seq_length is not None:
+            output_filename = f"batch_size_{self.batch_size}_seq_length_{self.seq_length}_stage_{self.id}.json"
+
+
+        if is_llm:
+            save_path_decode = profile_dir_decode / output_filename
+            save_path_prefill = profile_dir_prefill / output_filename
+            with open(save_path_decode, 'w') as f:
+                json.dump(profile_data_decode, f, indent=2)
+            with open(save_path_prefill, 'w') as f:
+                json.dump(profile_data_prefill, f, indent=2)
+
+            print(f"Saved profiling data for stage {self.id} to {profile_dir_decode} and {profile_dir_prefill}")
+        else:
+            save_path = profile_dir / output_filename
+            with open(save_path, 'w') as f:
+                json.dump(profile_data, f, indent=2)
+
+            print(f"Saved profiling data for stage {self.id} to {save_path}")
+
+        self.profile_data_saved = True # Mark as saved
 
     def predict(self, seqno: int, **inputs) -> tuple[dict[str, Tensor], int]:
         """Coduct inference."""
-        if isinstance(self.modelir.mmd, Llama3ModelMetaData):
+        is_llm = isinstance(self.modelir.mmd, Llama3ModelMetaData)
+
+        if is_llm:
             # do generation; needs multiple passes of the layers in a stateful manner
             # we have to maintain the state
             outputs, next_layer = self._llm_generate(seqno, **inputs)
         else:
             # run the layers once
-            outputs = self.forward(**inputs)
+            outputs, measured_times = self.forward(**inputs)
+
+            # Handle profiling for non-LLM models
+            if self.profile and torch.cuda.is_available() and measured_times is not None:
+                self.profile_count += 1 # Increment non-LLM profile counter
+                for layer_idx, time in measured_times.items():
+                    self.layer_times.setdefault(layer_idx, []).append(time)
+
+                # Save profiling data if we've reached max_count for non-LLM runs
+                if self.profile_count >= self.max_profile_count and self.max_profile_count > 0 and not self.profile_data_saved:
+                    self._save_profile_data()
+                    # self.profile_data_saved is set within _save_profile_data
+
             outputs = self._output_parser(outputs) if self._output_parser else outputs
             # other models like resnet don't have auto-regressive nature.
             # so, we can go back to the serving server
@@ -332,9 +480,10 @@ class Stage(nn.Module):
             # Standard forward pass without profiling
             for layer in self.layers:
                 inputs = layer(**inputs)
-            return inputs
+            return inputs, None
         
         # Forward pass with profiling
+        measured_times = {}
         for i, layer in enumerate(self.layers):
             layer_idx = i + self.start
             self.start_events[layer_idx].record()
@@ -349,17 +498,9 @@ class Stage(nn.Module):
         for i, _ in enumerate(self.layers):
             layer_idx = i + self.start
             elapsed_time = self.start_events[layer_idx].elapsed_time(self.end_events[layer_idx])
-            self.layer_times[layer_idx].append(elapsed_time)
+            measured_times[layer_idx] = elapsed_time
         
-        # Increment profile count
-        self.profile_count += 1
-        
-        # Save profiling data if we've reached max_count
-        if self.profile_count >= self.max_profile_count and self.max_profile_count > 0 and not self.profile_data_saved:
-            self._save_profile_data()
-            self.profile_data_saved = True
-
-        return inputs
+        return inputs, measured_times
     
     def _init_layers(self):
         """Initialize meta layers and move them to a device."""

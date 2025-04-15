@@ -2,7 +2,7 @@
 
 # Set the environment variables
 # export INFSCALE_LOG_LEVEL=PROFILE
-export CUDA_VISIBLE_DEVICES=0,1,3
+# export CUDA_VISIBLE_DEVICES=0,1,2
 
 # Function to handle termination
 cleanup() {

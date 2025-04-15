@@ -252,7 +252,11 @@ class HuggingFaceDataset:
         def tokenize_function(examples):
             tokenizer.pad_token = tokenizer.eos_token
             return tokenizer(
-                examples[text_column_name], padding=True, return_tensors="pt"
+                examples[text_column_name],
+                padding="max_length",
+                truncation=True,
+                max_length=max_seq_length,
+                return_tensors="pt",
             )
 
         tokenized_dataset = dataset.map(

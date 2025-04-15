@@ -176,6 +176,7 @@ class Pipeline:
             max_profile_count=self.spec.max_profile_count,
             model_name=self.spec.model,
             batch_size=self.spec.micro_batch_size,
+            seq_length=self.spec.max_seq_length,
         )
 
     async def _wait_tx_permission(self):
@@ -400,7 +401,8 @@ class Pipeline:
         )
 
         # load dataset
-        self.dataset = HuggingFaceDataset(mmd, path, name, split)
+        self.dataset = HuggingFaceDataset(mmd, path, name, split, 
+                                          max_seq_length=self.spec.max_seq_length if self.spec.max_seq_length else None)
         self.device = torch.device(self.spec.device)
 
         # load model intermediate representation
