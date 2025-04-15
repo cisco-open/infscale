@@ -70,6 +70,7 @@ class AgentMetaData:
         self.ready_to_config = False
         self.wids_to_deploy: set[str] = set()
         self.assignment_set: set[AssignmentData] = set()
+        self.past_assignment_set: set[AssignmentData] = set()
 
 
 class JobStateEnum(Enum):
@@ -275,7 +276,7 @@ class CompletingState(BaseJobState):
 
 
 class UpdatingState(BaseJobState):
-    """StoppingState class."""
+    """UpdatingState class."""
 
     async def stop(self):
         """Transition to STOPPING state."""
@@ -287,9 +288,9 @@ class UpdatingState(BaseJobState):
         # cleanup on agents after update in case there's no running workers
         # we rely on running agents to decide state transitions
         self.context.running_agent_info = [
-            agent_info
-            for agent_info in self.context.running_agent_info
-            if len(agent_info.assignment_set)
+            agent_data
+            for agent_data in self.context.running_agent_info
+            if len(agent_data.assignment_set)
         ]
 
         all_agents_running = self.context._check_job_status_on_all_agents(
@@ -379,6 +380,7 @@ class JobContext:
         self.agents_setup_event = asyncio.Event()
         # list of agent ids that will deploy workers
         self.running_agent_info: list[AgentMetaData] = []
+        self.past_running_agent_info: list[AgentMetaData] = []
 
         global logger
         logger = get_logger()
@@ -429,7 +431,11 @@ class JobContext:
         """Handle worker status by calling conditional action."""
         match status:
             case WorkerStatus.DONE:
+                self._release_gpu_resource_by_worker_id(wid)
                 await self.cond_completing()
+
+            case WorkerStatus.TERMINATED:
+                self._release_gpu_resource_by_worker_id(wid)
 
     def _do_cond(self, status: JobStatus) -> None:
         """Handle job status by calling conditional action."""
@@ -473,22 +479,23 @@ class JobContext:
         self._new_cfg = self.req.config
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
-        agent_data = self._get_agents_data(agent_ids)
+        agent_data_list = self._get_agents_data(agent_ids)
         agent_resources = self._get_agent_resources_map(agent_ids)
 
         dev_type = self._decide_dev_type(agent_resources, self._new_cfg)
 
         assignment_map = self.ctrl.deploy_policy.split(
-            dev_type, agent_data, agent_resources, self._new_cfg
+            dev_type, agent_data_list, agent_resources, self._new_cfg
         )
 
         self._update_agent_data(assignment_map)
 
         # create a list of agent info that will deploy workers
-        running_agent_info = [
+        running_agent_info: list[AgentMetaData] = [
             self.agent_info[agent_id] for agent_id in assignment_map.keys()
         ]
 
+        self.past_running_agent_info = self.running_agent_info
         self.running_agent_info = running_agent_info
 
     def _decide_dev_type(
@@ -565,6 +572,7 @@ class JobContext:
                 agent_data.assignment_set, new_assignment_set
             )
             agent_data.wids_to_deploy = {data.wid for data in new_assignment_set}
+            agent_data.past_assignment_set = agent_data.assignment_set
             agent_data.assignment_set = new_assignment_set
 
     async def prepare_config(self, agent_data: AgentMetaData) -> None:
@@ -805,7 +813,9 @@ class JobContext:
 
     def cleanup(self) -> None:
         """Do cleanup on context resources."""
-        self._release_gpu_resources()
+        for agent_data in self.running_agent_info:
+            self._release_gpu_resources(agent_data)
+
         self.agent_info = {}
         self.req = None
         self.wrk_status = {}
@@ -814,16 +824,43 @@ class JobContext:
         self._new_cfg = None
         self._flow_graph_patched = False
 
-    def _release_gpu_resources(self) -> None:
-        """Mark GPU resources as not used."""
-        for agent_data in self.running_agent_info:
-            resources = self.ctrl.agent_contexts[agent_data.id].resources
+    def _release_gpu_resources(self, agent_data: AgentMetaData) -> None:
+        resources = self.ctrl.agent_contexts[agent_data.id].resources
+        if resources is None:
+            return
 
-            if not resources:
+        dev_set = {assignment.device for assignment in agent_data.assignment_set}
+
+        for gpu_stat in resources.gpu_stats:
+            if f"cuda:{gpu_stat.id}" not in dev_set:
                 continue
 
-            for gpu_stat in resources.gpu_stats:
-                gpu_stat.used = False
+            # mark unused only for gpu used in this job
+            gpu_stat.used = False
+
+    def _release_gpu_resource_by_worker_id(self, wid: str):
+        running_agent_info = set(self.running_agent_info)
+        running_agent_info |= set(self.past_running_agent_info)
+        for agent_data in running_agent_info:
+            resources = self.ctrl.agent_contexts[agent_data.id].resources
+            if resources is None:
+                continue
+
+            assignment_set = agent_data.past_assignment_set | agent_data.assignment_set
+            for assignment_data in assignment_set:
+                if assignment_data.wid != wid:
+                    continue
+
+                if "cuda" not in assignment_data.device:
+                    return
+
+                gpu_id = int(assignment_data.device.split(":")[1])
+                for gpu_stat in resources.gpu_stats:
+                    if gpu_stat.id != gpu_id:
+                        continue
+
+                    # mark unused
+                    gpu_stat.used = False
 
     async def do(self, req: CommandActionModel):
         """Handle specific action."""

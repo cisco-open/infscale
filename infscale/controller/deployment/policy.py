@@ -42,9 +42,15 @@ class AssignmentData:
     """AssignmentData class."""
 
     def __init__(self, wid: str, device: str, worlds_map: dict[str, WorldInfo]):
+        """Initialize an instance."""
         self.wid = wid
         self.device = device
         self.worlds_map = worlds_map
+
+    def __str__(self) -> str:
+        """Return string represenation of the object."""
+        rep = f"worker id: {self.wid}, device: {self.device}, worlds_map: {self.worlds_map}"
+        return rep
 
 
 class DeploymentPolicy(ABC):

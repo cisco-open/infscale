@@ -86,6 +86,9 @@ class AgentResources:
             return
 
         for i, gpu_stat in enumerate(gpu_stats):
+            # used is a boolean variable; so assign it directly
+            self.gpu_stats[i].used = gpu_stat.used
+
             util = self._wma(self.gpu_stats[i].util, gpu_stat.util)
             self.gpu_stats[i].util = util
 
