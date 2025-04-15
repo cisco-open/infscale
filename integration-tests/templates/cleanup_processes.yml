@@ -1,4 +1,4 @@
-- name: cleanup controller and agent processes
+- name: {{ name }}
   hosts: all
   become: false
   tasks:

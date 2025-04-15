@@ -10,9 +10,6 @@
         action: start
         entity: controller
 
-- name: start agent 1
-  host: cisco-research-7
-  tasks:
     - name: start agent 1
       shell:
         work_dir: ~/projects/infscale
@@ -43,6 +40,26 @@
         env_activate_command: conda activate pytorch-dev
         log_level: INFO
         action: start
+        entity: job
+        extra_args: examples/resnet152/auto/diamond.yaml
+
+- name: check job running
+  host: cisco-research-7
+  type: 'status'
+  statuses:
+    - running
+    - failed
+  job_id: "job1"
+
+- name: update job
+  host: cisco-research-7
+  tasks:
+    - name: update job
+      shell:
+        work_dir: ~/projects/infscale
+        env_activate_command: conda activate pytorch-dev
+        log_level: INFO
+        action: update
         entity: job
         extra_args: examples/resnet152/auto/linear.yaml
 

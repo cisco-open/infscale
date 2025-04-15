@@ -1,7 +1,16 @@
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 import pystache
+
+
+class TestType(Enum):
+    """TestType enum."""
+
+    RUN = "run"
+    STATUS = "status"
+    CLEANUP = "cleanup"
 
 
 @dataclass
@@ -44,19 +53,48 @@ class TestConfig:
     """Class for defining test config."""
 
     name: str
-    host: str
-    tasks: list[str]
+    host: str = "all"
+    tasks: list[str] = ""
+    job_id: str = ""
+    statuses: str = ""
+    type: TestType = TestType.RUN
 
     def __post_init__(self):
-        self.tasks = [str(TaskConfig(**task)) for task in self.tasks]
+        if self.tasks:
+            self.tasks = [str(TaskConfig(**task)) for task in self.tasks]
 
     def __str__(self) -> None:
         """Render config from a mustache template."""
-        template = Path("templates/play.yml").read_text()
-        rendered_tasks = "\n".join(indent(task, 4) for task in self.tasks)
-        rendered = pystache.render(
-            template, {"name": self.name, "host": self.host, "tasks": rendered_tasks}
-        )
+        rendered = None
+        type_enum = TestType(self.type)
+
+        match type_enum:
+            case TestType.RUN:
+                template = Path("templates/play.yml").read_text()
+                rendered_tasks = "\n".join(indent(task, 4) for task in self.tasks)
+                rendered = pystache.render(
+                    template,
+                    {
+                        "name": self.name,
+                        "host": self.host,
+                        "tasks": rendered_tasks,
+                    },
+                )
+            case TestType.STATUS:
+                template = Path("templates/job_status.yml").read_text()
+                rendered_tasks = "\n".join(indent(task, 4) for task in self.tasks)
+                rendered = pystache.render(
+                    template,
+                    {
+                        "host": self.host,
+                        "statuses": self.statuses,
+                        "job_id": self.job_id,
+                    },
+                )
+            case TestType.CLEANUP:
+                template = Path("templates/cleanup_processes.yml").read_text()
+                rendered_tasks = "\n".join(indent(task, 4) for task in self.tasks)
+                rendered = pystache.render(template, { "name": self.name })
 
         return rendered
 
