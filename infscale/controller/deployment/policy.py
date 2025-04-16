@@ -154,14 +154,14 @@ class DeploymentPolicy(ABC):
         device: str,
         temp_res: dict[AgentResources, set[str]],
     ) -> None:
-        """Set temporary resources."""
+        """Set resources and devices for rollback."""
         if resources in temp_res:
             temp_res[resources].add(device)
         else:
             temp_res[resources] = {device}
 
     def _rollback_device_state(self, temp_res: dict[AgentResources, set[str]]) -> None:
-        """Rollback device state for job id."""
+        """Rollback device state in agent resources."""
         for res, devices in temp_res.items():
             for gpu_stat in res.gpu_stats:
                 if f"cuda:{gpu_stat.id}" not in devices:
