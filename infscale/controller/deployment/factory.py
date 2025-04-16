@@ -26,9 +26,8 @@ from infscale.controller.deployment.static import StaticDeploymentPolicy
 class DeploymentPolicyFactory:
     """Deployment policy factory class."""
 
-    def get_deployment(
-        self, deployment_policy: DeploymentPolicyEnum
-    ) -> DeploymentPolicy:
+    @staticmethod
+    def get_deployment(deployment_policy: DeploymentPolicyEnum) -> DeploymentPolicy:
         """Return deployment policy class instance."""
         policies = {
             DeploymentPolicyEnum.RANDOM: RandomDeploymentPolicy(),
