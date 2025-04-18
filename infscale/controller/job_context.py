@@ -40,11 +40,12 @@ from infscale.controller.agent_context import (
 )
 from infscale.controller.autoscaler import PerfMetrics
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
+from infscale.controller.deployment.assignment import AssignmentCollection
 
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
-    from infscale.controller.deployment.policy import AssignmentData
+
 
 logger = None
 
@@ -69,8 +70,8 @@ class AgentMetaData:
         self.job_setup_event = asyncio.Event()
         self.ready_to_config = False
         self.wids_to_deploy: set[str] = set()
-        self.assignment_set: set[AssignmentData] = set()
-        self.past_assignment_set: set[AssignmentData] = set()
+        self.assignment_coll = AssignmentCollection()
+        self.past_assignment_coll = AssignmentCollection()
 
 
 class JobStateEnum(Enum):
@@ -290,7 +291,7 @@ class UpdatingState(BaseJobState):
         self.context.running_agent_info = [
             agent_data
             for agent_data in self.context.running_agent_info
-            if len(agent_data.assignment_set)
+            if len(agent_data.assignment_coll)
         ]
 
         all_agents_running = self.context._check_job_status_on_all_agents(
@@ -561,19 +562,17 @@ class JobContext:
         return result
 
     def _update_agent_data(
-        self, assignment_map: dict[str, set[AssignmentData]]
+        self, assignment_map: dict[str, AssignmentCollection]
     ) -> None:
         """Update agent data based on deployment policy split."""
-        for agent_id, assignment_set in assignment_map.items():
+        for agent_id, new_coll in assignment_map.items():
             agent_data = self.agent_info[agent_id]
+            cur_coll = agent_data.assignment_coll
 
-            new_assignment_set = assignment_map[agent_id]
-            agent_data.num_new_worlds = self._count_new_worlds(
-                agent_data.assignment_set, new_assignment_set
-            )
-            agent_data.wids_to_deploy = {data.wid for data in new_assignment_set}
-            agent_data.past_assignment_set = agent_data.assignment_set
-            agent_data.assignment_set = new_assignment_set
+            agent_data.num_new_worlds = self._count_new_worlds(cur_coll, new_coll)
+            agent_data.wids_to_deploy = new_coll.worker_ids()
+            agent_data.past_assignment_coll = cur_coll
+            agent_data.assignment_coll = new_coll
 
     async def prepare_config(self, agent_data: AgentMetaData) -> None:
         """Prepare config for deploy."""
@@ -613,9 +612,8 @@ class JobContext:
 
         # step 2: update workers devices
         for w in cfg.workers:
-            try:
-                assignment_data = self._get_worker_assignment_data(agent_data, w.id)
-            except StopIteration:
+            assignment_data = agent_data.assignment_coll.get_assignment_data(w.id)
+            if assignment_data is None:
                 log = f"not setting device for {w.id}"
                 log += f" since it's not deployed in {agent_data.id}"
                 logger.debug(log)
@@ -656,10 +654,11 @@ class JobContext:
                     world.backend = curr_worlds[world.name].backend
                 else:
                     agent_data = world_agent_map[world.name]
+                    assignment_coll = agent_data.assignment_coll
+                    assignment_data = assignment_coll.get_assignment_data(wid)
 
                     addr = self.ctrl.agent_contexts[agent_data.id].ip
                     port_iter = agent_port_map[agent_data.id]
-                    assignment_data = self._get_worker_assignment_data(agent_data, wid)
                     backend = assignment_data.worlds_map[world.name].backend
 
                     # assign new ports to new worlds
@@ -676,16 +675,6 @@ class JobContext:
     def reset_flow_graph_patch_flag(self) -> None:
         """Reset flow graph patch flag."""
         self._flow_graph_patched = False
-
-    def _get_worker_assignment_data(
-        self, agent_data: AgentMetaData, wid: str
-    ) -> AssignmentData:
-        """Return assignment data based on worker id."""
-        return next(
-            assignment_data
-            for assignment_data in agent_data.assignment_set
-            if assignment_data.wid == wid
-        )
 
     def _get_agent_port_map(self) -> dict[str, Iterator[int]]:
         """Create map between agent id and available ports."""
@@ -715,23 +704,23 @@ class JobContext:
         )
 
     def _count_new_worlds(
-        self, cur_set: set[AssignmentData], new_set: set[AssignmentData]
+        self, cur_coll: AssignmentCollection, new_coll: AssignmentCollection
     ) -> int:
         """Return the number of new worlds between and old and new config."""
-        curr_worlds = self._get_world_names_to_setup(self._cur_cfg, cur_set)
+        curr_worlds = self._get_world_names_to_setup(self._cur_cfg, cur_coll)
+        new_worlds = self._get_world_names_to_setup(self._new_cfg, new_coll)
 
-        new_worlds = self._get_world_names_to_setup(self._new_cfg, new_set)
         return len(new_worlds - curr_worlds)
 
     def _get_world_names_to_setup(
-        self, config: JobConfig, assignment_set: set[AssignmentData]
+        self, config: JobConfig, assignment_coll: AssignmentCollection
     ) -> set[str]:
         """Return a set of world names to be set up."""
         if config is None:
             # no world to set up; so, return an empty set
             return set()
 
-        worker_ids_to_deploy = {data.wid for data in assignment_set}
+        worker_ids_to_deploy = assignment_coll.worker_ids()
         world_names = {
             world.name
             for wid, world_list in config.flow_graph.items()
@@ -829,7 +818,7 @@ class JobContext:
         if resources is None:
             return
 
-        dev_set = {assignment.device for assignment in agent_data.assignment_set}
+        dev_set = agent_data.assignment_coll.devices()
 
         for gpu_stat in resources.gpu_stats:
             if f"cuda:{gpu_stat.id}" not in dev_set:
@@ -846,21 +835,24 @@ class JobContext:
             if resources is None:
                 continue
 
-            assignment_set = agent_data.past_assignment_set | agent_data.assignment_set
-            for assignment_data in assignment_set:
-                if assignment_data.wid != wid:
+            assignment_coll = (
+                agent_data.past_assignment_coll | agent_data.assignment_coll
+            )
+
+            assignment_data = assignment_coll.get_assignment_data(wid)
+            if assignment_data is None:
+                continue
+
+            if "cuda" not in assignment_data.device:
+                return
+
+            gpu_id = int(assignment_data.device.split(":")[1])
+            for gpu_stat in resources.gpu_stats:
+                if gpu_stat.id != gpu_id:
                     continue
 
-                if "cuda" not in assignment_data.device:
-                    return
-
-                gpu_id = int(assignment_data.device.split(":")[1])
-                for gpu_stat in resources.gpu_stats:
-                    if gpu_stat.id != gpu_id:
-                        continue
-
-                    # mark unused
-                    gpu_stat.used = False
+                # mark unused
+                gpu_stat.used = False
 
     async def do(self, req: CommandActionModel):
         """Handle specific action."""

@@ -27,12 +27,15 @@ from infscale.common.constants import (
     APISERVER_ENDPOINT,
     APISERVER_PORT,
     CONTROLLER_PORT,
-    DEFAULT_DEPLOYMENT_POLICY,
     LOCALHOST,
 )
 from infscale.common.exceptions import InvalidConfig
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
+from infscale.controller.deployment.policy import (
+    DEFAULT_DEPLOYMENT_POLICY,
+    DeploymentPolicyEnum,
+)
 from infscale.request.config import GenConfig, ReqGenEnum
 
 
@@ -48,7 +51,7 @@ def start():
 @click.option(
     "--policy",
     default=DEFAULT_DEPLOYMENT_POLICY,
-    help="deployment policy; options: even (default), random, static",
+    help="deployment policy; options: even, packing, random (default), static",
 )
 @click.option("--autoscaler", is_flag=True, help="enable autoscaler")
 @click.option("--reqgen", default="", help="Request generator config file path")
@@ -62,11 +65,18 @@ def controller(port: int, apiport: int, policy: str, autoscaler: bool, reqgen: s
 
         reqgen_config = GenConfig(**req_gen_yaml)
 
+    try:
+        policy_enum = DeploymentPolicyEnum(policy)
+    except ValueError:
+        default_policy = DeploymentPolicyEnum.RANDOM
+        print(f"WARNING: {policy} is an invalid policy; using {default_policy.value}")
+        policy_enum = default_policy
+
     controller = ctrl.Controller(
         reqgen_config=reqgen_config,
         port=port,
         apiport=apiport,
-        policy=policy,
+        policy=policy_enum,
         enable_as=autoscaler,
     )
     loop = asyncio.get_event_loop()

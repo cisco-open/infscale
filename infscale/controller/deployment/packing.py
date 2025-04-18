@@ -16,7 +16,11 @@
 
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
+from infscale.controller.deployment.assignment import (
+    AssignmentCollection,
+    AssignmentData,
+)
+from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 
@@ -24,27 +28,26 @@ class PackingPolicy(DeploymentPolicy):
     """Packing deployment policy class."""
 
     def __init__(self):
+        """Initialize a packing policy instance."""
         super().__init__()
 
     def split(
         self,
         dev_type: DeviceType,
-        agent_data: list[AgentMetaData],
+        agent_data_list: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> dict[str, set[AssignmentData]]:
+    ) -> dict[str, AssignmentCollection]:
         """
-        Split the job config using packing policy.
+        Assign workers to agents based on config and packing deployment policy.
 
         Agent with most resources given dev_type is selected.
         Deploy as many workers as the resources allow.
-
-        Return updated config and worker assignment map for each agent.
         """
         # dictionary to hold the workers for each agent_id
-        assignment_map = self.get_curr_assignment_map(agent_data)
+        assignment_map = self.get_curr_assignment_map(agent_data_list)
 
-        workers = self.get_workers(assignment_map, job_config.workers)
+        workers = self.get_new_workers(assignment_map, job_config.workers)
 
         # check if the assignment map has changed
         self.update_agents_assignment_map(assignment_map, job_config)
@@ -66,7 +69,7 @@ class PackingPolicy(DeploymentPolicy):
         agent_id: str,
         job_config: JobConfig,
         workers: list[WorkerData],
-        assignment_map: dict[str, set[AssignmentData]],
+        assignment_map: dict[str, AssignmentCollection],
         resources: AgentResources,
     ) -> None:
         workers_num = len(workers)
@@ -80,7 +83,7 @@ class PackingPolicy(DeploymentPolicy):
                 workers_num if available_gpu_num >= workers_num else available_gpu_num
             )
 
-        for i in range(workers_to_deploy):
+        for _ in range(workers_to_deploy):
             device = resources.get_n_set_device(dev_type)
             self._assign_worker(
                 workers,
@@ -96,19 +99,18 @@ class PackingPolicy(DeploymentPolicy):
         agent_id: str,
         job_config: JobConfig,
         device: str,
-        assignment_map: dict[str, AssignmentData],
+        assignment_map: dict[str, AssignmentCollection],
     ) -> None:
         """Assign worker and update backend."""
-        worker = workers.pop()
+        if agent_id not in assignment_map:
+            assignment_map[agent_id] = AssignmentCollection()
 
+        worker = workers.pop()
         worlds_map = self._get_worker_worlds_map(worker.id, job_config)
         self._update_backend(worlds_map, device)
-
         assignment_data = AssignmentData(worker.id, device, worlds_map)
-        if agent_id in assignment_map:
-            assignment_map[agent_id].add(assignment_data)
-        else:
-            assignment_map[agent_id] = {assignment_data}
+
+        assignment_map[agent_id].add(assignment_data)
 
     def _select_agent_with_most_resources(
         self,
@@ -116,7 +118,6 @@ class PackingPolicy(DeploymentPolicy):
         agent_resources: dict[str, AgentResources],
     ) -> tuple[str, AgentResources]:
         """Return the agent_id and AgentResources instance with the most available resources based on dev_type."""
-
         if dev_type == DeviceType.GPU:
             # return resources with largest number of unused GPU
             return max(

@@ -18,7 +18,11 @@ import random
 
 from infscale.config import JobConfig
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
+from infscale.controller.deployment.assignment import (
+    AssignmentCollection,
+    AssignmentData,
+)
+from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 
@@ -26,18 +30,18 @@ class RandomDeploymentPolicy(DeploymentPolicy):
     """Random deployment policy class."""
 
     def __init__(self):
+        """Initialize a random deployment policy."""
         super().__init__()
 
     def split(
         self,
         dev_type: DeviceType,
-        agent_data: list[AgentMetaData],
+        agent_data_list: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> dict[str, set[AssignmentData]]:
+    ) -> dict[str, AssignmentCollection]:
         """
-        Split the job config using random deployment policy
-        and update config and worker assignment map for each agent.
+        Assign workers to agents based on config and random deployment policy.
 
         Each agent gets at least one worker from the shuffled list.
         The remaining workers are distributed randomly.
@@ -45,22 +49,19 @@ class RandomDeploymentPolicy(DeploymentPolicy):
         of workers to agents is random.
         The random.choice(agent_ids) assigns the remaining workers in a random way,
         ensuring no agent is left out.
-
-        Return updated config and worker assignment map for each agent
         """
-
         # dictionary to hold the workers for each agent_id
-        assignment_map = self.get_curr_assignment_map(agent_data)
+        assignment_map = self.get_curr_assignment_map(agent_data_list)
 
-        workers = self.get_workers(assignment_map, job_config.workers)
+        workers = self.get_new_workers(assignment_map, job_config.workers)
 
         # check if the assignment map has changed
         self.update_agents_assignment_map(assignment_map, job_config)
 
         # distribute the remaining workers randomly
         while workers:
-            data = random.choice(agent_data)  # choose an agent randomly
-            resources = agent_resources[data.id]
+            agent_data = random.choice(agent_data_list)  # choose an agent randomly
+            resources = agent_resources[agent_data.id]
 
             device = resources.get_n_set_device(dev_type)
 
@@ -69,15 +70,14 @@ class RandomDeploymentPolicy(DeploymentPolicy):
             if device is None:
                 continue
 
-            worker = workers.pop()
+            if agent_data.id not in assignment_map:
+                assignment_map[agent_data.id] = AssignmentCollection()
 
+            worker = workers.pop()
             worlds_map = self._get_worker_worlds_map(worker.id, job_config)
             self._update_backend(worlds_map, device)
-
             assignment_data = AssignmentData(worker.id, device, worlds_map)
-            if data.id in assignment_map:
-                assignment_map[data.id].add(assignment_data)
-            else:
-                assignment_map[data.id] = {assignment_data}
+
+            assignment_map[agent_data.id].add(assignment_data)
 
         return assignment_map

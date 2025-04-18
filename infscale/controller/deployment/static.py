@@ -23,7 +23,11 @@ from infscale.common.exceptions import (
 )
 from infscale.config import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
+from infscale.controller.deployment.assignment import (
+    AssignmentCollection,
+    AssignmentData,
+)
+from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 
@@ -37,19 +41,15 @@ class StaticDeploymentPolicy(DeploymentPolicy):
     def split(
         self,
         dev_type: DeviceType,
-        agent_data: list[AgentMetaData],
+        agent_data_list: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> dict[str, set[AssignmentData]]:
+    ) -> dict[str, AssignmentCollection]:
         """Split the job config statically based on its details."""
         temp_res = {}
         try:
             return self._split(
-                dev_type,
-                agent_data,
-                agent_resources,
-                job_config,
-                temp_res
+                dev_type, agent_data_list, agent_resources, job_config, temp_res
             )
         except InfScaleException as e:
             self._rollback_device_state(temp_res)
@@ -59,20 +59,19 @@ class StaticDeploymentPolicy(DeploymentPolicy):
     def _split(
         self,
         dev_type: DeviceType,
-        agent_data: list[AgentMetaData],
+        agent_data_list: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-        temp_res: dict[AgentResources, set[str]] = None
-    ) -> dict[str, set[AssignmentData]]:
-        """Split the job config statically based on its details."""
-        assignment_map = self.get_curr_assignment_map(agent_data)
+        temp_res: dict[AgentResources, set[str]] = None,
+    ) -> dict[str, AssignmentCollection]:
+        assignment_map = self.get_curr_assignment_map(agent_data_list)
 
-        workers = self.get_workers(assignment_map, job_config.workers)
+        workers = self.get_new_workers(assignment_map, job_config.workers)
 
         self.update_agents_assignment_map(assignment_map, job_config)
 
         agent_ip_to_id = {}
-        for data in agent_data:
+        for data in agent_data_list:
             agent_ip_to_id[data.ip] = data.id
 
         handled_worker_ids = set()
@@ -94,7 +93,12 @@ class StaticDeploymentPolicy(DeploymentPolicy):
                 raise InvalidConfig(f"{ip} not a valid agent IP")
 
             worker_in_use = next(
-                (data for data in agent_data if worker_id in data.wids_to_deploy), None
+                (
+                    agent_data
+                    for agent_data in agent_data_list
+                    if worker_id in agent_data.wids_to_deploy
+                ),
+                None,
             )
 
             if worker_in_use:
@@ -102,6 +106,10 @@ class StaticDeploymentPolicy(DeploymentPolicy):
                 continue
 
             agent_id = agent_ip_to_id[ip]
+
+            if agent_id not in assignment_map:
+                assignment_map[agent_id] = AssignmentCollection()
+
             resources = agent_resources[agent_id]
             device = self._get_n_update_worker_device(
                 worker_id, job_config.workers, resources
@@ -110,12 +118,9 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             self._set_rollback_data(resources, device, temp_res)
 
             worlds_map = self._get_worker_worlds_map(worker_id, job_config)
-
             assignment_data = AssignmentData(worker_id, device, worlds_map)
-            if agent_id in assignment_map:
-                assignment_map[agent_id].add(assignment_data)
-            else:
-                assignment_map[agent_id] = {assignment_data}
+
+            assignment_map[agent_id].add(assignment_data)
 
             handled_worker_ids.add(worker_id)
 
@@ -152,9 +157,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
         )
 
         if gpu_stat.used:
-            raise InvalidConfig(
-                f"GPU {gpu_stat.id} is used, please consider using another device."
-            )
+            raise InvalidConfig(f"GPU {gpu_stat.id} is used; try another device.")
 
         gpu_stat.used = True
 

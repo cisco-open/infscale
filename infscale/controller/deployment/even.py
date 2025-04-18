@@ -17,9 +17,13 @@
 from itertools import cycle
 from typing import Iterator
 
-from infscale.config import JobConfig, WorkerData
+from infscale.config import JobConfig
 from infscale.controller.agent_context import AgentResources, DeviceType
-from infscale.controller.deployment.policy import AssignmentData, DeploymentPolicy
+from infscale.controller.deployment.assignment import (
+    AssignmentCollection,
+    AssignmentData,
+)
+from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.job_context import AgentMetaData
 
 
@@ -27,57 +31,53 @@ class EvenDeploymentPolicy(DeploymentPolicy):
     """Even deployment policy class."""
 
     def __init__(self):
+        """Initialize an EvenDeploymentPolicy instance."""
         super().__init__()
 
     def split(
         self,
         dev_type: DeviceType,
-        agent_data: list[AgentMetaData],
+        agent_data_list: list[AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
-    ) -> dict[str, set[AssignmentData]]:
+    ) -> dict[str, AssignmentCollection]:
         """
-        Split the job config using even deployment policy
-        and update config and worker assignment map for each agent.
+        Assign workers to agents based on config and even deployment policy.
 
         Workers are distributed as evenly as possible across the available agents.
         If the number of workers isn't perfectly divisible by the number of agents,
         the "extra" workers are assigned to the first agents in the list.
-
-        Return updated config and worker assignment map for each agent
         """
         # dictionary to hold the workers for each agent_id
-        assignment_map = self.get_curr_assignment_map(agent_data)
+        assignment_map = self.get_curr_assignment_map(agent_data_list)
 
-        workers = self.get_workers(assignment_map, job_config.workers)
+        workers = self.get_new_workers(assignment_map, job_config.workers)
 
         # check if the assignment map has changed
         self.update_agents_assignment_map(assignment_map, job_config)
 
         # sort agent data ascending by number of assignments
-        agent_data.sort(key=lambda agent: len(agent.assignment_set))
-        agent_cycle = cycle(agent_data)
+        agent_data_list.sort(key=lambda agent: len(agent.assignment_coll))
+        agent_cycle = cycle(agent_data_list)
 
         while workers:
-            device, data = self._get_device_n_data(
+            device, agent_data = self._get_device_n_agent_data(
                 dev_type, agent_resources, agent_cycle
             )
 
+            if agent_data.id not in assignment_map:
+                assignment_map[agent_data.id] = AssignmentCollection()
+
             worker = workers.pop()
-
             worlds_map = self._get_worker_worlds_map(worker.id, job_config)
-
             self._update_backend(worlds_map, device)
             assignment_data = AssignmentData(worker.id, device, worlds_map)
 
-            if data.id in assignment_map:
-                assignment_map[data.id].add(assignment_data)
-            else:
-                assignment_map[data.id] = {assignment_data}
+            assignment_map[agent_data.id].add(assignment_data)
 
         return assignment_map
 
-    def _get_device_n_data(
+    def _get_device_n_agent_data(
         self,
         dev_type: DeviceType,
         agent_resources: dict[str, AgentResources],
@@ -85,9 +85,9 @@ class EvenDeploymentPolicy(DeploymentPolicy):
     ) -> tuple[str, AgentMetaData]:
         """Get device and agent data."""
         while True:
-            data = next(agent_cycle)  # Get the next agent
-            resources = agent_resources[data.id]
+            agent_data = next(agent_cycle)  # Get the next agent
+            resources = agent_resources[agent_data.id]
 
             device = resources.get_n_set_device(dev_type)
             if device:
-                return device, data
+                return device, agent_data

@@ -30,7 +30,6 @@ from infscale import get_logger
 from infscale.common.constants import (
     APISERVER_PORT,
     CONTROLLER_PORT,
-    DEFAULT_DEPLOYMENT_POLICY,
     GRPC_MAX_MESSAGE_LENGTH,
 )
 from infscale.common.job_msg import WorkerStatus
@@ -61,7 +60,7 @@ class Controller:
         reqgen_config: GenConfig,
         port: int = CONTROLLER_PORT,
         apiport: int = APISERVER_PORT,
-        policy: str = DEFAULT_DEPLOYMENT_POLICY,
+        policy: DeploymentPolicyEnum = DeploymentPolicyEnum.RANDOM,
         enable_as: bool = False,
     ):
         """Initialize an instance."""
@@ -76,16 +75,7 @@ class Controller:
 
         self.apiserver = ApiServer(self, apiport)
 
-        policy_fact = DeploymentPolicyFactory()
-
-        try:
-            policy_enum = DeploymentPolicyEnum(policy)
-            self.deploy_policy = policy_fact.get_deployment(policy_enum)
-        except ValueError:
-            logger.warning(
-                f"'{policy_enum}' is not a valid deployment policy, continuing with {DeploymentPolicyEnum.EVEN}"
-            )
-            self.deploy_policy = policy_fact.get_deployment(DeploymentPolicyEnum.EVEN)
+        self.deploy_policy = DeploymentPolicyFactory.get_deployment(policy)
 
         self.autoscaler = None
         if enable_as:
