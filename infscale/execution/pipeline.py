@@ -161,7 +161,9 @@ class Pipeline:
             self.world_infos[world_info.name] = world_info
 
         # configure router with worlds to add and remove
-        self.router.configure(self.spec, self.device, worlds_to_add, worlds_to_remove)
+        await self.router.configure(
+            self.spec, self.device, worlds_to_add, worlds_to_remove
+        )
 
         # handle unnecessary world
         # remove is executed in the reverse order of add

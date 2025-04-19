@@ -30,7 +30,7 @@ from infscale.execution.world import WorldInfo
 from infscale.fwding import random, rr, shortest, static
 
 
-DEFAULT_QUEUE_SIZE = 3
+DEFAULT_QUEUE_SIZE = 100
 DEFAULT_SLEEP_TIME = 0.1  # 100ms
 QUEUE_WAIT_PERIOD = 0.1  # 100ms
 
@@ -54,7 +54,7 @@ class Router:
         self._tx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
 
         # maintains the tasks of send / recv for worlds
-        self._tasks: dict[str, asyncio.Task] = {}
+        self._tasks: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
         self.__tx_qs: dict[int, list[tuple[WorldInfo, asyncio.Queue]]] = {}
         self.__rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)
 
@@ -94,7 +94,7 @@ class Router:
         """Return transmit queue."""
         return self._tx_q
 
-    def configure(
+    async def configure(
         self,
         spec: ServeConfig,
         device=torch.device("cpu"),
@@ -108,20 +108,20 @@ class Router:
 
         for world_info in worlds_to_add:
             logger.info(f"world info: {world_info}")
+            cancellable = asyncio.Event()
             if world_info.me == 0:  # I am a receiver from other
-                task = asyncio.create_task(self._recv(world_info))
-                self._tasks[world_info.name] = task
+                task = asyncio.create_task(self._recv(world_info, cancellable))
+                self._tasks[world_info.name] = (task, cancellable)
             else:  # I am a sender to other
-                task = asyncio.create_task(self._send(world_info))
-                self._tasks[world_info.name] = task
-
-                tpl = (world_info, asyncio.Queue(DEFAULT_QUEUE_SIZE))
+                task = asyncio.create_task(self._send(world_info, cancellable))
+                self._tasks[world_info.name] = (task, cancellable)
 
                 stage_cfg = spec.workers_stage_info[world_info.other_id]
 
                 if stage_cfg.start not in self.__tx_qs:
                     self.__tx_qs[stage_cfg.start] = []
 
+                tpl = (world_info, asyncio.Queue(DEFAULT_QUEUE_SIZE))
                 self.__tx_qs[stage_cfg.start].append(tpl)
 
         for world_info in worlds_to_remove:
@@ -129,9 +129,9 @@ class Router:
             if world_info.me == 0:
                 continue
 
-            self._cleanup_world(world_info)
+            await self._cleanup_world(world_info)
 
-    async def _recv(self, world_info: WorldInfo) -> None:
+    async def _recv(self, world_info: WorldInfo, cancellable: asyncio.Event) -> None:
         logger.debug(
             f"start to receive tensor from {world_info.other} in world {world_info.name}"
         )
@@ -147,7 +147,11 @@ class Router:
 
         while True:
             try:
+                # task can be cancelled before it receives tensors
+                cancellable.set()
                 tensors, seqno = await receiver.recv()
+                # task can't be cancelled until the tensors are processed
+                cancellable.clear()
                 self.requests_count += 1
             except Exception as e:
                 logger.warn(f"{world_info.name} error: {e}")
@@ -165,7 +169,7 @@ class Router:
             await self.__rx_q.put((tensors, seqno))
             logger.debug(f"put tensors of seqno {seqno} into __rx_q")
 
-        self._cleanup_world(world_info, cancel_task=False)
+        await self._cleanup_world(world_info, cancel_task=False)
         logger.warn(f"done with recv task for {world_info.name}")
 
     async def wait_on_term_ready(self) -> None:
@@ -177,18 +181,21 @@ class Router:
             if self.requests_count == 0:
                 break
 
-    def _cleanup_world(self, world_info: WorldInfo, cancel_task: bool = True) -> None:
+    async def _cleanup_world(
+        self, world_info: WorldInfo, cancel_task: bool = True
+    ) -> None:
         """Cleanup state info on world."""
         # reset tx q related to a given world info
         self._cleanup_tx_q(world_info)
 
         name = world_info.name
-        task = self._tasks.pop(name, None)
+        task, cancellable = self._tasks.pop(name, (None, None))
 
         if not cancel_task or task is None:
             return
 
         try:
+            await cancellable.wait()
             task.cancel()
             logger.info(f"canceled task for world {name}")
         except Exception as e:
@@ -213,7 +220,7 @@ class Router:
                 del v[i]
                 return
 
-    async def _send(self, world_info: WorldInfo) -> None:
+    async def _send(self, world_info: WorldInfo, cancellable: asyncio.Event) -> None:
         logger.debug(f"start to send tensor to {world_info.other} in {world_info.name}")
         send_dev = torch.device("cpu") if world_info.backend == "gloo" else self.device
         sender = TensorSender(
@@ -231,10 +238,14 @@ class Router:
 
         while True:
             try:
+                # task can be cancelled before it gets tensors from queue
+                cancellable.set()
                 seqno, tensors, _ = await asyncio.wait_for(
                     tx_q.get(), QUEUE_WAIT_PERIOD
                 )
-                self.requests_count -= 1
+                # task can't be cancelled until the tensors are processed
+                # (until they are sent to other side, i.e., peer)
+                cancellable.clear()
             except asyncio.TimeoutError:
                 if not sender.is_broken():
                     continue
@@ -248,6 +259,7 @@ class Router:
             logger.debug(f"got tensors of seqno {seqno} from __tx_q")
             try:
                 await sender.send(tensors, seqno)
+                self.requests_count -= 1
             except Exception as e:
                 logger.warn(f"{world_info.name} error: {e}")
                 break
