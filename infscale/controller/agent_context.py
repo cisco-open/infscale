@@ -171,6 +171,21 @@ class AgentContext:
         """
         self.grpc_ctx_event.set()
 
+    def avail_gpu_count(self) -> int:
+        """Return unused GPU count."""
+        if self.resources.gpu_stats is None:
+            return 0
+
+        # TODO: cache the result instead of recomputation every time
+        return sum(not gpu.used for gpu in self.resources.gpu_stats)
+
+    def avail_gpus(self) -> set[int]:
+        """Return a set of IDs of available GPUs."""
+        if self.resources.gpu_stats is None:
+            return set()
+
+        return {gpu.id for gpu in self.resources.gpu_stats if not gpu.used}
+
     def update_resource_statistics(
         self,
         gpu_stats: list[GpuStat],
