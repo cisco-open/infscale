@@ -32,8 +32,10 @@ class DefaultParams:
     """Config class for default generator."""
 
     # variable to decide loading all dataset into memory
-    # TODO: currently no-op; implement it
     in_memory: bool = False
+    # variable to decide number of dataset replays
+    # 0: no replay; -1: infinite
+    replay: int = 0
 
 
 @dataclass

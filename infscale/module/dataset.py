@@ -115,24 +115,29 @@ class HuggingFaceDataset:
         self.model_group = mmd.model_group
 
     def configure(
-        self, micro_batch_size: int, device: torch.device, in_memory: bool
+        self, micro_batch_size: int, device: torch.device, in_memory: bool, replay: int
     ) -> None:
         """Configure dataset."""
         self.micro_batch_size = micro_batch_size
         self.device = device
+        self._in_memory = in_memory
+        self._replay = int(replay)
 
-        dataloader = DataLoader(
+        self.dataloader = DataLoader(
             self.dataset,
             self.micro_batch_size,
             collate_fn=self.data_collator,
         )
-        self.data_iter = iter(dataloader)
+        self.data_iter = iter(self.dataloader)
 
         def _inner_send_b2d(batch):
+            if batch is None:
+                return
+
             for k in batch.keys():
                 batch[k] = batch[k].to(self.device)
 
-        if not in_memory:
+        if not self._in_memory:
             self._send_batch_to_device = _inner_send_b2d
             return
 
@@ -149,6 +154,21 @@ class HuggingFaceDataset:
 
         logger.debug("loaded dataset into memory")
 
+    def _handle_dataset_playback(self) -> Tensor | None:
+        if self._replay == 0:
+            return None
+
+        # this ensures self._replay decreases to zero or
+        # stays as -1 (infinite)
+        self._replay = max(self._replay - 1, -1)
+
+        if self._in_memory:
+            self.data_iter = iter(self.batches)
+        else:
+            self.data_iter = iter(self.dataloader)
+
+        return next(self.data_iter)
+
     def next_batch(self) -> Tensor | None:
         """Return next data tensor.
 
@@ -157,19 +177,12 @@ class HuggingFaceDataset:
         try:
             batch = next(self.data_iter)
         except StopIteration:
-            return None
+            batch = self._handle_dataset_playback()
 
         # noop for in-memory case; otherwise, load batch to a correct device
         self._send_batch_to_device(batch)
 
         return batch
-
-    def num_of_batches(self) -> int:
-        """Return the number of batches from dataset.
-
-        set_micro_batch_size() must be called before calling this function.
-        """
-        return math.ceil(len(self.dataset) / self.micro_batch_size)
 
     @staticmethod
     def create_image_dataset(

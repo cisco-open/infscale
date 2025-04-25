@@ -2,4 +2,5 @@
 sort: exponential
 params:
   in_memory: true
+  replay: -1 # -1: infinite, 0 < n: replay n times; 0 means play dataset once
   rate: 100.0

@@ -200,38 +200,30 @@ class Pipeline:
     async def _server_send(self, router: Router):
         global start_time
 
+        self._seqno = 0
+        self._end_of_send = False
+
         logger.info("start to send requests")
-        seqno = 0
 
         def _inner_mc_update(batches: list[torch.Tensor | None]) -> None:
-            nonlocal seqno
-
-            i = 0
-            for batch in batches:
+            for idx, batch in enumerate(batches):
                 if batch is None:
                     break
 
-                self.mc.update(seqno + i)
-                i += 1
+                self.mc.update(self._seqno + idx)
 
-        async def _inner_send(batches: list[torch.Tensor | None]) -> bool:
-            nonlocal seqno
-
-            end_of_send = False
+        async def _inner_send(batches: list[torch.Tensor | None]) -> None:
             for batch in batches:
                 if batch is None:
-                    end_of_send = True
+                    self._end_of_send = True
                     break
 
                 await self._wait_tx_permission()
 
-                logger.info(f"sending batch {seqno}")
+                logger.info(f"sending batch {self._seqno}")
                 # send batch to the first stage
-                await router.send(seqno, batch, 0)
-                seqno += 1
-
-            # end_of_send == true means that we consumed all the dataset
-            return end_of_send
+                await router.send(self._seqno, batch, 0)
+                self._seqno += 1
 
         start_time = time.perf_counter()
         while True:
@@ -240,25 +232,19 @@ class Pipeline:
             # update metrics collector before we send batches
             _inner_mc_update(batches)
 
-            eos = await _inner_send(batches)
-            if eos:
+            await _inner_send(batches)
+            if self._end_of_send:
                 break
 
         logger.info("_server_send task done")
 
-    async def _server_recv(self, router: Router, max_count: int = -1):
-        """
-        Receive inference results from the last stage.
-
-        max_count: if it's -1, run forever;
-                   get out of loop if the number of responses becomes max_count
-        """
+    async def _server_recv(self, router: Router):
+        """Receive inference results from the last stage."""
         global start_time
 
         logger.info("start to receive responses")
-        seqno = -1
-        idx = 0
-        while max_count == -1 or max_count > idx:
+        count = 0
+        while not self._end_of_send or self._seqno > count:
             logger.debug("waiting for response")
             outputs, seqno = await router.recv()
             results = self._predict_fn(outputs)
@@ -268,7 +254,7 @@ class Pipeline:
 
             await self._check_n_enable_tx_permission()
 
-            idx += 1
+            count += 1
 
         end_time = time.perf_counter()
         print(
@@ -290,15 +276,15 @@ class Pipeline:
             self.spec.micro_batch_size,
             self.device,
             self.spec.reqgen_config.params.in_memory,
+            self.spec.reqgen_config.params.replay,
         )
-        max_count = self.dataset.num_of_batches()
 
         self.req_generator = GeneratorFactory.get(self.spec.reqgen_config.sort)
         self.req_generator.initialize(self.dataset, self.spec.reqgen_config.params)
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))
-        recv_task = asyncio.create_task(self._server_recv(self.router, max_count))
+        recv_task = asyncio.create_task(self._server_recv(self.router))
 
         await asyncio.gather(*[send_task, recv_task])
         logger.info("inference serving is done")
