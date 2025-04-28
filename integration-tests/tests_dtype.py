@@ -52,9 +52,19 @@ class TaskConfig:
 
     name: str
     shell: str
+    work_dir: str
+    env_activate_command: str
+    log_level: str
 
     def __post_init__(self):
-        self.shell = str(CommandConfig(**self.shell))
+        self.shell = str(
+            CommandConfig(
+                **self.shell,
+                work_dir=self.work_dir,
+                env_activate_command=self.env_activate_command,
+                log_level=self.log_level,
+            )
+        )
 
     def __str__(self) -> None:
         """Render task from a mustache template."""
@@ -65,10 +75,13 @@ class TaskConfig:
 
 
 @dataclass
-class TestConfig:
-    """Class for defining test config."""
+class TestStep:
+    """Class for defining test step."""
 
     name: str
+    work_dir: str
+    env_activate_command: str
+    log_level: str
     host: str = "all"
     tasks: list[str] = ""
     job_id: str = ""
@@ -76,8 +89,17 @@ class TestConfig:
     type: TestType = TestType.RUN
 
     def __post_init__(self):
-        if self.tasks:
-            self.tasks = [str(TaskConfig(**task)) for task in self.tasks]
+        if not self.tasks:
+            return
+        
+        for i, task in enumerate(self.tasks):
+            task_config = TaskConfig(
+                        **task,
+                        work_dir=self.work_dir,
+                        env_activate_command=self.env_activate_command,
+                        log_level=self.log_level,
+                    )
+            self.tasks[i] = str(task_config)
 
     def __str__(self) -> None:
         """Render config from a mustache template."""
@@ -88,31 +110,53 @@ class TestConfig:
             case TestType.RUN:
                 template = Path("templates/play.yml").read_text()
                 rendered_tasks = "\n".join(indent(task, 4) for task in self.tasks)
-                rendered = pystache.render(
-                    template,
-                    {
+                render_data = {
                         "name": self.name,
                         "host": self.host,
                         "tasks": rendered_tasks,
-                    },
+                    }
+                rendered = pystache.render(
+                    template,
+                    render_data,
                 )
             case TestType.STATUS:
                 template = Path("templates/job_status.yml").read_text()
                 rendered_tasks = "\n".join(indent(task, 4) for task in self.tasks)
-                rendered = pystache.render(
-                    template,
-                    {
+                render_data = {
                         "host": self.host,
                         "statuses": self.statuses,
                         "job_id": self.job_id,
-                    },
+                    }
+                rendered = pystache.render(
+                    template,
+                    render_data,
                 )
             case TestType.CLEANUP:
                 template = Path("templates/cleanup_processes.yml").read_text()
                 rendered_tasks = "\n".join(indent(task, 4) for task in self.tasks)
-                rendered = pystache.render(template, { "name": self.name })
+                rendered = pystache.render(template, {"name": self.name})
 
         return rendered
+
+
+@dataclass
+class TestConfig:
+    """Class for defining test config."""
+
+    work_dir: str
+    env_activate_command: str
+    log_level: str
+    steps: list[str]
+
+    def __post_init__(self):
+        for i, step in enumerate(self.steps):
+            test_step = TestStep(
+                work_dir=self.work_dir,
+                env_activate_command=self.env_activate_command,
+                log_level=self.log_level,
+                **step,
+            )
+            self.steps[i] = test_step
 
 
 def indent(text: str, spaces: int = 4) -> str:
