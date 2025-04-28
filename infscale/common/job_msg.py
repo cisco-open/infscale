@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from infscale.common.metrics import Metrics
-from infscale.config import ServeConfig
+from infscale.configs.job import ServeConfig
 
 
 class MessageType(Enum):

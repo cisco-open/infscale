@@ -14,7 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Controller class."""
+"""controller.py."""
+
 import asyncio
 import json
 import os
@@ -33,7 +34,8 @@ from infscale.common.constants import (
     GRPC_MAX_MESSAGE_LENGTH,
 )
 from infscale.common.job_msg import WorkerStatus
-from infscale.config import JobConfig, WorkerData
+from infscale.configs.job import JobConfig, WorkerData
+from infscale.configs.req_gen import GenConfig
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.autoscaler import AutoScaler
@@ -44,7 +46,6 @@ from infscale.controller.job_context import AgentMetaData, JobContext, JobStateE
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2, management_pb2_grpc as pb2_grpc
-from infscale.request.config import GenConfig
 
 
 logger = None

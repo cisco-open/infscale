@@ -16,7 +16,7 @@
 
 """conftest file."""
 
-from infscale.config import JobConfig, WorkerData, WorldInfo
+from infscale.configs.job import JobConfig, WorkerData, WorldInfo
 
 
 # old_config,new_config,expected_terminate_ids,expected_start_ids,expected_updated_ids

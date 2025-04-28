@@ -20,7 +20,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 
 from infscale import get_logger
-from infscale.config import JobConfig, WorkerData, WorldInfo
+from infscale.configs.job import JobConfig, WorkerData, WorldInfo
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.assignment import (
     AssignmentCollection,

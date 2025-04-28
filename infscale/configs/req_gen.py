@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""config.py."""
+"""req_gen.py."""
 
 from dataclasses import dataclass
 from enum import Enum

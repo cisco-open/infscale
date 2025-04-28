@@ -32,7 +32,7 @@ from infscale.common.exceptions import (
     InvalidJobStateAction,
 )
 from infscale.common.job_msg import JobStatus, WorkerStatus
-from infscale.config import JobConfig, WorldInfo
+from infscale.configs.job import JobConfig, WorldInfo
 from infscale.controller.agent_context import (
     CPU_LOAD_THRESHOLD,
     AgentResources,

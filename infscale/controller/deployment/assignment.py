@@ -18,7 +18,7 @@
 
 from __future__ import annotations
 
-from infscale.config import WorldInfo
+from infscale.configs.job import WorldInfo
 
 
 class AssignmentData:

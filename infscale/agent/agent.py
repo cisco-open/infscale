@@ -37,7 +37,7 @@ from infscale.common.job_msg import (
     WorkerStatus,
     WorkerStatusMessage,
 )
-from infscale.config import JobConfig, WorldInfo
+from infscale.configs.job import JobConfig, WorldInfo
 from infscale.controller.ctrl_dtype import CommandAction
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor

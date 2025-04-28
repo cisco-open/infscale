@@ -23,7 +23,7 @@ from multiworld.manager import WorldManager
 from torch import Tensor
 
 from infscale import get_logger
-from infscale.config import ServeConfig
+from infscale.configs.job import ServeConfig
 from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo

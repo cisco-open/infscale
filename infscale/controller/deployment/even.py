@@ -17,7 +17,7 @@
 from itertools import cycle
 from typing import Iterator
 
-from infscale.config import JobConfig
+from infscale.configs.job import JobConfig
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.assignment import (
     AssignmentCollection,

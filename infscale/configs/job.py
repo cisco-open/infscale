@@ -14,14 +14,14 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Config parser."""
+"""job.py."""
 
 from dataclasses import dataclass
 from typing import Optional
 
 from infscale import get_logger
 from infscale.common.exceptions import InvalidConfig
-from infscale.request.config import GenConfig
+from infscale.configs.req_gen import GenConfig
 
 
 logger = None

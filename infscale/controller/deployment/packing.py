@@ -14,7 +14,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-from infscale.config import JobConfig, WorkerData
+from infscale.configs.job import JobConfig, WorkerData
 from infscale.controller.agent_context import AgentResources, DeviceType
 from infscale.controller.deployment.assignment import (
     AssignmentCollection,

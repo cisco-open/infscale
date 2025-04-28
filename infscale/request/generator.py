@@ -20,11 +20,10 @@ import asyncio
 from abc import ABC, abstractmethod
 
 import numpy as np
-import torch
 from torch import Tensor
 
+from infscale.configs.req_gen import GenParams, ReqGenEnum
 from infscale.module.dataset import HuggingFaceDataset
-from infscale.request.config import GenParams, ReqGenEnum
 
 
 class Generator(ABC):

@@ -23,7 +23,7 @@ from collections import defaultdict
 import yaml
 
 from infscale.common.exceptions import InsufficientResources
-from infscale.config import JobConfig
+from infscale.configs.job import JobConfig
 from infscale.controller.agent_context import AgentContext
 from infscale.monitor.gpu import GpuStat
 

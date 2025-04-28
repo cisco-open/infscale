@@ -21,7 +21,7 @@ from typing import Optional
 
 from pydantic import BaseModel, model_validator
 
-from infscale.config import JobConfig
+from infscale.configs.job import JobConfig
 
 
 class ReqType(str, Enum):

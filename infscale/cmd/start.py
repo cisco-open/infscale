@@ -30,13 +30,13 @@ from infscale.common.constants import (
     LOCALHOST,
 )
 from infscale.common.exceptions import InvalidConfig
+from infscale.configs.req_gen import GenConfig, ReqGenEnum
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 from infscale.controller.deployment.policy import (
     DEFAULT_DEPLOYMENT_POLICY,
     DeploymentPolicyEnum,
 )
-from infscale.request.config import GenConfig, ReqGenEnum
 
 
 @click.group()
