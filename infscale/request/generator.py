@@ -22,7 +22,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from torch import Tensor
 
-from infscale.configs.req_gen import GenParams, ReqGenEnum
+from infscale.configs.controller import GenParams, ReqGenEnum
 from infscale.module.dataset import HuggingFaceDataset
 
 

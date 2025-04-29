@@ -16,9 +16,10 @@
 
 """factory.py."""
 
+from infscale.configs.controller import DeploymentPolicyEnum
 from infscale.controller.deployment.even import EvenDeploymentPolicy
 from infscale.controller.deployment.packing import PackingPolicy
-from infscale.controller.deployment.policy import DeploymentPolicy, DeploymentPolicyEnum
+from infscale.controller.deployment.policy import DeploymentPolicy
 from infscale.controller.deployment.random import RandomDeploymentPolicy
 from infscale.controller.deployment.static import StaticDeploymentPolicy
 

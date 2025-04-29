@@ -30,13 +30,9 @@ from infscale.common.constants import (
     LOCALHOST,
 )
 from infscale.common.exceptions import InvalidConfig
-from infscale.configs.req_gen import GenConfig, ReqGenEnum
+from infscale.configs.controller import DEFAULT_DEPLOYMENT_POLICY, CtrlConfig
 from infscale.controller import controller as ctrl
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
-from infscale.controller.deployment.policy import (
-    DEFAULT_DEPLOYMENT_POLICY,
-    DeploymentPolicyEnum,
-)
 
 
 @click.group()
@@ -53,32 +49,19 @@ def start():
     default=DEFAULT_DEPLOYMENT_POLICY,
     help="deployment policy; options: even, packing, random (default), static",
 )
-@click.option("--autoscaler", is_flag=True, help="enable autoscaler")
-@click.option("--reqgen", default="", help="Request generator config file path")
-def controller(port: int, apiport: int, policy: str, autoscaler: bool, reqgen: str):
+@click.option("--config", default="", help="Config file path for controller")
+def controller(port: int, apiport: int, policy: str, config: str):
     """Run controller."""
-    reqgen_config = GenConfig(sort=ReqGenEnum.DEFAULT.value)
+    if config == "":
+        config_dict = {"api_port": apiport, "ctrl_port": port, "deploy_policy": policy}
+    else:
+        print(f"Using config file ({config}); ignoring all command arguments")
+        with open(config) as f:
+            config_dict = yaml.safe_load(f)
 
-    if reqgen != "":
-        with open(reqgen) as f:
-            req_gen_yaml = yaml.safe_load(f)
+    ctrl_config = CtrlConfig(**config_dict)
 
-        reqgen_config = GenConfig(**req_gen_yaml)
-
-    try:
-        policy_enum = DeploymentPolicyEnum(policy)
-    except ValueError:
-        default_policy = DeploymentPolicyEnum.RANDOM
-        print(f"WARNING: {policy} is an invalid policy; using {default_policy.value}")
-        policy_enum = default_policy
-
-    controller = ctrl.Controller(
-        reqgen_config=reqgen_config,
-        port=port,
-        apiport=apiport,
-        policy=policy_enum,
-        enable_as=autoscaler,
-    )
+    controller = ctrl.Controller(ctrl_config)
     loop = asyncio.get_event_loop()
     loop.run_until_complete(controller.run())
 
