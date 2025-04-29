@@ -216,11 +216,7 @@ class StartingState(BaseJobState):
 
     def cond_running(self):
         """Handle the transition to running."""
-        all_agents_running = self.context._check_job_status_on_all_agents(
-            JobStatus.RUNNING
-        )
-
-        if all_agents_running:
+        if self.context.in_statuses_for_all_agents({JobStatus.RUNNING}):
             self.context.set_state(JobStateEnum.RUNNING)
 
 
@@ -244,11 +240,7 @@ class StoppingState(BaseJobState):
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        all_agents_stopped = self.context._check_job_status_on_all_agents(
-            JobStatus.STOPPED
-        )
-
-        if all_agents_stopped:
+        if self.context.in_statuses_for_all_agents({JobStatus.STOPPED}):
             self.context.cleanup()
             self.context.set_state(JobStateEnum.STOPPED)
 
@@ -267,11 +259,7 @@ class CompletingState(BaseJobState):
 
     def cond_complete(self):
         """Handle the transition to complete."""
-        all_agents_completed = self.context._check_job_status_on_all_agents(
-            JobStatus.COMPLETED
-        )
-
-        if all_agents_completed:
+        if self.context.in_statuses_for_all_agents({JobStatus.COMPLETED}):
             self.context.cleanup()
             self.context.set_state(JobStateEnum.COMPLETE)
 
@@ -284,6 +272,12 @@ class UpdatingState(BaseJobState):
         await self.context.send_command_to_agents(self.context.req)
         self.context.set_state(JobStateEnum.STOPPING)
 
+    def cond_running(self):
+        """Handle the transition to running."""
+        statuses = {JobStatus.RUNNING, JobStatus.UPDATED}
+        if self.context.in_statuses_for_all_agents(statuses):
+            self.context.set_state(JobStateEnum.RUNNING)
+
     def cond_updated(self):
         """Handle the transition to running."""
         # cleanup on agents after update in case there's no running workers
@@ -294,11 +288,7 @@ class UpdatingState(BaseJobState):
             if len(agent_data.assignment_coll)
         ]
 
-        all_agents_running = self.context._check_job_status_on_all_agents(
-            JobStatus.UPDATED
-        )
-
-        if all_agents_running:
+        if self.context.in_statuses_for_all_agents({JobStatus.UPDATED}):
             self.context.set_state(JobStateEnum.RUNNING)
 
     async def cond_completing(self):
@@ -872,9 +862,9 @@ class JobContext:
                     self.job_id, req.action, self.state_enum.value
                 )
 
-    def _check_job_status_on_all_agents(self, job_status: JobStatus) -> bool:
-        """Return true or false if all agents have the same job status."""
-        return all(info.job_status == job_status for info in self.running_agent_info)
+    def in_statuses_for_all_agents(self, statuses: set[JobStatus]) -> bool:
+        """Return true if agent is in one of given statuses."""
+        return all(amd.job_status in statuses for amd in self.running_agent_info)
 
     async def start(self):
         """Transition to STARTING state."""
