@@ -17,13 +17,13 @@
 """cfggen.py."""
 
 import argparse
-import json
 from collections import defaultdict
 
 import yaml
 
 from infscale.common.exceptions import InsufficientResources
 from infscale.configs.job import JobConfig
+from infscale.configs.plan import ExecPlan, PlanCollection
 from infscale.controller.agent_context import AgentContext
 from infscale.monitor.gpu import GpuStat
 
@@ -53,8 +53,11 @@ class CfgGen:
     ):
         """Initialize an instance."""
         self.source = source
-        self.json_files = json_files
         self.dispatcher_device = dispatcher_device
+
+        self.plan_coll: PlanCollection = PlanCollection()
+        for json_file in json_files:
+            self.plan_coll.add(json_file)
 
         # key: agent id and value is AgentContext
         # sort agent context by # of unused gpus in a decreasing order
@@ -95,24 +98,22 @@ class CfgGen:
         """Generate a config."""
         self._map_machine_to_agent_id()
 
-        config_data = self._process_multiple_json_configs()
+        config_data = self._process_multiple_exec_plans()
         config = JobConfig(**config_data)
         config.validate()
 
         return config
 
-    def _process_multiple_json_configs(self):
-        """Process multiple JSON configuration files and generate a unified config."""
+    def _process_multiple_exec_plans(self):
+        """Process multiple execution configuration plans and generate a unified config."""
         micro_batch_size = 0
-        for idx, json_file in enumerate(self.json_files):
-            # Read JSON file
-            with open(json_file, "r") as f:
-                json_data = json.load(f)
+        for idx, plan in enumerate(self.plan_coll.enumerate()):
+            plan: ExecPlan = plan
 
-            micro_batch_size = json_data["batch_size"]
+            micro_batch_size = plan.batch_size
 
             # Process this pipeline config
-            result = self._process_pipeline_config(idx, json_data)
+            result = self._process_pipeline_config(idx, plan)
 
             # Update the combined flow graph
             for worker_id, connections in result["flow_graph"].items():
@@ -198,9 +199,9 @@ class CfgGen:
 
         return config
 
-    def _process_pipeline_config(self, idx: int, json_data):
+    def _process_pipeline_config(self, idx: int, plan: ExecPlan) -> dict:
         """Process a single pipeline configuration."""
-        stages = json_data.get("stages", [])
+        stages = plan.stages
 
         # Generate unified allocation
         worker_to_machine, worker_to_gpu = self._map_worker_to_machine_gpu(idx, stages)
@@ -231,14 +232,13 @@ class CfgGen:
         }
 
     def _update_machine_worker_count(
-        self, json_data, machine_offset: int, machine_worker_count: dict[int, int]
+        self, plan: ExecPlan, machine_offset: int, machine_worker_count: dict[int, int]
     ) -> int:
         executed_once = False
         max_machine_id = 0
 
-        stages = json_data.get("stages")
-        for stage in stages:
-            for machine_id_str, count in stage["gpu_allocation"].items():
+        for stage in plan.stages:
+            for machine_id_str, count in stage.gpu_allocation.items():
                 executed_once = True
 
                 machine_id = int(machine_id_str) + machine_offset
@@ -256,15 +256,11 @@ class CfgGen:
         machine_worker_count = defaultdict(int)
 
         machine_offset = 0
-        for json_file in self.json_files:
-            # Read JSON file
-            with open(json_file, "r") as f:
-                json_data = json.load(f)
-
+        for plan in self.plan_coll.enumerate():
             self.machine_offsets.append(machine_offset)
 
             max_machine_id = self._update_machine_worker_count(
-                json_data, machine_offset, machine_worker_count
+                plan, machine_offset, machine_worker_count
             )
 
             machine_offset = max_machine_id + 1
@@ -317,18 +313,18 @@ class CfgGen:
 
         # Directly assign each worker to a machine and GPU
         for stage in stages:
-            orig_stage_id = stage["stage_id"]
+            orig_stage_id = stage.stage_id
             stage_id = orig_stage_id + self.stage_id_offset
 
             # Build a list of (machine_id, count) pairs for worker assignment
             total_count = 0
             machine_allocs = []
-            for machine_id_str, count in stage["gpu_allocation"].items():
+            for machine_id_str, count in stage.gpu_allocation.items():
                 machine_id = int(machine_id_str) + self.machine_offsets[idx]
                 machine_allocs.append((machine_id, count))
                 total_count += count
 
-            num_replicas = stage["num_replicas"]
+            num_replicas = stage.num_replicas
             assert_msg = f"total # of required GPUs ({total_count}) is different from # of replicas ({num_replicas})"
             assert total_count == num_replicas, assert_msg
 
@@ -371,12 +367,11 @@ class CfgGen:
             idx = orig_stage_id - 1
             stage = stages[idx]
 
-            stg_id = stage["stage_id"]
-            assert_msg = f"stage id ({stg_id}) must be the same as its index ({idx}) in the stages"
-            assert stage["stage_id"] == idx, assert_msg
+            assert_msg = f"stage id ({stage.stage_id}) must be the same as its index ({idx}) in the stages"
+            assert stage.stage_id == idx, assert_msg
 
             prev = stage
-            prev_stage_id = prev["stage_id"] + self.stage_id_offset
+            prev_stage_id = prev.stage_id + self.stage_id_offset
 
         return prev, prev_stage_id
 
@@ -391,8 +386,8 @@ class CfgGen:
 
         # Get the last stage for connections
         last_stage = stages[-1]
-        last_stage_id = last_stage["stage_id"] + self.stage_id_offset
-        for r in range(last_stage["num_replicas"]):
+        last_stage_id = last_stage.stage_id + self.stage_id_offset
+        for r in range(last_stage.num_replicas):
             peer_id = f"{last_stage_id}-{r}"
             conn = {
                 "name": None,
@@ -406,12 +401,12 @@ class CfgGen:
 
         # Add worker connections
         for stage in stages:
-            orig_stage_id = stage["stage_id"]
+            orig_stage_id = stage.stage_id
             stage_id = orig_stage_id + self.stage_id_offset
 
             prev, prev_stage_id = self._find_prev_stage(orig_stage_id, stages)
 
-            for r in range(stage["num_replicas"]):
+            for r in range(stage.num_replicas):
                 wid = f"{stage_id}-{r}"
                 # Get worker's machine from the unified allocation
                 worker_machine = worker_to_machine[wid]
@@ -422,9 +417,7 @@ class CfgGen:
                     peers = ["s-0"]
                     backend = server_backend
                 else:
-                    peers = [
-                        f"{prev_stage_id}-{i}" for i in range(prev["num_replicas"])
-                    ]
+                    peers = [f"{prev_stage_id}-{i}" for i in range(prev.num_replicas)]
                     backend = "nccl"
 
                 connections = []
@@ -448,11 +441,11 @@ class CfgGen:
 
         # Assign stage workers
         for stage in stages:
-            orig_stage_id = stage["stage_id"]
+            orig_stage_id = stage.stage_id
             stage_id = orig_stage_id + self.stage_id_offset
-            layer_start, layer_end = stage["layer_range"]
+            layer_start, layer_end = stage.layer_range
 
-            for r in range(stage["num_replicas"]):
+            for r in range(stage.num_replicas):
                 wid = f"{stage_id}-{r}"
                 local_gpu = worker_to_gpu[wid]
 
