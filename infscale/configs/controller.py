@@ -14,10 +14,32 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""req_gen.py."""
+"""controller.py."""
 
+import os
 from dataclasses import dataclass
 from enum import Enum
+
+from infscale.common.constants import (
+    APISERVER_PORT,
+    CONTROLLER_PORT,
+)
+
+
+class DeploymentPolicyEnum(Enum):
+    """Deployment policy enum.
+
+    STATIC: use job config as is assuming that the config has all the info for
+            deployment
+    """
+
+    EVEN = "even"
+    PACKING = "packing"
+    RANDOM = "random"
+    STATIC = "static"
+
+
+DEFAULT_DEPLOYMENT_POLICY = DeploymentPolicyEnum.RANDOM.value
 
 
 class ReqGenEnum(str, Enum):
@@ -71,3 +93,35 @@ class GenConfig:
 
             case ReqGenEnum.EXP:
                 self.params = ExponentialParams(**self.params)
+
+
+@dataclass
+class CtrlConfig:
+    """CtrlConfig class."""
+
+    api_port: int = APISERVER_PORT
+    ctrl_port: int = CONTROLLER_PORT
+    deploy_policy: DeploymentPolicyEnum = DeploymentPolicyEnum.RANDOM
+    autoscale: bool = False
+    # a directory path to job deployment templates/plans
+    job_plans: str = ""
+    reqgen: GenConfig = GenConfig(sort=ReqGenEnum.DEFAULT.value)
+
+    def __post_init__(self):
+        """Populate controller's config with correct data types."""
+        if isinstance(self.deploy_policy, str):
+            try:
+                self.deploy_policy = DeploymentPolicyEnum(self.deploy_policy)
+            except ValueError:
+                chosen = DeploymentPolicyEnum.RANDOM
+                msg = f"WARNING: {self.deploy_policy} is an invalid policy; using {chosen.value}"
+                print(msg)
+                self.deploy_policy = chosen
+
+        if not isinstance(self.reqgen, GenConfig):
+            self.reqgen = GenConfig(**self.reqgen)
+
+        if self.autoscale:
+            # it can't be empty if autoscaling is enabled
+            self.job_plans = os.path.expanduser(self.job_plans)
+            assert os.path.isdir(self.job_plans), f"invalid  folder: {self.job_plans}"

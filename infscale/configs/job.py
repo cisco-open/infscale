@@ -21,7 +21,7 @@ from typing import Optional
 
 from infscale import get_logger
 from infscale.common.exceptions import InvalidConfig
-from infscale.configs.req_gen import GenConfig
+from infscale.configs.controller import GenConfig
 
 
 logger = None

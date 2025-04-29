@@ -17,7 +17,6 @@
 """policy.py."""
 
 from abc import ABC, abstractmethod
-from enum import Enum
 
 from infscale import get_logger
 from infscale.configs.job import JobConfig, WorkerData, WorldInfo
@@ -27,22 +26,6 @@ from infscale.controller.deployment.assignment import (
     AssignmentData,
 )
 from infscale.controller.job_context import AgentMetaData
-
-
-class DeploymentPolicyEnum(Enum):
-    """Deployment policy enum.
-
-    STATIC: use job config as is assuming that the config has all the info for
-            deployment
-    """
-
-    EVEN = "even"
-    RANDOM = "random"
-    STATIC = "static"
-    PACKING = "packing"
-
-
-DEFAULT_DEPLOYMENT_POLICY = DeploymentPolicyEnum.RANDOM.value
 
 
 class DeploymentPolicy(ABC):

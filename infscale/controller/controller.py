@@ -28,20 +28,15 @@ from google.protobuf import empty_pb2
 from grpc.aio import ServicerContext
 
 from infscale import get_logger
-from infscale.common.constants import (
-    APISERVER_PORT,
-    CONTROLLER_PORT,
-    GRPC_MAX_MESSAGE_LENGTH,
-)
+from infscale.common.constants import GRPC_MAX_MESSAGE_LENGTH
 from infscale.common.job_msg import WorkerStatus
+from infscale.configs.controller import CtrlConfig
 from infscale.configs.job import JobConfig, WorkerData
-from infscale.configs.req_gen import GenConfig
 from infscale.controller.agent_context import AgentContext
 from infscale.controller.apiserver import ApiServer
 from infscale.controller.autoscaler import AutoScaler
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
-from infscale.controller.deployment.policy import DeploymentPolicyEnum
 from infscale.controller.job_context import AgentMetaData, JobContext, JobStateEnum
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
@@ -56,30 +51,25 @@ CtrlRequest = Request | CommandActionModel
 class Controller:
     """Controller class manages inference services via agents."""
 
-    def __init__(
-        self,
-        reqgen_config: GenConfig,
-        port: int = CONTROLLER_PORT,
-        apiport: int = APISERVER_PORT,
-        policy: DeploymentPolicyEnum = DeploymentPolicyEnum.RANDOM,
-        enable_as: bool = False,
-    ):
+    def __init__(self, config: CtrlConfig):
         """Initialize an instance."""
         global logger
         logger = get_logger(f"{os.getpid()}", "controller.log")
 
-        self.reqgen_config = reqgen_config
-        self.port = port
+        self.reqgen_config = config.reqgen
+        self.port = config.ctrl_port
 
         self.agent_contexts: dict[str, AgentContext] = dict()
         self.job_contexts: dict[str, JobContext] = dict()
 
-        self.apiserver = ApiServer(self, apiport)
+        self.apiserver = ApiServer(self, config.api_port)
 
-        self.deploy_policy = DeploymentPolicyFactory.get_deployment(policy)
+        self.deploy_policy = DeploymentPolicyFactory.get_deployment(
+            config.deploy_policy
+        )
 
         self.autoscaler = None
-        if enable_as:
+        if config.autoscale:
             self.autoscaler = AutoScaler(self)
 
     async def _start_server(self):
