@@ -1,0 +1,64 @@
+{
+  "batch_size": 32,
+  "num_gpus_used": 3,
+  "total_latency": 81.82467385164006,
+  "throughput": 1168.7663325481915,
+  "solving_time_for_batch": 12.256762027740479,
+  "stages": [
+    {
+      "stage_id": 0,
+      "layer_range": [
+        0,
+        29
+      ],
+      "num_replicas": 2,
+      "gpus": [
+        0,
+        1
+      ],
+      "gpu_allocation": {
+        "0": 2
+      },
+      "throughput": 1168.7663325481915,
+      "forward_time_ms": 41.913536071777344,
+      "stage_time_ms": 54.75859207177734,
+      "memory": {
+        "static_memory_gb": 0.092627456,
+        "dynamic_memory_gb": 0.308281344,
+        "total_memory_gb": 0.4009088
+      },
+      "data_sizes": {
+        "input_size_mb": 19,
+        "output_size_mb": 25
+      }
+    },
+    {
+      "stage_id": 1,
+      "layer_range": [
+        30,
+        51
+      ],
+      "num_replicas": 1,
+      "gpus": [
+        2
+      ],
+      "gpu_allocation": {
+        "0": 1
+      },
+      "throughput": 1182.2915581260793,
+      "forward_time_ms": 25.353407646529377,
+      "stage_time_ms": 27.06608177986271,
+      "memory": {
+        "static_memory_gb": 0.149557248,
+        "dynamic_memory_gb": 0.063832064,
+        "total_memory_gb": 0.213389312
+      },
+      "data_sizes": {
+        "input_size_mb": 25,
+        "output_size_mb": 0
+      }
+    }
+  ],
+  "total_latency_ms": 81.82467385164006,
+  "pipeline_throughput": 36.523947892130984
+}

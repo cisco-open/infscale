@@ -1,9 +1,13 @@
 ---
 # api_port: 8080
 # ctrl_port: 31310
-deploy_policy: static # options: even, packing, random (default), static
 autoscale: true
-job_plans: ~/infscale/plans # a directory path to job deployment templates/plans
+deploy_policy: static # options: even, packing, random (default), static
+                      # if autoscale is enabled, deploy_policy is static
+
+# a directory path to job deployment templates/plans
+# pick a directory where plan files are located
+job_plans: ~/projects/infscale/examples/configs/plans
 
 reqgen:
   sort: exponential # default, exponential

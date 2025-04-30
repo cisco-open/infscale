@@ -466,8 +466,9 @@ class JobContext:
 
     def process_cfg(self, agent_ids: list[str]) -> None:
         """Process received config from controller and set a deployer of agent ids."""
-        # set request generator configuration
-        self._new_cfg = self.req.config
+        self._new_cfg = self.ctrl.planner.build_config(
+            self.req.config, self.ctrl.agent_contexts
+        )
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
         agent_data_list = self._get_agents_data(agent_ids)

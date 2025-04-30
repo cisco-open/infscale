@@ -18,8 +18,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 from dataclasses import dataclass
 
 
@@ -145,26 +143,3 @@ class ExecPlan:
             total_latency_ms=data["total_latency_ms"],
             pipeline_throughput=data["pipeline_throughput"],
         )
-
-
-class PlanCollection:
-    """PlanCollection class."""
-
-    def __init__(self):
-        """Initialize an instance."""
-        self._plans: list[ExecPlan] = []
-
-    def add(self, json_file: str) -> None:
-        """Add pipeline stats to the collection."""
-        # Read JSON file
-        json_file = os.path.expanduser(json_file)
-        with open(json_file, "r") as f:
-            json_data = json.load(f)
-
-        plan = ExecPlan.from_json(json_data)
-        self._plans.append(plan)
-
-    def enumerate(self) -> ExecPlan:
-        """Enumerate each exec plan."""
-        for plan in self._plans:
-            yield plan

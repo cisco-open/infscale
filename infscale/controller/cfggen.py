@@ -16,16 +16,14 @@
 
 """cfggen.py."""
 
-import argparse
 from collections import defaultdict
 
 import yaml
 
 from infscale.common.exceptions import InsufficientResources
 from infscale.configs.job import JobConfig
-from infscale.configs.plan import ExecPlan, PlanCollection
+from infscale.configs.plan import ExecPlan
 from infscale.controller.agent_context import AgentContext
-from infscale.monitor.gpu import GpuStat
 
 
 class FlowList(list):  # noqa: D101
@@ -48,16 +46,13 @@ class CfgGen:
         self,
         agent_ctxts: dict[str, AgentContext],
         source: JobConfig,
-        json_files,
+        plan_list: list[ExecPlan],
         dispatcher_device="cpu",
     ):
         """Initialize an instance."""
-        self.source = source
-        self.dispatcher_device = dispatcher_device
-
-        self.plan_coll: PlanCollection = PlanCollection()
-        for json_file in json_files:
-            self.plan_coll.add(json_file)
+        self._source = source
+        self._plan_list = plan_list
+        self._dispatcher_device = dispatcher_device
 
         # key: agent id and value is AgentContext
         # sort agent context by # of unused gpus in a decreasing order
@@ -65,34 +60,33 @@ class CfgGen:
         tmp = sorted(
             agent_ctxts.items(), key=lambda item: (-item[1].avail_gpu_count(), item[0])
         )
-        self.agent_ctxts = dict(tmp)
+        self._agent_ctxts = dict(tmp)
 
-        self.server_worker = {
+        self._server_worker = {
             "id": "s-0",
             "device": "",  # determined later in _set_server_device_id()
             "is_server": True,
             "stage": {"start": -1, "end": -1},
         }
 
-        self.machine_to_agent_id: dict[int, str] = dict()
+        self._machine_to_agent_id: dict[int, str] = dict()
 
         # Keep track of machine and stage ID offsets
-        self.machine_offsets: list[int] = []
-        self.stage_id_offset = 0
-        self.world_id_offset = 0
+        self._machine_offsets: list[int] = []
+        self._stage_id_offset = 0
+        self._world_id_offset = 0
 
         # Combined flow graph and workers
-        self.combined_flow_graph = {}
-        self.combined_flow_graph["s-0"] = []
-        self.combined_workers = []
-        self.combined_worker_to_gpu = {}
-        self.combined_worker_to_machine = {}
+        self._combined_flow_graph = {"s-0": []}
+        self._combined_workers = []
+        self._combined_worker_to_gpu = {}
+        self._combined_worker_to_machine = {}
 
         # machine to place the dispatcher
-        self.server_machine = 0
+        self._server_machine = 0
 
         # All last stage replicas connections to the server
-        self.final_server_connections = []
+        self._final_server_connections = []
 
     def generate(self) -> JobConfig:
         """Generate a config."""
@@ -107,9 +101,7 @@ class CfgGen:
     def _process_multiple_exec_plans(self):
         """Process multiple execution configuration plans and generate a unified config."""
         micro_batch_size = 0
-        for idx, plan in enumerate(self.plan_coll.enumerate()):
-            plan: ExecPlan = plan
-
+        for idx, plan in enumerate(self._plan_list):
             micro_batch_size = plan.batch_size
 
             # Process this pipeline config
@@ -117,18 +109,18 @@ class CfgGen:
 
             # Update the combined flow graph
             for worker_id, connections in result["flow_graph"].items():
-                if worker_id in self.combined_flow_graph:
-                    self.combined_flow_graph[worker_id].extend(connections)
+                if worker_id in self._combined_flow_graph:
+                    self._combined_flow_graph[worker_id].extend(connections)
                 else:
-                    self.combined_flow_graph[worker_id] = connections
+                    self._combined_flow_graph[worker_id] = connections
 
             # Add workers to combined list
-            self.combined_workers.extend(result["workers"])
-            self.combined_worker_to_gpu.update(result["worker_to_gpu"])
-            self.combined_worker_to_machine.update(result["worker_to_machine"])
+            self._combined_workers.extend(result["workers"])
+            self._combined_worker_to_gpu.update(result["worker_to_gpu"])
+            self._combined_worker_to_machine.update(result["worker_to_machine"])
 
             # Update final server connections
-            self.final_server_connections.extend(result["server_connections"])
+            self._final_server_connections.extend(result["server_connections"])
 
             # Find max stage ID in this config
             max_stage_id = 0
@@ -137,64 +129,64 @@ class CfgGen:
                     stage_id = int(worker["id"].split("-")[0])
                     max_stage_id = max(max_stage_id, stage_id)
 
-            self.stage_id_offset = max_stage_id + 1
+            self._stage_id_offset = max_stage_id + 1
 
             # Update world ID offset for next pipeline
-            self.world_id_offset += result["total_world_ids"]
+            self._world_id_offset += result["total_world_ids"]
 
         return self._combine(micro_batch_size)
 
     def _set_server_device_id(self, agent_ctxt: AgentContext) -> None:
-        if self.dispatcher_device != "cuda":
-            self.server_worker["device"] = "cpu"
+        if self._dispatcher_device != "cuda":
+            self._server_worker["device"] = "cpu"
             return
 
         # Now add the server/dispatcher once for all pipelines
         # Check the number of GPU allocated on the final server machine
         server_machine_gpu_used = set()
-        for worker in self.combined_worker_to_machine:
-            if self.combined_worker_to_machine[worker] == self.server_machine:
-                server_machine_gpu_used.add(self.combined_worker_to_gpu[worker])
+        for worker in self._combined_worker_to_machine:
+            if self._combined_worker_to_machine[worker] == self._server_machine:
+                server_machine_gpu_used.add(self._combined_worker_to_gpu[worker])
 
         # Find the first available GPU on the final server machine
         for gpu_id in agent_ctxt.avail_gpus():
             if gpu_id not in server_machine_gpu_used:
-                self.server_worker["device"] = f"cuda:{gpu_id}"
+                self._server_worker["device"] = f"cuda:{gpu_id}"
                 return
 
         assert False, "server's device must be set"
 
     def _combine(self, micro_batch_size) -> dict:
-        agent_id = self.machine_to_agent_id[self.server_machine]
-        agent_ctxt = self.agent_ctxts[agent_id]
+        agent_id = self._machine_to_agent_id[self._server_machine]
+        agent_ctxt = self._agent_ctxts[agent_id]
 
         self._set_server_device_id(agent_ctxt)
 
         # Add server at the beginning of the workers list
-        self.combined_workers = [self.server_worker] + self.combined_workers
+        self._combined_workers = [self._server_worker] + self._combined_workers
 
         # Add server to the flow graph
-        server_starting_world_id = self.world_id_offset
+        server_starting_world_id = self._world_id_offset
 
-        for connection in self.final_server_connections:
+        for connection in self._final_server_connections:
             # We need to update the address and backend of the server connections
             connection["addr"] = agent_ctxt.ip
             connection["name"] = f"w{server_starting_world_id}"
             server_starting_world_id += 1
-        self.combined_flow_graph["s-0"] = self.final_server_connections
+        self._combined_flow_graph["s-0"] = self._final_server_connections
 
         # Create the final config
         config = {
-            "name": self.source.name,
-            "model": self.source.model,
-            "nfaults": self.source.nfaults,
+            "name": self._source.name,
+            "model": self._source.model,
+            "nfaults": self._source.nfaults,
             "micro_batch_size": micro_batch_size,
-            "fwd_policy": self.source.fwd_policy,
-            "job_id": self.source.job_id,
-            "max_inflight": self.source.max_inflight,
-            "flow_graph": self.combined_flow_graph,
-            "dataset": self.source.dataset,
-            "workers": self.combined_workers,
+            "fwd_policy": self._source.fwd_policy,
+            "job_id": self._source.job_id,
+            "max_inflight": self._source.max_inflight,
+            "flow_graph": self._combined_flow_graph,
+            "dataset": self._source.dataset,
+            "workers": self._combined_workers,
         }
 
         return config
@@ -205,9 +197,6 @@ class CfgGen:
 
         # Generate unified allocation
         worker_to_machine, worker_to_gpu = self._map_worker_to_machine_gpu(idx, stages)
-
-        print(f"worker_to_machine: {worker_to_machine}")
-        print(f"worker_to_gpu: {worker_to_gpu}")
 
         # Create flow graph with world ID offset
         flow_graph, server_connections = self._create_flow_graph(
@@ -247,8 +236,8 @@ class CfgGen:
 
         assert executed_once, "stages can't be empty"
 
-        assert_msg = f"Machine ID {max_machine_id} is out of range for the number of machines ({len(self.agent_ctxts)})"
-        assert max_machine_id < len(self.agent_ctxts), assert_msg
+        assert_msg = f"Machine ID {max_machine_id} is out of range for the number of machines ({len(self._agent_ctxts)})"
+        assert max_machine_id < len(self._agent_ctxts), assert_msg
 
         return max_machine_id
 
@@ -256,8 +245,8 @@ class CfgGen:
         machine_worker_count = defaultdict(int)
 
         machine_offset = 0
-        for plan in self.plan_coll.enumerate():
-            self.machine_offsets.append(machine_offset)
+        for plan in self._plan_list:
+            self._machine_offsets.append(machine_offset)
 
             max_machine_id = self._update_machine_worker_count(
                 plan, machine_offset, machine_worker_count
@@ -271,26 +260,24 @@ class CfgGen:
         tmp = sorted(machine_worker_count.items(), key=lambda item: (-item[1], item[0]))
         machine_worker_count = dict(tmp)
 
-        if len(machine_worker_count) > len(self.agent_ctxts):
-            err_msg = f"need: {len(machine_worker_count)} nodes; available: {len(self.agent_ctxts)} nodes"
+        if len(machine_worker_count) > len(self._agent_ctxts):
+            err_msg = f"need: {len(machine_worker_count)} nodes; available: {len(self._agent_ctxts)} nodes"
             raise InsufficientResources(err_msg)
 
         server_machine = None
-        for mwc, ac in zip(machine_worker_count.items(), self.agent_ctxts.items()):
+        for mwc, ac in zip(machine_worker_count.items(), self._agent_ctxts.items()):
             mid, count = mwc[0], mwc[1]
             agent_id, agent_ctxt = ac[0], ac[1]
-
-            print(f">>> mid: {mid}, agent_id: {agent_id}")
 
             avail_count = agent_ctxt.avail_gpu_count()
             if count > avail_count:
                 err_msg = f"node {mid} needs {count} GPUs; agent {agent_id} has {avail_count} GPUs"
                 raise InsufficientResources(err_msg)
 
-            self.machine_to_agent_id[mid] = agent_id
+            self._machine_to_agent_id[mid] = agent_id
 
             # determine server/dispatcher's machine
-            if self.dispatcher_device == "cuda":
+            if self._dispatcher_device == "cuda":
                 if avail_count - 1 >= count:
                     server_machine = mid
             else:
@@ -299,7 +286,7 @@ class CfgGen:
         assert_msg = "server machine can't be set due to no GPU for it"
         assert server_machine is not None, assert_msg
 
-        self.server_machine = server_machine
+        self._server_machine = server_machine
 
     def _map_worker_to_machine_gpu(
         self, idx: int, stages
@@ -314,13 +301,13 @@ class CfgGen:
         # Directly assign each worker to a machine and GPU
         for stage in stages:
             orig_stage_id = stage.stage_id
-            stage_id = orig_stage_id + self.stage_id_offset
+            stage_id = orig_stage_id + self._stage_id_offset
 
             # Build a list of (machine_id, count) pairs for worker assignment
             total_count = 0
             machine_allocs = []
             for machine_id_str, count in stage.gpu_allocation.items():
-                machine_id = int(machine_id_str) + self.machine_offsets[idx]
+                machine_id = int(machine_id_str) + self._machine_offsets[idx]
                 machine_allocs.append((machine_id, count))
                 total_count += count
 
@@ -331,8 +318,8 @@ class CfgGen:
             # Assign workers to machines according to the allocation
             worker_idx = 0
             for machine_id, count in machine_allocs:
-                agent_id = self.machine_to_agent_id[machine_id]
-                agent_ctxt = self.agent_ctxts[agent_id]
+                agent_id = self._machine_to_agent_id[machine_id]
+                agent_ctxt = self._agent_ctxts[agent_id]
                 avail_gpus = agent_ctxt.avail_gpus()
 
                 for _ in range(count):
@@ -371,22 +358,22 @@ class CfgGen:
             assert stage.stage_id == idx, assert_msg
 
             prev = stage
-            prev_stage_id = prev.stage_id + self.stage_id_offset
+            prev_stage_id = prev.stage_id + self._stage_id_offset
 
         return prev, prev_stage_id
 
     def _create_flow_graph(self, stages, worker_to_machine):
         """Create flow graph configuration with distributed address mapping based on planning JSON stages."""
         flow_graph = {}
-        current_world_id = self.world_id_offset
-        server_backend = "gloo" if self.dispatcher_device == "cpu" else "nccl"
+        current_world_id = self._world_id_offset
+        server_backend = "gloo" if self._dispatcher_device == "cpu" else "nccl"
 
         # Add server connections
         server_connections = []
 
         # Get the last stage for connections
         last_stage = stages[-1]
-        last_stage_id = last_stage.stage_id + self.stage_id_offset
+        last_stage_id = last_stage.stage_id + self._stage_id_offset
         for r in range(last_stage.num_replicas):
             peer_id = f"{last_stage_id}-{r}"
             conn = {
@@ -402,7 +389,7 @@ class CfgGen:
         # Add worker connections
         for stage in stages:
             orig_stage_id = stage.stage_id
-            stage_id = orig_stage_id + self.stage_id_offset
+            stage_id = orig_stage_id + self._stage_id_offset
 
             prev, prev_stage_id = self._find_prev_stage(orig_stage_id, stages)
 
@@ -410,8 +397,8 @@ class CfgGen:
                 wid = f"{stage_id}-{r}"
                 # Get worker's machine from the unified allocation
                 worker_machine = worker_to_machine[wid]
-                agent_id = self.machine_to_agent_id[worker_machine]
-                agent_ctxt = self.agent_ctxts[agent_id]
+                agent_id = self._machine_to_agent_id[worker_machine]
+                agent_ctxt = self._agent_ctxts[agent_id]
 
                 if orig_stage_id == 0:
                     peers = ["s-0"]
@@ -442,7 +429,7 @@ class CfgGen:
         # Assign stage workers
         for stage in stages:
             orig_stage_id = stage.stage_id
-            stage_id = orig_stage_id + self.stage_id_offset
+            stage_id = orig_stage_id + self._stage_id_offset
             layer_start, layer_end = stage.layer_range
 
             for r in range(stage.num_replicas):
@@ -457,51 +444,3 @@ class CfgGen:
                 workers.append(worker)
 
         return workers
-
-
-def main():  # noqa: D103
-    parser = argparse.ArgumentParser(description="Convert JSON pipeline config to YAML")
-    parser.add_argument(
-        "--input_jsons",
-        type=str,
-        nargs="+",
-        required=True,
-        help="Input JSON file paths (one or more)",
-    )
-    parser.add_argument(
-        "--dispatcher_device",
-        type=str,
-        choices=["cpu", "cuda"],
-        default="cpu",
-        help="Device for the dispatcher (s-0) node (default: cpu)",
-    )
-    parser.add_argument(
-        "--source", type=str, required=True, help="Input source config file"
-    )
-    args = parser.parse_args()
-
-    with open(args.source) as f:
-        job_config = yaml.safe_load(f)
-        src_cfg = JobConfig(**job_config)
-
-    ctxts = {
-        "a": AgentContext(None, "a", "10.1.70.10"),
-        "b": AgentContext(None, "b", "10.1.70.20"),
-        "c": AgentContext(None, "c", "10.1.70.30"),
-    }
-
-    for ctx in ctxts.values():
-        ctx.resources.gpu_stats = []
-        for i in range(4):
-            gpu_stat = GpuStat(**{"id": i, "type": "V100", "used": False, "util": 0})
-            ctx.resources.gpu_stats.append(gpu_stat)
-
-    gen = CfgGen(ctxts, src_cfg, args.input_jsons, args.dispatcher_device)
-
-    config = gen.generate()
-    print(">>> config:")
-    print(yaml.dump(vars(config), sort_keys=False, default_flow_style=False))
-
-
-if __name__ == "__main__":
-    main()

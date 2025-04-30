@@ -109,6 +109,13 @@ class CtrlConfig:
 
     def __post_init__(self):
         """Populate controller's config with correct data types."""
+        if self.autoscale:
+            # it can't be empty if autoscaling is enabled
+            self.job_plans = os.path.expanduser(self.job_plans)
+            assert os.path.isdir(self.job_plans), f"invalid  folder: {self.job_plans}"
+            self.deploy_policy = DeploymentPolicyEnum.STATIC.value
+            print(f"Using {self.deploy_policy} policy since autoscale is enabled")
+
         if isinstance(self.deploy_policy, str):
             try:
                 self.deploy_policy = DeploymentPolicyEnum(self.deploy_policy)
@@ -120,8 +127,3 @@ class CtrlConfig:
 
         if not isinstance(self.reqgen, GenConfig):
             self.reqgen = GenConfig(**self.reqgen)
-
-        if self.autoscale:
-            # it can't be empty if autoscaling is enabled
-            self.job_plans = os.path.expanduser(self.job_plans)
-            assert os.path.isdir(self.job_plans), f"invalid  folder: {self.job_plans}"

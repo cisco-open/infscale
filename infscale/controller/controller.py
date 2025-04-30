@@ -38,6 +38,7 @@ from infscale.controller.autoscaler import AutoScaler
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel, ReqType
 from infscale.controller.deployment.factory import DeploymentPolicyFactory
 from infscale.controller.job_context import AgentMetaData, JobContext, JobStateEnum
+from infscale.controller.planner import Planner
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2, management_pb2_grpc as pb2_grpc
@@ -71,6 +72,8 @@ class Controller:
         self.autoscaler = None
         if config.autoscale:
             self.autoscaler = AutoScaler(self)
+
+        self.planner = Planner(config.job_plans, config.autoscale)
 
     async def _start_server(self):
         server_options = [
