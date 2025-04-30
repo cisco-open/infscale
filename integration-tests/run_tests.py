@@ -27,14 +27,14 @@ def run_tests(config: str):
     """Run tests based on config."""
     with open(config) as f:
         config = yaml.safe_load(f)
+        test_config = TestConfig(**config)
 
-    for item in config:
-        cfg = str(TestConfig(**item))
-        _run(cfg)
+    for step in test_config.steps:
+        _run(str(step))
 
     _cleanup()
 
-def _run_process(command: str, file_name: str) -> None:
+def _run_process(command: str, name: str) -> None:
     """Run process with command."""
     process = subprocess.Popen(
         command,
@@ -51,9 +51,9 @@ def _run_process(command: str, file_name: str) -> None:
     process.wait()
 
     if process.returncode != 0:
-        print(f"\n {file_name} failed with exit code {process.returncode}")
+        print(f"\n {name} failed with exit code {process.returncode}")
     else:
-        print(f"\n {file_name} completed successfully.")
+        print(f"\n {name} completed successfully.")
 
 def _run(test_content: str) -> None:
     """Run single test using config."""
@@ -67,14 +67,12 @@ def _run(test_content: str) -> None:
             "ansible-playbook",
             "-i",
             "inventory.yaml",
-            "-v",
             temp_file.name,
         ]
 
         _run_process(command, temp_file.name)
 
         os.remove(temp_file.name)
-
 
 def _cleanup() -> None:
     """Do cleanup after all tests are executed."""
@@ -83,10 +81,10 @@ def _cleanup() -> None:
         "-i",
         "inventory.yaml",
         "-v",
-        "cleanup_processes.yml",
+        "templates/cleanup_processes.yml",
     ]
 
-    _run_process(command, "cleanup_processes.yml")
+    _run_process(command, "cleanup processes")
 
 
 if __name__ == "__main__":

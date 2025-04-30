@@ -1,0 +1,35 @@
+---
+work_dir: ~/projects/infscale
+env_activate_command: conda activate pytorch-dev
+log_level: INFO
+steps:
+  - name: start controller
+    host: cisco-research-7
+    tasks:
+      - name: start controller
+        shell:
+          action: start
+          entity: controller
+
+      - name: start agent 1
+        shell:
+          action: start
+          entity: agent
+          extra_args: agent_id_1
+
+  - name: run resnet linear
+    host: cisco-research-7
+    tasks:
+      - name: run job
+        shell:
+          action: start
+          entity: job
+          extra_args: examples/resnet152/auto/linear.yaml
+
+  - name: check job complete
+    host: cisco-research-7
+    type: 'status'
+    statuses:
+      - complete
+      - failed
+    job_id: "job1"
