@@ -1,5 +1,0 @@
-all:
-  hosts:
-    cisco-research-7:
-    cisco-research-8:
-    cisco-research-9:

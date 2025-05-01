@@ -18,21 +18,25 @@ import os
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 import yaml
+from paramiko.config import SSHConfig
 from tests_dtype import TestConfig
 
 
 def run_tests(config: str):
     """Run tests based on config."""
+    inventory_file = _generate_inventory()
     with open(config) as f:
         config = yaml.safe_load(f)
         test_config = TestConfig(**config)
 
     for step in test_config.steps:
-        _run(str(step))
+        _run(str(step), inventory_file)
 
-    _cleanup()
+    _cleanup(inventory_file)
+
 
 def _run_process(command: str, name: str) -> None:
     """Run process with command."""
@@ -55,7 +59,8 @@ def _run_process(command: str, name: str) -> None:
     else:
         print(f"\n {name} completed successfully.")
 
-def _run(test_content: str) -> None:
+
+def _run(test_content: str, inventory_file: str) -> None:
     """Run single test using config."""
     with tempfile.NamedTemporaryFile(
         delete=False, mode="w", suffix=".yaml"
@@ -66,7 +71,7 @@ def _run(test_content: str) -> None:
         command = [
             "ansible-playbook",
             "-i",
-            "inventory.yaml",
+            inventory_file,
             temp_file.name,
         ]
 
@@ -74,16 +79,36 @@ def _run(test_content: str) -> None:
 
         os.remove(temp_file.name)
 
-def _cleanup() -> None:
+
+def _cleanup(inventory_file: str) -> None:
     """Do cleanup after all tests are executed."""
     command = [
         "ansible-playbook",
         "-i",
-        "inventory.yaml",
+        inventory_file,
         "templates/cleanup_processes.yaml",
     ]
 
     _run_process(command, "cleanup processes")
+
+
+def _generate_inventory() -> str:
+    ssh_config_path = Path.home() / ".ssh" / "config"
+    with ssh_config_path.open() as f:
+        ssh_config = SSHConfig()
+        ssh_config.parse(f)
+
+    hosts = {hostname: {} for hostname in ssh_config.get_hostnames() if hostname != "*"}
+
+    inventory = {"all": {"hosts": hosts}}
+
+    with tempfile.NamedTemporaryFile(
+        mode="w+", delete=False, suffix=".yaml"
+    ) as tmpfile:
+        yaml.dump(inventory, tmpfile)
+        tmpfile.flush()
+
+        return tmpfile.name
 
 
 if __name__ == "__main__":
