@@ -58,7 +58,7 @@ def _run_process(command: str, name: str) -> None:
 def _run(test_content: str) -> None:
     """Run single test using config."""
     with tempfile.NamedTemporaryFile(
-        delete=False, mode="w", suffix=".yml"
+        delete=False, mode="w", suffix=".yaml"
     ) as temp_file:
         temp_file.write(test_content)
         temp_file.close()
@@ -80,8 +80,7 @@ def _cleanup() -> None:
         "ansible-playbook",
         "-i",
         "inventory.yaml",
-        "-v",
-        "templates/cleanup_processes.yml",
+        "templates/cleanup_processes.yaml",
     ]
 
     _run_process(command, "cleanup processes")

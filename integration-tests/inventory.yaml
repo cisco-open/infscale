@@ -1,11 +1,5 @@
 all:
-  children:
-    cr7:
-      hosts:
-        cisco-research-7:
-    cr8:
-      hosts:
-        cisco-research-8:
-    cr9:
-      hosts:
-        cisco-research-9:
+  hosts:
+    cisco-research-7:
+    cisco-research-8:
+    cisco-research-9:
