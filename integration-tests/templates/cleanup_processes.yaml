@@ -1,5 +1,6 @@
 - name: cleanup processes
   hosts: all
+  gather_facts: false
   become: false
   tasks:
     - name: kill controller process

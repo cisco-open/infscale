@@ -2,6 +2,11 @@
   hosts: {{ host }}
   gather_facts: false
   tasks:
+{{#delay}}
+    - name: wait {{delay}} seconds before polling
+      wait_for:
+        timeout: {{ delay }}
+{{/delay}}
     - name: check endpoint health and if job exists
       uri:
         url: http://127.0.0.1:8080/job/{{ job_id }}

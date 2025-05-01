@@ -12,6 +12,7 @@ steps:
   - type: job_status
     host: cisco-research-7
     job_id: "job1"
+    delay: 3
     statuses:
       - complete
       - failed

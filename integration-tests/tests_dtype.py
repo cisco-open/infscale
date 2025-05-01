@@ -86,6 +86,7 @@ class TestStep:
     statuses: str = ""
     host: str = "all"
     job_id: str = ""
+    delay: int = 0
 
 
     def __post_init__(self):
@@ -128,6 +129,7 @@ class TestStep:
                         "host": self.host,
                         "statuses": self.statuses,
                         "job_id": self.job_id,
+                        "delay": self.delay,
                     }
                 rendered = pystache.render(
                     template,
