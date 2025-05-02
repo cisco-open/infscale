@@ -96,6 +96,7 @@ class ApiServer:
         server = Server(config)
         await server.serve()
 
+
 @app.get("/job/{job_id}", response_model=Response)
 def get_job_status(job_id: str):
     """Get job status."""
@@ -104,16 +105,17 @@ def get_job_status(job_id: str):
         job_status = _ctrl.get_job_status(job_id)
 
         if not job_status:
-            raise HTTPException(
+            return JSONResponse(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"job id {job_id} not found.",
+                content=f"job id {job_id} not found.",
             )
     except HTTPException as e:
         return JSONResponse(status_code=e.status_code, content=e.detail)
     except InfScaleException as e:
-        return JSONResponse(status_code=404, content=str(e))
+        return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content=str(e))
 
     return JSONResponse(status_code=status.HTTP_200_OK, content=job_status)
+
 
 @app.post("/job", response_model=Response)
 async def manage_job(job_action: CommandActionModel):

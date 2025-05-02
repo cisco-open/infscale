@@ -18,6 +18,7 @@
 import click
 
 from infscale.cmd.start import start
+from infscale.cmd.status import status
 from infscale.cmd.stop import stop
 from infscale.cmd.update import update
 from infscale.version import VERSION
@@ -32,6 +33,7 @@ def cli():  # noqa: D103
 cli.add_command(start)
 cli.add_command(stop)
 cli.add_command(update)
+cli.add_command(status)
 
 if __name__ == "__main__":
     cli()
