@@ -1,1 +1,6 @@
-bash -l -c "{{ env_activate_command }} && cd {{ work_dir }} && export INFSCALE_LOG_LEVEL={{ log_level }} && nohup python -m infscale {{ process }} > /dev/null 2>&1 &"
+{{#infscale_cmd}}
+bash -l -c "{{ env_activate_command }} && cd {{ work_dir }} && export INFSCALE_LOG_LEVEL={{ log_level }} && nohup python -m infscale {{ cmd }} {{ args }} > /dev/null 2>&1 &"
+{{/infscale_cmd}}
+{{^infscale_cmd}}
+bash -l -c "{{ cmd }}"
+{{/infscale_cmd}}

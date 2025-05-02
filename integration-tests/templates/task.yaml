@@ -1,5 +1,13 @@
-- name: {{ process }}
+- name: {{ cmd }}
   shell: >
     {{{ shell }}}
+{{^wait_response}}
   async: 1
   poll: 0
+{{/wait_response}}
+{{#wait_response}}
+  register: cmd_result
+  until: cmd_result.stdout in [{{#condition}}'{{.}}', {{/condition}}]
+  retries: 60
+  delay: 1
+{{/wait_response}}

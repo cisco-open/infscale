@@ -21,12 +21,11 @@ from pathlib import Path
 import pystache
 
 
-class TestType(Enum):
-    """TestType enum."""
+class CmdType(Enum):
+    """CmdType enum."""
 
-    START = "start"
-    UPDATE = "update"
-    JOB_STATUS = "job_status"
+    INFSCALE_CMD = "infscale_cmd"
+    OTHER = "other"
 
 
 @dataclass
@@ -34,8 +33,12 @@ class CommandConfig:
     env_activate_command: str
     work_dir: str
     log_level: str
+    cmd: str
+    args: str
     type: str
-    process: str = ""
+
+    def __post_init__(self):
+        self.infscale_cmd = self.type == CmdType.INFSCALE_CMD
 
     def __str__(self) -> str:
         """Render shell command from a mustache template."""
@@ -49,16 +52,20 @@ class CommandConfig:
 class ProcessConfig:
     """Class for defining test process config."""
 
-    process: str
-    type: str
+    cmd: str
     work_dir: str
     env_activate_command: str
     log_level: str
+    type: CmdType = CmdType.INFSCALE_CMD
+    args: str = ""
+    condition: list[str] = ""
 
     def __post_init__(self):
+        self.wait_response = bool(len(self.condition))
         self.shell = str(
             CommandConfig(
-                process=self.process,
+                cmd=self.cmd,
+                args=self.args,
                 type=self.type,
                 work_dir=self.work_dir,
                 env_activate_command=self.env_activate_command,
@@ -80,13 +87,9 @@ class TestStep:
     work_dir: str
     env_activate_command: str
     log_level: str
-    type: TestType = TestType.START
     processes: str = ""
     rendered_processes = []
-    statuses: str = ""
     host: str = "all"
-    job_id: str = ""
-
 
     def __post_init__(self):
         if not self.processes:
@@ -94,46 +97,29 @@ class TestStep:
         self.rendered_processes = list(self.processes)
         for i, process in enumerate(self.processes):
             process_cfg = ProcessConfig(
-                        type=self.type,
-                        process=f"{self.type} {process}",
-                        work_dir=self.work_dir,
-                        env_activate_command=self.env_activate_command,
-                        log_level=self.log_level,
-                    )
+                **process,
+                work_dir=self.work_dir,
+                env_activate_command=self.env_activate_command,
+                log_level=self.log_level,
+            )
             self.rendered_processes[i] = str(process_cfg)
 
     def __str__(self) -> None:
         """Render config from a mustache template."""
-        rendered = None
-        type_enum = TestType(self.type)
+        template = Path("templates/play.yaml").read_text()
+        rendered_tasks = "\n".join(
+            indent(process, 4) for process in self.rendered_processes
+        )
 
-        match type_enum:
-            case TestType.START | TestType.UPDATE:
-                template = Path("templates/play.yaml").read_text()
-                rendered_tasks = "\n".join(indent(process, 4) for process in self.rendered_processes)
-
-                render_data = {
-                        "name": f"{self.type} {", ".join(self.processes)}",
-                        "host": self.host,
-                        "tasks": rendered_tasks,
-                    }
-                rendered = pystache.render(
-                    template,
-                    render_data,
-                )
-
-            case TestType.JOB_STATUS:
-                template = Path("templates/job_status.yaml").read_text()
-                render_data = {
-                        "host": self.host,
-                        "statuses": self.statuses,
-                        "job_id": self.job_id,
-                    }
-                rendered = pystache.render(
-                    template,
-                    render_data,
-                )
-
+        render_data = {
+            "name": "Running test",
+            "host": self.host,
+            "tasks": rendered_tasks,
+        }
+        rendered = pystache.render(
+            template,
+            render_data,
+        )
         return rendered
 
 
