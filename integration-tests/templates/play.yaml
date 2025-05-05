@@ -1,5 +1,6 @@
 - name: {{ name }}
   hosts: {{ host }}
+  gather_facts: false
   become: false
   tasks:
 {{{ tasks }}}
