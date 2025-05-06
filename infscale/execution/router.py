@@ -47,7 +47,7 @@ class Router:
         logger = get_logger()
 
         self.world_manager = world_manager
-        self.mc = mc
+        self._mc = mc
         self.requests_count = 0
 
         self._rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
@@ -157,9 +157,9 @@ class Router:
                 logger.warn(f"{world_info.name} error: {e}")
                 break
 
-            if self.mc.can_collect_in_router():
+            if self._mc.can_collect_in_router():
                 # update metrics for request
-                self.mc.update(seqno)
+                self._mc.update(seqno)
 
             if recv_dev != self.device:
                 for k in tensors.keys():
@@ -265,9 +265,9 @@ class Router:
                 break
             logger.debug(f"sent tensors of seqno {seqno}")
 
-            if self.mc.can_collect_in_router():
+            if self._mc.can_collect_in_router():
                 # update metrics for request
-                self.mc.update(seqno)
+                self._mc.update(seqno)
 
         # remove tx queue for the world
         self._cleanup_tx_q(world_info)

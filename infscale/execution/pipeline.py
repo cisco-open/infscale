@@ -58,15 +58,16 @@ class Pipeline:
         logger = get_logger()
 
         self.stage: Stage = None
-        self.mc = MetricsCollector()
+        self._mc = MetricsCollector()
         self.world_manager = WorldManager()
-        self.router = Router(self.world_manager, self.mc)
+        self.router = Router(self.world_manager, self._mc)
         self.job_id = job_id
         self.wcomm = wcomm
         self.spec: ServeConfig = None
         self.device = None
         self.world_infos: dict[str, WorldInfo] = {}
         self.cfg_event = asyncio.Event()
+        self._micro_batch_size = 1
         self._initialized = False
 
         # TODO: these variables are only for a server (i.e., dispatcher)
@@ -210,7 +211,7 @@ class Pipeline:
                 if batch is None:
                     break
 
-                self.mc.update(self._seqno + idx)
+                self._mc.update(self._seqno + idx)
 
         async def _inner_send(batches: list[torch.Tensor | None]) -> None:
             for batch in batches:
@@ -250,7 +251,7 @@ class Pipeline:
             results = self._predict_fn(outputs)
             logger.info(f"response for {seqno}: {results}")
 
-            self.mc.update(seqno)
+            self._mc.update(seqno)
 
             await self._check_n_enable_tx_permission()
 
@@ -268,19 +269,21 @@ class Pipeline:
     async def _run_server(self):
         # we disable metrics collection in router in case the worker is server
         # so that we can collect metrics at _server_send and _server_recv tasks
-        self.mc.enable_in_router(False)
+        self._mc.enable_in_router(False)
 
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
         self.dataset.configure(
-            self.spec.micro_batch_size,
+            self._micro_batch_size,
             self.device,
             self.spec.reqgen_config.params.in_memory,
             self.spec.reqgen_config.params.replay,
         )
 
         self.req_generator = GeneratorFactory.get(self.spec.reqgen_config.sort)
-        self.req_generator.initialize(self.dataset, self.spec.reqgen_config.params)
+        self.req_generator.initialize(
+            self.dataset, self.spec.reqgen_config.params, self._micro_batch_size
+        )
 
         # send and recv asynchronously
         send_task = asyncio.create_task(self._server_send(self.router))
@@ -301,7 +304,7 @@ class Pipeline:
 
     async def _collect_metrics(self):
         while True:
-            metrics = self.mc.retrieve()
+            metrics = self._mc.retrieve()
             msg = Message(MessageType.METRICS, metrics, self.job_id)
             self.wcomm.send(msg)
 
@@ -421,6 +424,10 @@ class Pipeline:
     def _initialize_once(self) -> None:
         if self._initialized:
             return
+
+        # specify batch size once
+        self._micro_batch_size = self.spec.micro_batch_size
+        self._mc.set_batch_size(self._micro_batch_size)
 
         self._init_assets()
         self._prepare_worker()

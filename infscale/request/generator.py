@@ -29,10 +29,13 @@ from infscale.module.dataset import HuggingFaceDataset
 class Generator(ABC):
     """Abstact Generator class."""
 
-    def initialize(self, dataset: HuggingFaceDataset, params: GenParams) -> None:
+    def initialize(
+        self, dataset: HuggingFaceDataset, params: GenParams, batch_size: int
+    ) -> None:
         """Initialize a generator."""
         self._dataset = dataset
         self._params = params
+        self._batch_size = batch_size
 
     @abstractmethod
     async def get(self) -> list[Tensor | None]:
@@ -54,12 +57,16 @@ class DefaultGenerator(Generator):
 class ExponentialGenerator(Generator):
     """ExponentialGenerator class."""
 
-    def initialize(self, dataset: HuggingFaceDataset, params: GenParams) -> None:
+    def initialize(
+        self, dataset: HuggingFaceDataset, params: GenParams, batch_size: int
+    ) -> None:
         """Initialize the generator with exponential distribution."""
         # For exponential generator, params can't be None
         assert params is not None
 
-        super().initialize(dataset, params)
+        super().initialize(dataset, params, batch_size)
+
+        self._batch_rate = self._params.rate / self._batch_size
 
         self._queue = asyncio.Queue()
         self._gen_evt = asyncio.Event()
@@ -77,7 +84,7 @@ class ExponentialGenerator(Generator):
             if batch is None:
                 break
 
-            iat = np.random.exponential(scale=1 / self._params.rate)
+            iat = np.random.exponential(scale=1 / self._batch_rate)
             await asyncio.sleep(iat)
 
     async def get(self) -> list[Tensor | None]:

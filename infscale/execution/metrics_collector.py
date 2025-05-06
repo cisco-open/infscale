@@ -26,6 +26,7 @@ class MetricsCollector:
 
     def __init__(self, coeff: float = 0.9):
         """Initialize an instance."""
+        self._batch_size = 1  # to correctly calculate throughput (no. of reqs / sec)
         self._coeff = coeff
 
         self._qlevel = 0
@@ -40,6 +41,10 @@ class MetricsCollector:
 
         # a flag to enable/disable metrics collection in router
         self._enable = True
+
+    def set_batch_size(self, value: int) -> None:
+        """Set batch size."""
+        self._batch_size = value
 
     def enable_in_router(self, val: bool) -> None:
         """Enable or disable metrics collection."""
@@ -57,7 +62,7 @@ class MetricsCollector:
             start = self._metrics_map[seqno]
             del self._metrics_map[seqno]
 
-            qlevel = len(self._metrics_map)
+            qlevel = len(self._metrics_map) * self._batch_size
             self._qlevel = (1 - self._coeff) * self._qlevel + self._coeff * qlevel
 
             end = time.perf_counter()
@@ -68,7 +73,7 @@ class MetricsCollector:
 
     def _compute_thp(self) -> None:
         now = time.perf_counter()
-        instant_thp = self._served_count / (now - self._last_time)
+        instant_thp = self._served_count * self._batch_size / (now - self._last_time)
 
         self._thp = (1 - self._coeff) * self._thp + self._coeff * instant_thp
 
