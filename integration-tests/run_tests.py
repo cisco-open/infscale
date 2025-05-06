@@ -14,25 +14,31 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import argparse
 import os
 import subprocess
-import sys
 import tempfile
 
 import yaml
-from tests_dtype import TestConfig
+from tests_dtype import Test, TestConfig
 
 
-def run_tests(config: str):
+def run_tests(test_cfg_path: str, test_path: str):
     """Run tests based on config."""
-    with open(config) as f:
-        config = yaml.safe_load(f)
-        test_config = TestConfig(**config)
 
-    for step in test_config.steps:
+    with open(test_cfg_path) as f:
+        test_cfg_file = yaml.safe_load(f)
+        test_cfg = TestConfig(**test_cfg_file)
+
+    with open(test_path) as f:
+        test_file = yaml.safe_load(f)
+        test = Test(config=test_cfg, **test_file)
+
+    for step in test.steps:
         _run(str(step))
 
     _cleanup()
+
 
 def _run_process(command: str, name: str) -> None:
     """Run process with command."""
@@ -55,6 +61,7 @@ def _run_process(command: str, name: str) -> None:
     else:
         print(f"\n {name} completed successfully.")
 
+
 def _run(test_content: str) -> None:
     """Run single test using config."""
     with tempfile.NamedTemporaryFile(
@@ -74,6 +81,7 @@ def _run(test_content: str) -> None:
 
         os.remove(temp_file.name)
 
+
 def _cleanup() -> None:
     """Do cleanup after all tests are executed."""
     command = [
@@ -87,4 +95,9 @@ def _cleanup() -> None:
 
 
 if __name__ == "__main__":
-    run_tests(sys.argv[1])
+    parser = argparse.ArgumentParser(description="Run test using a test config.")
+    parser.add_argument("--config", help="Path to test config file")
+    parser.add_argument("--test", help="Path to test case file")
+
+    args = parser.parse_args()
+    run_tests(args.config, args.test)

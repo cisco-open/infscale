@@ -29,6 +29,45 @@ class CmdType(Enum):
 
 
 @dataclass
+class TestController:
+    host: str
+    ip: str
+
+    def __post_init__(self):
+        if not self.host:
+            raise ValueError(f"Controller host is required.")
+
+
+@dataclass
+class TestAgent:
+    host: str
+
+
+@dataclass
+class TestControllerConfig:
+    policy: str
+    config: str
+
+
+@dataclass
+class TestConfig:
+    controller: TestController
+    agents: list[TestAgent]
+
+    def __post_init__(self) -> None:
+        if len(self.agents) == 0:
+            raise ValueError(f"Running tests require at least one agent.")
+
+        if not self.controller:
+            raise ValueError(f"Controller config is required.")
+
+        self.controller = TestController(**self.controller)
+
+        for i, agent in enumerate(list(self.agents)):
+            self.agents[i] = TestAgent(**agent)
+
+
+@dataclass
 class CommandConfig:
     env_activate_command: str
     work_dir: str
@@ -39,6 +78,7 @@ class CommandConfig:
 
     def __post_init__(self):
         self.infscale_cmd = self.type == CmdType.INFSCALE_CMD
+        self.background_run = "job" not in self.cmd
 
     def __str__(self) -> str:
         """Render shell command from a mustache template."""
@@ -95,6 +135,7 @@ class TestStep:
         if not self.processes:
             return
         self.rendered_processes = list(self.processes)
+
         for i, process in enumerate(self.processes):
             process_cfg = ProcessConfig(
                 **process,
@@ -124,23 +165,96 @@ class TestStep:
 
 
 @dataclass
-class TestConfig:
-    """Class for defining test config."""
+class Test:
+    """Class for defining test case."""
 
+    config: TestConfig
     work_dir: str
     env_activate_command: str
     log_level: str
     steps: list[str]
+    controller: TestControllerConfig = None
 
     def __post_init__(self):
-        for i, step in enumerate(self.steps):
+        if self.controller:
+            self.controller = TestControllerConfig(**self.controller)
+
+        ctrl_host = self.config.controller.host
+        steps = []
+
+        self._add_ctrl_step(steps)
+        self._add_agent_steps(steps)
+
+        for i, step in enumerate(list(self.steps)):
             test_step = TestStep(
                 work_dir=self.work_dir,
                 env_activate_command=self.env_activate_command,
                 log_level=self.log_level,
+                host=ctrl_host,
                 **step,
             )
-            self.steps[i] = str(test_step)
+            steps.append(str(test_step))
+
+        self.steps = steps
+
+    def _add_agent_steps(self, steps: list[TestStep]) -> None:
+        """Add agents test steps."""
+        for agent_config in self.config.agents:
+            step_dict = {
+                "host": agent_config.host,
+                "processes": [
+                    {
+                        "cmd": "start agent",
+                        "args": f"{agent_config.host} --host {self.config.controller.ip}",
+                    }
+                ],
+            }
+
+            agent_step = TestStep(
+                work_dir=self.work_dir,
+                env_activate_command=self.env_activate_command,
+                log_level=self.log_level,
+                **step_dict,
+            )
+
+            steps.append(str(agent_step))
+
+    def _build_ctrl_args(self) -> str:
+        """Build controller args string based on controller cfg."""
+        args = ""
+        policy, config = self.controller.policy, self.controller.config
+        if policy:
+            args += f"--policy {policy} "
+
+        if config:
+            args += f"--config {config} "
+
+        return args
+
+    def _add_ctrl_step(self, steps: list[TestStep]) -> None:
+        """Prepend controller test step."""
+        args = ""
+        if self.controller:
+            args = self._build_ctrl_args()
+
+        ctrl_step = {
+            "host": self.config.controller.host,
+            "processes": [
+                {
+                    "cmd": "start controller",
+                    "args": args,
+                }
+            ],
+        }
+
+        ctrl_step = TestStep(
+            work_dir=self.work_dir,
+            env_activate_command=self.env_activate_command,
+            log_level=self.log_level,
+            **ctrl_step,
+        )
+
+        steps.append(str(ctrl_step))
 
 
 def indent(text: str, spaces: int = 4) -> str:

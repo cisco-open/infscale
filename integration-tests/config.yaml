@@ -1,0 +1,12 @@
+# controller attributes:
+#   host: machine that will be used to start the controller
+#   ip: ip of the controller that other agents will use to connect
+# agents - list of agents that will be started
+#   - host: the machine that will be used to start the agent, this will also be agent's ID
+
+controller:
+  host: cisco-research-7
+  ip: 10.20.1.15
+agents:
+  - host: cisco-research-7
+  - host: cisco-research-8

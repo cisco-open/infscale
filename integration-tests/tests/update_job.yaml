@@ -1,32 +1,23 @@
 ---
+# controller: can be added with the following attributes
+  # policy: deployment policy
+  # config: controller config file
 work_dir: ~/projects/infscale
 env_activate_command: conda activate pytorch-dev
 log_level: INFO
 steps:
-    - host: cisco-research-7
-      processes:
-        - cmd: start controller
-        - cmd: start agent
-          args: a1
-
-    - host: cisco-research-8
-      processes:
-        - cmd: start agent
-          args: a2 --host 10.20.1.15
-
-    - host: cisco-research-7
-      processes:
-        - cmd: start job
-          args: examples/resnet152/auto/linear.yaml
-        - cmd: status job
-          args: job1
-          condition:
-            - running
-            - failed
-        - cmd: update job
-          args: examples/resnet152/auto/diamond.yaml
-        - cmd: status job
-          args: job1
-          condition:
-            - complete
-            - failed
+  - processes:
+    - cmd: start job
+      args: examples/resnet152/auto/linear.yaml
+    - cmd: status job
+      args: job1
+      condition:
+        - running
+        - failed
+    - cmd: update job
+      args: examples/resnet152/auto/diamond.yaml
+    - cmd: status job
+      args: job1
+      condition:
+        - complete
+        - failed

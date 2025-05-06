@@ -1,5 +1,5 @@
 {{#infscale_cmd}}
-bash -l -c "{{ env_activate_command }} && cd {{ work_dir }} && export INFSCALE_LOG_LEVEL={{ log_level }} && nohup python -m infscale {{ cmd }} {{ args }} > /dev/null 2>&1 &"
+bash -l -c "{{ env_activate_command }} && cd {{ work_dir }} && export INFSCALE_LOG_LEVEL={{ log_level }} && {{#background_run}}nohup {{/background_run}}python -m infscale {{ cmd }} {{ args }} {{^background_run}}| tail -n 1 | tr -d '\"'{{/background_run}}{{#background_run}} > /dev/null 2>&1 &{{/background_run}}"
 {{/infscale_cmd}}
 {{^infscale_cmd}}
 bash -l -c "{{ cmd }}"
