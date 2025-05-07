@@ -66,6 +66,17 @@ class TestConfig:
         for i, agent in enumerate(list(self.agents)):
             self.agents[i] = TestAgent(**agent)
 
+    def get_hosts(self) -> list[str]:
+        """Return a list of hosts used in this test config."""
+        hosts = []
+
+        hosts.append(self.controller.host)
+
+        for agent in self.agents:
+            hosts.append(agent.host)
+
+        return hosts
+
 
 @dataclass
 class CommandConfig:

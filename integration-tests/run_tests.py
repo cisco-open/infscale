@@ -30,14 +30,16 @@ def run_tests(test_cfg_path: str, test_path: str):
         test_cfg_file = yaml.safe_load(f)
         test_cfg = TestConfig(**test_cfg_file)
 
+    inventory = _generate_inventory(test_cfg)
+
     with open(test_path) as f:
         test_file = yaml.safe_load(f)
         test = Test(config=test_cfg, **test_file)
 
     for step in test.steps:
-        _run(str(step))
+        _run(str(step), inventory)
 
-    _cleanup()
+    _cleanup(inventory)
 
 
 def _run_process(command: str, name: str) -> None:
@@ -62,7 +64,7 @@ def _run_process(command: str, name: str) -> None:
         print(f"\n {name} completed successfully.")
 
 
-def _run(test_content: str) -> None:
+def _run(test_content: str, inventory: str) -> None:
     """Run single test using config."""
     with tempfile.NamedTemporaryFile(
         delete=False, mode="w", suffix=".yaml"
@@ -73,7 +75,7 @@ def _run(test_content: str) -> None:
         command = [
             "ansible-playbook",
             "-i",
-            "inventory.yaml",
+            inventory,
             temp_file.name,
         ]
 
@@ -82,16 +84,31 @@ def _run(test_content: str) -> None:
         os.remove(temp_file.name)
 
 
-def _cleanup() -> None:
+def _cleanup(inventory: str) -> None:
     """Do cleanup after all tests are executed."""
     command = [
         "ansible-playbook",
         "-i",
-        "inventory.yaml",
+        inventory,
         "templates/cleanup_processes.yaml",
     ]
 
     _run_process(command, "cleanup processes")
+
+
+def _generate_inventory(test_cfg: TestConfig) -> str:
+    """Generate inventory temp file based on hosts specified in config."""
+    hosts = {hostname: {} for hostname in test_cfg.get_hosts()}
+
+    inventory = {"all": {"hosts": hosts}}
+
+    with tempfile.NamedTemporaryFile(
+        mode="w+", delete=False, suffix=".yaml"
+    ) as tmpfile:
+        yaml.dump(inventory, tmpfile)
+        tmpfile.flush()
+
+        return tmpfile.name
 
 
 if __name__ == "__main__":
