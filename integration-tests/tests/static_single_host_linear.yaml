@@ -14,5 +14,5 @@ steps:
       - cmd: status job
         args: job1
         condition:
-          - complete
-          - failed
+          success: complete
+          fail: failed

@@ -7,7 +7,8 @@
 {{/wait_response}}
 {{#wait_response}}
   register: cmd_result
-  until: cmd_result.stdout in [{{#condition}}'{{.}}', {{/condition}}]
+  until: cmd_result.stdout == "{{ condition.success }}"
+  failed_when: cmd_result.stdout == "{{ condition.fail }}"
   retries: 60
   delay: 1
 {{/wait_response}}

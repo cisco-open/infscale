@@ -1,5 +1,6 @@
-- name: cleanup processes
-  hosts: all
+- name: cleanup controller process
+  hosts: {{ ctrl_host }}
+  gather_facts: false
   become: false
   tasks:
     - name: kill controller process
@@ -16,6 +17,14 @@
             kill "$pid"
           fi
         done
+
+- name: cleanup agent processes and remove tmp log files
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Remove tmp_logs directory and its contents
+      shell: "rm -rf {{ log_folder }}"
       ignore_errors: true
 
     - name: kill agent processes

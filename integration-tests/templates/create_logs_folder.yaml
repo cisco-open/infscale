@@ -1,0 +1,15 @@
+- name: Create test logs folder
+  hosts: all
+  gather_facts: false
+  become: false
+  tasks:
+  - name: Create {{ log_folder }} folder
+    file:
+      path: {{ log_folder }}
+      state: directory
+    ignore_errors: true
+
+  - name: Create empty test.log file in tmp_logs
+    file:
+      path: "{{ log_folder }}/test.log"
+      state: touch

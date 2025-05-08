@@ -12,12 +12,12 @@ steps:
     - cmd: status job
       args: job1
       condition:
-        - running
-        - failed
+        success: running
+        fail: failed
     - cmd: update job
       args: examples/resnet152/auto/diamond.yaml
     - cmd: status job
       args: job1
       condition:
-        - complete
-        - failed
+        success: complete
+        fail: failed

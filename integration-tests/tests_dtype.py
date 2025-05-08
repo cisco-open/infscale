@@ -19,6 +19,7 @@ from enum import Enum
 from pathlib import Path
 
 import pystache
+from constants import LOG_FOLDER
 
 
 class CmdType(Enum):
@@ -45,8 +46,8 @@ class TestAgent:
 
 @dataclass
 class TestControllerConfig:
-    policy: str
-    config: str
+    policy: str = ""
+    config: str = ""
 
 
 @dataclass
@@ -90,13 +91,29 @@ class CommandConfig:
     def __post_init__(self):
         self.infscale_cmd = self.type == CmdType.INFSCALE_CMD
         self.background_run = "job" not in self.cmd
+        self.log_folder = LOG_FOLDER
 
     def __str__(self) -> str:
         """Render shell command from a mustache template."""
-        template = Path("templates/shell_command.mustache").read_text()
+        tpl_path = "templates/infscale_shell_command.mustache"
+
+        if self.infscale_cmd and self.background_run:
+            tpl_path = "templates/infscale_async_shell_command.mustache"
+
+        if not self.infscale_cmd:
+            tpl_path = "templates/other_shell_command.mustache"
+
+        template = Path(tpl_path).read_text()
+
         rendered = pystache.render(template, self)
 
         return rendered
+
+
+@dataclass
+class ProcessCondition:
+    success: str
+    fail: str
 
 
 @dataclass
@@ -109,10 +126,13 @@ class ProcessConfig:
     log_level: str
     type: CmdType = CmdType.INFSCALE_CMD
     args: str = ""
-    condition: list[str] = ""
+    condition: ProcessCondition = None
 
     def __post_init__(self):
-        self.wait_response = bool(len(self.condition))
+        if self.condition:
+            self.condition = ProcessCondition(**self.condition)
+
+        self.wait_response = bool(self.condition)
         self.shell = str(
             CommandConfig(
                 cmd=self.cmd,
@@ -183,7 +203,7 @@ class Test:
     work_dir: str
     env_activate_command: str
     log_level: str
-    steps: list[str]
+    steps: list[TestStep]
     controller: TestControllerConfig = None
 
     def __post_init__(self):
@@ -204,7 +224,7 @@ class Test:
                 host=ctrl_host,
                 **step,
             )
-            steps.append(str(test_step))
+            steps.append(test_step)
 
         self.steps = steps
 
@@ -228,7 +248,7 @@ class Test:
                 **step_dict,
             )
 
-            steps.append(str(agent_step))
+            steps.append(agent_step)
 
     def _build_ctrl_args(self) -> str:
         """Build controller args string based on controller cfg."""
@@ -265,7 +285,7 @@ class Test:
             **ctrl_step,
         )
 
-        steps.append(str(ctrl_step))
+        steps.append(ctrl_step)
 
 
 def indent(text: str, spaces: int = 4) -> str:
