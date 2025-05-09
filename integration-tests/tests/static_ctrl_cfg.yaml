@@ -1,12 +1,12 @@
 controller:
-  policy: static
+  config: examples/configs/controller.yaml
 work_dir: ~/projects/infscale
 env_activate_command: conda activate pytorch-dev
 log_level: INFO
 steps:
     - processes:
       - cmd: start job
-        args: examples/resnet152/static/linear.yaml
+        args: examples/resnet152/static/diamond.yaml
       - type: other
         cmd: sleep 3
 
