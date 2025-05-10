@@ -23,6 +23,7 @@ import numpy as np
 from torch import Tensor
 
 from infscale.configs.controller import GenParams, ReqGenEnum
+from infscale.execution.metrics_collector import MetricsCollector
 from infscale.module.dataset import HuggingFaceDataset
 
 
@@ -30,12 +31,18 @@ class Generator(ABC):
     """Abstact Generator class."""
 
     def initialize(
-        self, dataset: HuggingFaceDataset, params: GenParams, batch_size: int
+        self,
+        dataset: HuggingFaceDataset,
+        params: GenParams,
+        batch_size: int,
+        mc: MetricsCollector,
     ) -> None:
         """Initialize a generator."""
         self._dataset = dataset
         self._params = params
         self._batch_size = batch_size
+        self._mc = mc
+        self._seqno = 0
 
     @abstractmethod
     async def get(self) -> list[Tensor | None]:
@@ -51,6 +58,8 @@ class DefaultGenerator(Generator):
 
         initialize() method must be called once before calling this method.
         """
+        self._mc.update(self._seqno)
+        self._seqno += 1
         return [self._dataset.next_batch()]
 
 
@@ -58,13 +67,17 @@ class ExponentialGenerator(Generator):
     """ExponentialGenerator class."""
 
     def initialize(
-        self, dataset: HuggingFaceDataset, params: GenParams, batch_size: int
+        self,
+        dataset: HuggingFaceDataset,
+        params: GenParams,
+        batch_size: int,
+        mc: MetricsCollector,
     ) -> None:
         """Initialize the generator with exponential distribution."""
         # For exponential generator, params can't be None
         assert params is not None
 
-        super().initialize(dataset, params, batch_size)
+        super().initialize(dataset, params, batch_size, mc)
 
         self._batch_rate = self._params.rate / self._batch_size
 
@@ -83,6 +96,9 @@ class ExponentialGenerator(Generator):
 
             if batch is None:
                 break
+
+            self._mc.update(self._seqno)
+            self._seqno += 1
 
             iat = np.random.exponential(scale=1 / self._batch_rate)
             await asyncio.sleep(iat)

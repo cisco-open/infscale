@@ -34,32 +34,41 @@ logger = None
 class PerfMetrics:
     """PerfMetrics class."""
 
-    def __init__(self, window_size: int = 5) -> None:
-        """Initialize an instance."""
+    def __init__(self, window_size: int = 10) -> None:
+        """Initialize an instance.
+
+        Attributes:
+            window_size (int): a sliding window size to calculate diff; default is 10.
+        """
         # length of queue, i.e., number of requests waiting to be served
         self.qlevel = 0.0
         # second to serve one request
         self.delay = 0.0
+        # the number of requests arrived per second
+        self.input_rate = 0.0
         # the number of requests served per second
-        self.thp = 0.0
+        self.output_rate = 0.0
 
-        self.window_size = window_size
-        self.qlevel_rate = 0.0
-        self.thp_rate = 0.0
+        self._window_size = window_size
+        self._qlevel_diff = 0.0
+        self._output_rate_diff = 0.0
 
         self._qlevel_dq = deque()
-        self._thp_dq = deque()
+        self._output_rate_dq = deque()
 
-        self._suppress_factor = 2.0
+        self._suppress_factor = 1.5
 
-    def update(self, qlevel: float, delay: float, thp: float) -> None:
+    def update(
+        self, qlevel: float, delay: float, input_rate: float, output_rate: float
+    ) -> None:
         """Update metric's values."""
         self.qlevel = qlevel
         self.delay = delay
-        self.thp = thp
+        self.input_rate = input_rate
+        self.output_rate = output_rate
 
     def update_rate(self) -> None:
-        """Update rate of qlevel and thp changes over a window of samples.
+        """Update rate of qlevel and output rate changes over a window of samples.
 
         This method doesn't need to be called for every worker in a job. Instead,
         call this method for workers that need to monitor the changes of qlevel
@@ -68,28 +77,29 @@ class PerfMetrics:
         the rate change can be accurately caculated.
         """
         self._qlevel_dq.append(self.qlevel)
-        self._thp_dq.append(self.thp)
+        self._output_rate_dq.append(self.output_rate)
 
-        if len(self._qlevel_dq) < self.window_size:
+        if len(self._qlevel_dq) < self._window_size:
             return
 
-        oldest_qlevel = self._qlevel_dq.popleft()
-        oldest_thp = self._thp_dq.popleft()
-        self.qlevel_rate = (self.qlevel - oldest_qlevel) / self.window_size
-        self.thp_rate = (self.thp - oldest_thp) / self.window_size
+        old_qlevel = self._qlevel_dq.popleft()
+        old_output_rate = self._output_rate_dq.popleft()
+        self._qlevel_diff = self.qlevel - old_qlevel
+        self._output_rate_diff = self.output_rate - old_output_rate
 
     def is_congested(self) -> bool:
         """Return true if queue continues to build up while throughput is saturated."""
-        # a negative rate change can be because of load reduction.
-        # in such a case, multiplying a negative value with a suppress factor
-        # can result in a false positive. To prevent that, we choose a small
-        # non-zero value.
-        effective_thp_rate = max(self.thp_rate, 0.000000001)
-        return self.qlevel_rate > effective_thp_rate * self._suppress_factor
+        # measure qlevel is larger than output rate * suppress factor
+        cond1 = self.qlevel > self.output_rate * self._suppress_factor
+        # measure if qlevel change is larger than output rate change
+        cond2 = self._qlevel_diff > self._output_rate_diff
+        logger.debug(f"cond1: {cond1}, cond2: {cond2}")
+
+        return cond1 or cond2
 
     def __str__(self) -> str:
         """Return string representation for the object."""
-        return f"qlevel: {self.qlevel}, delay: {self.delay}, thp: {self.thp}"
+        return f"qlevel: {self.qlevel}, delay: {self.delay}, input_rate: {self.input_rate}, output_rate: {self.output_rate}"
 
 
 class AutoScaler:

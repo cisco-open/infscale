@@ -115,5 +115,6 @@ message PerfMetrics {
   string worker_id = 2;  // worker id
   float qlevel = 3;      // number of requests in a worker waiting for processing
   float delay = 4;       // per-request delay in second; can be an average value
-  float thp = 5;         // requests (e.g., prompts) per second; can be an average value
+  float input_rate = 5;  // requests (e.g., prompts) per second; can be an average value
+  float output_rate = 6; // requests (e.g., prompts) per second; can be an average value
 }

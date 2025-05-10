@@ -170,7 +170,7 @@ class Controller:
         job_ctx = self.job_contexts.get(req.job_id)
 
         metrics = job_ctx.get_wrkr_metrics(req.worker_id)
-        metrics.update(req.qlevel, req.delay, req.thp)
+        metrics.update(req.qlevel, req.delay, req.input_rate, req.output_rate)
 
         if not self.autoscaler or not job_ctx.is_server(req.worker_id):
             return

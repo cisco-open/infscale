@@ -31,12 +31,14 @@ class MetricsCollector:
 
         self._qlevel = 0
         self._delay = 0
-        self._thp = 0
+        self._input_rate = 0
+        self._output_rate = 0
 
         # key: sequence number
         # value: relative time that request entered the system
         self._metrics_map: dict[int, float] = {}
-        self._served_count = 0
+        self._arrived = 0
+        self._served = 0
         self._last_time = time.perf_counter()
 
         # a flag to enable/disable metrics collection in router
@@ -58,6 +60,7 @@ class MetricsCollector:
         """Update metrics."""
         if seqno not in self._metrics_map:
             self._metrics_map[seqno] = time.perf_counter()
+            self._arrived += 1
         else:
             start = self._metrics_map[seqno]
             del self._metrics_map[seqno]
@@ -69,16 +72,20 @@ class MetricsCollector:
             delay = end - start
             self._delay = (1 - self._coeff) * self._delay + self._coeff * delay
 
-            self._served_count += 1
+            self._served += 1
 
-    def _compute_thp(self) -> None:
+    def _compute_input_output_rates(self) -> None:
         now = time.perf_counter()
-        instant_thp = self._served_count * self._batch_size / (now - self._last_time)
 
-        self._thp = (1 - self._coeff) * self._thp + self._coeff * instant_thp
+        rate = self._arrived * self._batch_size / (now - self._last_time)
+        self._input_rate = (1 - self._coeff) * self._input_rate + self._coeff * rate
 
-        # reset served count
-        self._served_count = 0
+        rate = self._served * self._batch_size / (now - self._last_time)
+        self._output_rate = (1 - self._coeff) * self._output_rate + self._coeff * rate
+
+        # reset arrived/served counts
+        self._arrived = 0
+        self._served = 0
         # update the last time with the current time
         self._last_time = now
 
@@ -87,8 +94,8 @@ class MetricsCollector:
 
         Note: This function should be called periodically (e.g., every second).
         """
-        # we can only compute throughput every time we call this function
+        # we can only compute input / output rate every time we call this function
         # since we need an interval to compute throughput
-        self._compute_thp()
+        self._compute_input_output_rates()
 
-        return Metrics(qlevel=self._qlevel, delay=self._delay, thp=self._thp)
+        return Metrics(self._qlevel, self._delay, self._input_rate, self._output_rate)

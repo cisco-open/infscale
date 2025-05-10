@@ -128,7 +128,8 @@ class Agent:
                 worker_id=worker_id,
                 qlevel=metrics.qlevel,
                 delay=metrics.delay,
-                thp=metrics.thp,
+                input_rate=metrics.input_rate,
+                output_rate=metrics.output_rate,
             )
             await self.stub.update_metrics(req)
 

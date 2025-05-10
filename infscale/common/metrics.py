@@ -25,4 +25,5 @@ class Metrics:
 
     qlevel: float = 0
     delay: float = 0
-    thp: float = 0
+    input_rate: float = 0
+    output_rate: float = 0

@@ -206,13 +206,6 @@ class Pipeline:
 
         logger.info("start to send requests")
 
-        def _inner_mc_update(batches: list[torch.Tensor | None]) -> None:
-            for idx, batch in enumerate(batches):
-                if batch is None:
-                    break
-
-                self._mc.update(self._seqno + idx)
-
         async def _inner_send(batches: list[torch.Tensor | None]) -> None:
             for batch in batches:
                 if batch is None:
@@ -229,9 +222,6 @@ class Pipeline:
         start_time = time.perf_counter()
         while True:
             batches = await self.req_generator.get()
-
-            # update metrics collector before we send batches
-            _inner_mc_update(batches)
 
             await _inner_send(batches)
             if self._end_of_send:
@@ -282,7 +272,10 @@ class Pipeline:
 
         self.req_generator = GeneratorFactory.get(self.spec.reqgen_config.sort)
         self.req_generator.initialize(
-            self.dataset, self.spec.reqgen_config.params, self._micro_batch_size
+            self.dataset,
+            self.spec.reqgen_config.params,
+            self._micro_batch_size,
+            self._mc,
         )
 
         # send and recv asynchronously
