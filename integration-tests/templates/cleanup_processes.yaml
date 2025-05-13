@@ -6,6 +6,18 @@
       shell: "pkill -f 'python -m infscale start controller'"
       ignore_errors: true
 
+    - name: Kill GPU-using Python processes belonging to current user
+      shell: |
+        USERNAME=$(whoami)
+        GPU_PIDS=$(nvidia-smi | grep python | awk '{print $5}')
+        USER_PIDS=$(ps -u $USERNAME -o pid=)
+        for pid in $GPU_PIDS; do
+          if echo "$USER_PIDS" | grep -wq "$pid"; then
+            kill "$pid"
+          fi
+        done
+      ignore_errors: true
+
     - name: kill agent processes
       shell: "pkill -f 'python -m infscale start agent'"
       ignore_errors: true
