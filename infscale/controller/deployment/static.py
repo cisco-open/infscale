@@ -113,7 +113,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
 
             resources = agent_resources[agent_id]
             device = self._get_n_update_worker_device(
-                worker_id, job_config.workers, resources
+                worker_id, job_config.workers, resources, job_config.job_id
             )
 
             self._set_rollback_data(resources, device, temp_res)
@@ -136,7 +136,11 @@ class StaticDeploymentPolicy(DeploymentPolicy):
         return assignment_map
 
     def _get_n_update_worker_device(
-        self, worker_id: str, workers: list[WorkerData], resources: AgentResources
+        self,
+        worker_id: str,
+        workers: list[WorkerData],
+        resources: AgentResources,
+        job_id: str,
     ) -> str:
         """Get and update worker device."""
         worker = next(w for w in workers if w.id == worker_id)
@@ -161,5 +165,6 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             raise InvalidConfig(f"GPU {gpu_stat.id} is used; try another device.")
 
         gpu_stat.used = True
+        gpu_stat.job_id = job_id
 
         return device

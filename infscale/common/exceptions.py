@@ -36,7 +36,7 @@ class InvalidJobStateAction(InfScaleException):
 
 
 class InvalidConfig(InfScaleException):
-    """Exception for invalid job configuration."""
+    """Exception for invalid configuration."""
 
     def __init__(self, err_msg: str):
         """Initialize InvalidConfig exception instance."""

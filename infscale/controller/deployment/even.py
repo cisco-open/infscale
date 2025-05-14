@@ -63,7 +63,7 @@ class EvenDeploymentPolicy(DeploymentPolicy):
 
         while workers:
             device, agent_data = self._get_device_n_agent_data(
-                dev_type, agent_resources, agent_cycle
+                dev_type, agent_resources, agent_cycle, job_config.job_id
             )
 
             if agent_data.id not in assignment_map:
@@ -83,12 +83,13 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         dev_type: DeviceType,
         agent_resources: dict[str, AgentResources],
         agent_cycle: Iterator[AgentMetaData],
+        job_id: str,
     ) -> tuple[str, AgentMetaData]:
         """Get device and agent data."""
         while True:
             agent_data = next(agent_cycle)  # Get the next agent
             resources = agent_resources[agent_data.id]
 
-            device = resources.get_n_set_device(dev_type)
+            device = resources.get_n_set_device(dev_type, job_id)
             if device:
                 return device, agent_data

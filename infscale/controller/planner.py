@@ -66,7 +66,7 @@ class PlanCollection:
         while capacity < demand:
             plan = self._plans[idx]
             candidates.append(plan)
-            capacity += plan.pipeline_throughput
+            capacity += plan.throughput
 
             idx = (idx + 1) % len(self._plans)
 

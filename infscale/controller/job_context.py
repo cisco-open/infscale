@@ -29,16 +29,17 @@ from infscale import get_logger
 from infscale.common.exceptions import (
     InfScaleException,
     InsufficientResources,
+    InvalidConfig,
     InvalidJobStateAction,
 )
 from infscale.common.job_msg import JobStatus, WorkerStatus
+from infscale.common.metrics import PerfMetrics
 from infscale.configs.job import JobConfig, WorldInfo
 from infscale.controller.agent_context import (
     CPU_LOAD_THRESHOLD,
     AgentResources,
     DeviceType,
 )
-from infscale.controller.autoscaler import PerfMetrics
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 from infscale.controller.deployment.assignment import AssignmentCollection
 from infscale.controller.job_checker import JobChecker
@@ -167,7 +168,11 @@ class RunningState(BaseJobState):
 
     async def update(self):
         """Transition to UPDATING state."""
-        self.context.process_cfg()
+        try:
+            self.context.process_cfg()
+        except InvalidConfig as e:
+            logger.warning(f"exception: {e}")
+            return
 
         tasks = []
 
@@ -373,8 +378,14 @@ class JobContext:
         self.past_running_agent_info: list[AgentMetaData] = []
         self.job_checker = JobChecker(self.wrk_status)
 
+        self._desired_rate = 0.0
+
         global logger
         logger = get_logger()
+
+    def set_desired_rate(self, rate: float) -> None:
+        """Set diresed output rate for a job."""
+        self._desired_rate = rate
 
     def get_agent_data(self, agent_id: str) -> AgentMetaData:
         """Return agent metadata."""
@@ -477,8 +488,12 @@ class JobContext:
     def process_cfg(self) -> None:
         """Process received config from controller and set a deployer of agent ids."""
         self._new_cfg = self.ctrl.planner.build_config(
-            self.req.config, self.ctrl.agent_contexts
+            self.req.config, self.ctrl.agent_contexts, self._desired_rate
         )
+
+        if JobConfig.is_identical(self._cur_cfg, self._new_cfg):
+            raise InvalidConfig("current and new configs are identical")
+
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
         agent_resources = self._get_agent_resources_map()
@@ -809,6 +824,7 @@ class JobContext:
 
             # mark unused only for gpu used in this job
             gpu_stat.used = False
+            gpu_stat.job_id = ""
 
     def _release_gpu_resource_by_worker_id(self, wid: str):
         running_agent_info = set(self.running_agent_info)

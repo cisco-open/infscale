@@ -63,6 +63,7 @@ class GpuStat:
     type: GpuType
     used: bool
     util: int
+    job_id: str = ""
 
 
 @dataclass
@@ -203,7 +204,7 @@ class GpuMonitor:
         proto = list()
         for stat in stats:
             json_str = json.dumps(dataclasses.asdict(stat))
-            message = Parse(json_str, pb_msg_obj())
+            message = Parse(json_str, pb_msg_obj(), ignore_unknown_fields=True)
             proto.append(message)
 
         return proto

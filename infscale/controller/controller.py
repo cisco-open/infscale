@@ -175,11 +175,6 @@ class Controller:
         if not self.autoscaler or not job_ctx.is_server(req.worker_id):
             return
 
-        # if the worker is server, we want to compute change rate of
-        # performance metrics (qlevel and thp). So, update_rate() is
-        # called.
-        metrics.update_rate()
-
         await self.autoscaler.set_event(req.job_id, req.worker_id)
 
     def _cleanup_job_ctx(self, agent_id: str) -> None:

@@ -29,7 +29,7 @@ from infscale.common.job_msg import (
     WorkerStatus,
     WorkerStatusMessage,
 )
-from infscale.common.metrics import Metrics
+from infscale.common.metrics import PerfMetrics
 
 
 logger = None
@@ -56,7 +56,7 @@ class WorkerManager:
 
         self._workers: dict[int, WorkerMetaData] = {}
         self.status_q: asyncio.Queue[WorkerStatusMessage] = asyncio.Queue()
-        self.metrics_q: asyncio.Queue[tuple[str, str, Metrics]] = asyncio.Queue()
+        self.metrics_q: asyncio.Queue[tuple[str, str, PerfMetrics]] = asyncio.Queue()
 
     def add(
         self,

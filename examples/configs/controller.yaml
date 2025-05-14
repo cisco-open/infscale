@@ -13,5 +13,5 @@ reqgen:
   sort: exponential # default, exponential
   params:
     in_memory: true
-    replay: 1 # -1: infinite, 0 < n: replay n times; 0 means play dataset once
-    rate: 10000.0 # only for exponential
+    replay: 7 # -1: infinite, 0 < n: replay n times; 0 means play dataset once
+    rate: 800.0 # only for exponential

@@ -20,7 +20,7 @@ from collections import defaultdict
 
 import yaml
 
-from infscale.common.exceptions import InsufficientResources
+from infscale.common.exceptions import InsufficientResources, InvalidConfig
 from infscale.configs.job import JobConfig
 from infscale.configs.plan import ExecPlan
 from infscale.controller.agent_context import AgentContext
@@ -54,13 +54,7 @@ class CfgGen:
         self._plan_list = plan_list
         self._dispatcher_device = dispatcher_device
 
-        # key: agent id and value is AgentContext
-        # sort agent context by # of unused gpus in a decreasing order
-        # and then by agent id in an increasing order to break a tie
-        tmp = sorted(
-            agent_ctxts.items(), key=lambda item: (-item[1].avail_gpu_count(), item[0])
-        )
-        self._agent_ctxts = dict(tmp)
+        self._agent_ctxts = agent_ctxts
 
         self._server_worker = {
             "id": "s-0",
@@ -76,6 +70,7 @@ class CfgGen:
         self._stage_id_offset = 0
         self._world_id_offset = 0
 
+        self._server_starting_world_ids = []
         # Combined flow graph and workers
         self._combined_flow_graph = {"s-0": []}
         self._combined_workers = []
@@ -93,7 +88,9 @@ class CfgGen:
         self._map_machine_to_agent_id()
 
         config_data = self._process_multiple_exec_plans()
+
         config = JobConfig(**config_data)
+
         config.validate()
 
         return config
@@ -133,6 +130,10 @@ class CfgGen:
 
             # Update world ID offset for next pipeline
             self._world_id_offset += result["total_world_ids"]
+            # reserve one world id for connecting it to server
+            self._server_starting_world_ids.append(self._world_id_offset)
+            # increment world id offset by 1
+            self._world_id_offset += 1
 
         return self._combine(micro_batch_size)
 
@@ -149,12 +150,13 @@ class CfgGen:
                 server_machine_gpu_used.add(self._combined_worker_to_gpu[worker])
 
         # Find the first available GPU on the final server machine
-        for gpu_id in agent_ctxt.avail_gpus():
+        for gpu_id in agent_ctxt.avail_gpus(self._source.job_id):
             if gpu_id not in server_machine_gpu_used:
                 self._server_worker["device"] = f"cuda:{gpu_id}"
                 return
 
-        assert False, "server's device must be set"
+        # if we reach here, server device is not set; so, raise an exception
+        raise InsufficientResources("server's device not set")
 
     def _combine(self, micro_batch_size) -> dict:
         agent_id = self._machine_to_agent_id[self._server_machine]
@@ -165,14 +167,13 @@ class CfgGen:
         # Add server at the beginning of the workers list
         self._combined_workers = [self._server_worker] + self._combined_workers
 
-        # Add server to the flow graph
-        server_starting_world_id = self._world_id_offset
-
-        for connection in self._final_server_connections:
+        for connection, world_id in zip(
+            self._final_server_connections, self._server_starting_world_ids
+        ):
             # We need to update the address and backend of the server connections
             connection["addr"] = agent_ctxt.ip
-            connection["name"] = f"w{server_starting_world_id}"
-            server_starting_world_id += 1
+            connection["name"] = f"w{world_id}"
+
         self._combined_flow_graph["s-0"] = self._final_server_connections
 
         # Create the final config
@@ -225,7 +226,6 @@ class CfgGen:
     ) -> int:
         executed_once = False
         max_machine_id = 0
-
         for stage in plan.stages:
             for machine_id_str, count in stage.gpu_allocation.items():
                 executed_once = True
@@ -234,10 +234,12 @@ class CfgGen:
                 machine_worker_count[machine_id] += count
                 max_machine_id = max(max_machine_id, machine_id)
 
-        assert executed_once, "stages can't be empty"
+        if not executed_once:
+            raise InvalidConfig("stages can't be empty")
 
-        assert_msg = f"Machine ID {max_machine_id} is out of range for the number of machines ({len(self._agent_ctxts)})"
-        assert max_machine_id < len(self._agent_ctxts), assert_msg
+        if max_machine_id >= len(self._agent_ctxts):
+            err_msg = f"Machine ID {max_machine_id} is out of range for the number of machines ({len(self._agent_ctxts)})"
+            raise InsufficientResources(err_msg)
 
         return max_machine_id
 
@@ -247,18 +249,10 @@ class CfgGen:
         machine_offset = 0
         for plan in self._plan_list:
             self._machine_offsets.append(machine_offset)
-
             max_machine_id = self._update_machine_worker_count(
                 plan, machine_offset, machine_worker_count
             )
-
             machine_offset = max_machine_id + 1
-
-        # key: node id and value is # of required gpus
-        # sort the dictionary by # of required gpus in a decreasing order
-        # and then by node id in an increasing order to break a tie
-        tmp = sorted(machine_worker_count.items(), key=lambda item: (-item[1], item[0]))
-        machine_worker_count = dict(tmp)
 
         if len(machine_worker_count) > len(self._agent_ctxts):
             err_msg = f"need: {len(machine_worker_count)} nodes; available: {len(self._agent_ctxts)} nodes"
@@ -269,7 +263,7 @@ class CfgGen:
             mid, count = mwc[0], mwc[1]
             agent_id, agent_ctxt = ac[0], ac[1]
 
-            avail_count = agent_ctxt.avail_gpu_count()
+            avail_count = agent_ctxt.avail_gpu_count(self._source.job_id)
             if count > avail_count:
                 err_msg = f"node {mid} needs {count} GPUs; agent {agent_id} has {avail_count} GPUs"
                 raise InsufficientResources(err_msg)
@@ -278,13 +272,15 @@ class CfgGen:
 
             # determine server/dispatcher's machine
             if self._dispatcher_device == "cuda":
-                if avail_count - 1 >= count:
+                if server_machine is None and avail_count - 1 >= count:
                     server_machine = mid
             else:
-                server_machine = mid
+                if server_machine is None:
+                    server_machine = mid
 
-        assert_msg = "server machine can't be set due to no GPU for it"
-        assert server_machine is not None, assert_msg
+        if server_machine is None:
+            err_msg = "server machine can't be set due to no GPU for it"
+            raise InsufficientResources(err_msg)
 
         self._server_machine = server_machine
 
@@ -312,15 +308,17 @@ class CfgGen:
                 total_count += count
 
             num_replicas = stage.num_replicas
-            assert_msg = f"total # of required GPUs ({total_count}) is different from # of replicas ({num_replicas})"
-            assert total_count == num_replicas, assert_msg
+
+            if total_count != num_replicas:
+                err_msg = f"total # of required GPUs ({total_count}) is different from # of replicas ({num_replicas})"
+                raise InvalidConfig(err_msg)
 
             # Assign workers to machines according to the allocation
             worker_idx = 0
             for machine_id, count in machine_allocs:
                 agent_id = self._machine_to_agent_id[machine_id]
                 agent_ctxt = self._agent_ctxts[agent_id]
-                avail_gpus = agent_ctxt.avail_gpus()
+                avail_gpus = agent_ctxt.avail_gpus(self._source.job_id)
 
                 for _ in range(count):
                     wid = f"{stage_id}-{worker_idx}"
@@ -354,8 +352,9 @@ class CfgGen:
             idx = orig_stage_id - 1
             stage = stages[idx]
 
-            assert_msg = f"stage id ({stage.stage_id}) must be the same as its index ({idx}) in the stages"
-            assert stage.stage_id == idx, assert_msg
+            if stage.stage_id != idx:
+                err_msg = f"stage id ({stage.stage_id}) must be the same as its index ({idx}) in the stages"
+                raise InvalidConfig(err_msg)
 
             prev = stage
             prev_stage_id = prev.stage_id + self._stage_id_offset
@@ -384,7 +383,9 @@ class CfgGen:
             }
             server_connections.append(conn)
 
-        assert "s-0" not in flow_graph, "Server should not be in the flow graph"
+        if "s-0" in flow_graph:
+            err_msg = "server should not be in the flow graph"
+            raise InvalidConfig(err_msg)
 
         # Add worker connections
         for stage in stages:

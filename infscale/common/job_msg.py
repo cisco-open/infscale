@@ -19,7 +19,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from infscale.common.metrics import Metrics
+from infscale.common.metrics import PerfMetrics
 from infscale.configs.job import ServeConfig
 
 
@@ -56,7 +56,7 @@ class JobStatus(Enum):
     UNKNOWN = "unknown"
 
 
-MessageContentType = str | WorkerStatus | ServeConfig | Metrics
+MessageContentType = str | WorkerStatus | ServeConfig | PerfMetrics
 
 
 @dataclass

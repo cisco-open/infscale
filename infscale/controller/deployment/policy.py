@@ -137,3 +137,4 @@ class DeploymentPolicy(ABC):
                 if f"cuda:{gpu_stat.id}" not in devices:
                     continue
                 gpu_stat.used = False
+                gpu_stat.job_id = ""

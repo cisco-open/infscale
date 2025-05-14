@@ -16,6 +16,8 @@
 
 """job.py."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -185,26 +187,22 @@ class JobConfig:
         backend = world_info.backend
 
         if not backend:
-            raise InvalidConfig(
-                f"backend attribute is required when static policy is used"
-            )
+            err_msg = "backend attribute is required when static policy is used"
+            raise InvalidConfig(err_msg)
 
         device_type = worker_devices.get(wid, None)
 
         if not device_type:
-            raise InvalidConfig(
-                f"device attribute is required when static policy is used"
-            )
+            err_msg = "device attribute is required when static policy is used"
+            raise InvalidConfig(err_msg)
 
-        if device_type == "cuda" and backend not in {"gloo", "nccl"}:
-            raise InvalidConfig(
-                f"Worker '{wid}' has device 'cuda' but uses backend '{backend}'. Expected 'gloo' or 'nccl'."
-            )
+        if backend not in {"gloo", "nccl"}:
+            err_msg = f"unknown backend: {backend} for {wid}; Options: gloo, nccl"
+            raise InvalidConfig(err_msg)
 
         if device_type == "cpu" and backend != "gloo":
-            raise InvalidConfig(
-                f"Worker '{wid}' has device 'cpu' but uses backend '{backend}'. Expected 'gloo'."
-            )
+            err_msg = f"invalid backend: {backend} for {wid}; choose gloo for cpu"
+            raise InvalidConfig(err_msg)
 
     def get_serve_configs(self) -> list[ServeConfig]:
         """Convert job config into a list of serve config dict."""
@@ -245,3 +243,46 @@ class JobConfig:
             serve_configs.append(ServeConfig(**config))
 
         return serve_configs
+
+    @staticmethod
+    def is_identical(x: JobConfig, y: JobConfig) -> bool:
+        """Determine if two job configs are structurally identical.
+
+        This static method is used to determine whether a job config for update
+        is the same as the currently deployed job config.
+        Note that port numbers and other attributes (e.g., micro_batch_size)
+        are currently ignored since reflecting such changes requires logic
+        changes in the broad codebase (e.g., across controller, agent and worker)
+        """
+        if x is None or y is None:
+            return False
+
+        if len(x.workers) != len(y.workers):
+            return False
+
+        for xw, yw in zip(x.workers, y.workers):
+            if xw != yw:
+                return False
+
+        if len(x.flow_graph) != len(y.flow_graph):
+            return False
+
+        for xitem, yitem in zip(x.flow_graph.items(), y.flow_graph.items()):
+            (xkey, xworld_info_list) = xitem
+            (ykey, yworld_info_list) = yitem
+            if xkey != ykey:
+                return False
+
+            if len(xworld_info_list) != len(yworld_info_list):
+                return False
+
+            for xworld, yworld in zip(xworld_info_list, yworld_info_list):
+                if (
+                    xworld.addr != yworld.addr
+                    or xworld.backend != yworld.backend
+                    or xworld.name != yworld.name
+                    or xworld.peers != yworld.peers
+                ):
+                    return False
+
+        return True

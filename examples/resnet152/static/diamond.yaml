@@ -13,7 +13,7 @@ micro_batch_size: 8
 fwd_policy: "rr"
 job_id: "job1"
 # maximum number of requests in flight at any given point in time
-max_inflight: 8
+max_inflight: 800
 
 # Note: IP addresses should be agents'
 flow_graph:

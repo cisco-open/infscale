@@ -18,7 +18,7 @@
 
 import time
 
-from infscale.common.metrics import Metrics
+from infscale.common.metrics import PerfMetrics
 
 
 class MetricsCollector:
@@ -89,7 +89,7 @@ class MetricsCollector:
         # update the last time with the current time
         self._last_time = now
 
-    def retrieve(self) -> Metrics:
+    def retrieve(self) -> PerfMetrics:
         """Return metrics.
 
         Note: This function should be called periodically (e.g., every second).
@@ -98,4 +98,5 @@ class MetricsCollector:
         # since we need an interval to compute throughput
         self._compute_input_output_rates()
 
-        return Metrics(self._qlevel, self._delay, self._input_rate, self._output_rate)
+        m = PerfMetrics(self._qlevel, self._delay, self._input_rate, self._output_rate)
+        return m

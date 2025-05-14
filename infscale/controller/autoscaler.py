@@ -19,87 +19,18 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
+import time
 from typing import TYPE_CHECKING
 
 from infscale import get_logger
+from infscale.common.metrics import PerfMetrics
+from infscale.controller.job_context import JobContext, JobStateEnum
 
 
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
 logger = None
-
-
-class PerfMetrics:
-    """PerfMetrics class."""
-
-    def __init__(self, window_size: int = 10) -> None:
-        """Initialize an instance.
-
-        Attributes:
-            window_size (int): a sliding window size to calculate diff; default is 10.
-        """
-        # length of queue, i.e., number of requests waiting to be served
-        self.qlevel = 0.0
-        # second to serve one request
-        self.delay = 0.0
-        # the number of requests arrived per second
-        self.input_rate = 0.0
-        # the number of requests served per second
-        self.output_rate = 0.0
-
-        self._window_size = window_size
-        self._qlevel_diff = 0.0
-        self._output_rate_diff = 0.0
-
-        self._qlevel_dq = deque()
-        self._output_rate_dq = deque()
-
-        self._suppress_factor = 1.5
-
-    def update(
-        self, qlevel: float, delay: float, input_rate: float, output_rate: float
-    ) -> None:
-        """Update metric's values."""
-        self.qlevel = qlevel
-        self.delay = delay
-        self.input_rate = input_rate
-        self.output_rate = output_rate
-
-    def update_rate(self) -> None:
-        """Update rate of qlevel and output rate changes over a window of samples.
-
-        This method doesn't need to be called for every worker in a job. Instead,
-        call this method for workers that need to monitor the changes of qlevel
-        and throughput.
-        This method should be only called in conjunction with update() so that
-        the rate change can be accurately caculated.
-        """
-        self._qlevel_dq.append(self.qlevel)
-        self._output_rate_dq.append(self.output_rate)
-
-        if len(self._qlevel_dq) < self._window_size:
-            return
-
-        old_qlevel = self._qlevel_dq.popleft()
-        old_output_rate = self._output_rate_dq.popleft()
-        self._qlevel_diff = self.qlevel - old_qlevel
-        self._output_rate_diff = self.output_rate - old_output_rate
-
-    def is_congested(self) -> bool:
-        """Return true if queue continues to build up while throughput is saturated."""
-        # measure qlevel is larger than output rate * suppress factor
-        cond1 = self.qlevel > self.output_rate * self._suppress_factor
-        # measure if qlevel change is larger than output rate change
-        cond2 = self._qlevel_diff > self._output_rate_diff
-        logger.debug(f"cond1: {cond1}, cond2: {cond2}")
-
-        return cond1 or cond2
-
-    def __str__(self) -> str:
-        """Return string representation for the object."""
-        return f"qlevel: {self.qlevel}, delay: {self.delay}, input_rate: {self.input_rate}, output_rate: {self.output_rate}"
 
 
 class AutoScaler:
@@ -110,8 +41,16 @@ class AutoScaler:
         global logger
         logger = get_logger()
 
-        self._event_queue = asyncio.Queue()
         self._ctrl = controller
+
+        self._event_queue = asyncio.Queue()
+
+        # to suppress frequent autoscaling; defaut: 30 sec
+        self._interval = 30
+        # the last time to run autoscale
+        self._last_run = -1
+        # to keep track of whether there is improvement after autoscaling
+        self._last_output_rate = -1
 
     async def run(self) -> None:
         """Run autoscaling functionality."""
@@ -119,10 +58,44 @@ class AutoScaler:
             job_id, wrkr_id = await self._event_queue.get()
 
             job_ctx = self._ctrl.job_contexts.get(job_id)
-            metrics = job_ctx.get_wrkr_metrics(wrkr_id)
+            if job_ctx.state_enum != JobStateEnum.RUNNING:
+                logger.debug("job not in running state; autoscaling disallowed")
+                continue
 
-            logger.debug(f"do dummy scaling work for {job_id}-{wrkr_id}")
-            logger.debug(f"is congested: {metrics.is_congested()}")
+            metrics = job_ctx.get_wrkr_metrics(wrkr_id)
+            logger.debug(f"metrics: {metrics}, is_congested: {metrics.is_congested()}")
+
+            if time.perf_counter() - self._last_run < self._interval:
+                # to prevent too frequent autoscaling
+                continue
+
+            if not metrics.is_congested():
+                # TODO: if not congested, check if scale-in is necessary
+                continue
+
+            if self._last_output_rate >= metrics.output_rate:
+                # there seems no improvement even after autoscaling
+                # so, don't try to scale out
+                continue
+
+            await self._scale_out(job_ctx, metrics)
+
+    async def _scale_out(self, ctx: JobContext, metrics: PerfMetrics) -> None:
+        rate = metrics.rate_to_decongest()
+        ctx.set_desired_rate(rate)
+
+        logger.debug(f"congested, desired rate = {rate}")
+
+        try:
+            await ctx.update()
+        except Exception as e:
+            logger.debug(f"exception: {e}")
+            self._last_run = time.perf_counter()
+            return
+
+        self._last_run = time.perf_counter()
+        self._last_output_rate = metrics.output_rate
+        logger.debug("finished scaling-out")
 
     async def set_event(self, job_id: str, wrkr_id: str) -> None:
         """Set an autoscaling event for a given job and worker."""
