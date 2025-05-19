@@ -65,13 +65,14 @@ on the remote machine.
 - ```steps```: a list of steps that will be executed. Think of these steps as
 a way to instruct the system on how to perform certain tasks.
 
-### Attributes for steps
+### Attributes for step
 
 - ```processes```: a list of processes that will be executed for each step
 (e.g.: start job, then, status job, etc)
 
-- ```cmd```: command that will be executed for each process,
-there are two types of commands ```infscale_cmd (default)``` or ```other```.
+#### Attributes for process
+
+- ```type```: there are two types of commands ```infscale_cmd (default)``` or ```other```.
 
   - ```infscale_cmd``` will execute ```infscale``` specific commands
 (start job, update job, stop job). This command needs some ```args```.
@@ -83,6 +84,11 @@ available in the system. The difference between ```infscale_cmd``` and
 ```other``` is that ```other``` expects the program name to be specified.
 For example, ```sleep``` is a separate program in ```sleep 3```;
 it's not a command argument or something similar.
+- ```cmd```: command that will be executed for each process.
+- ```args```: extra arguments that are needed to run ```cmd```
+(e.g.: job_id, path to job config file, etc.)
+
+Run ```python -m infscale --help``` in order to see all available commands of ```infscale```.
 
 So, by following the YAML structure from above,
 a multitude of test scenarios can be created.
