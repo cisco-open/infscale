@@ -18,7 +18,6 @@
 
 import argparse
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -106,7 +105,7 @@ class IntegrationTest:
         if host in self.logs_sync_data:
             return
 
-        cmd = f"tail -f /{LOG_FOLDER}/test.log"
+        cmd = f"tail -f {LOG_FOLDER}/test.log | " f"stdbuf -oL sed 's/^/[{host}] /'"
 
         with open(self.local_log_path, "a") as f:
             p = subprocess.Popen(
@@ -256,9 +255,7 @@ class IntegrationTest:
                 break
             buffer.append(next_line)
 
-        print(
-            f"{PRINT_COLOR['failed']}Error:\n {''.join(buffer)}{PRINT_COLOR['black']}"
-        )
+        print(f"{PRINT_COLOR['failed']}Error:\n{''.join(buffer)}{PRINT_COLOR['black']}")
 
 
 if __name__ == "__main__":
