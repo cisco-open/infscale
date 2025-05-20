@@ -37,7 +37,7 @@ class EvenDeploymentPolicy(DeploymentPolicy):
     def split(
         self,
         dev_type: DeviceType,
-        agent_data_list: list[AgentMetaData],
+        agent_info: dict[str, AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
     ) -> dict[str, AssignmentCollection]:
@@ -49,7 +49,8 @@ class EvenDeploymentPolicy(DeploymentPolicy):
         the "extra" workers are assigned to the first agents in the list.
         """
         # dictionary to hold the workers for each agent_id
-        assignment_map = self.get_curr_assignment_map(agent_data_list)
+        assignment_map = self.get_curr_assignment_map(agent_info)
+        agent_data_list = list(agent_info.values())
 
         workers = self.get_new_workers(assignment_map, job_config.workers)
 

@@ -166,9 +166,7 @@ class RunningState(BaseJobState):
 
     async def update(self):
         """Transition to UPDATING state."""
-        agent_ids = self.context._get_ctx_agent_ids()
-
-        self.context.process_cfg(agent_ids)
+        self.context.process_cfg()
 
         tasks = []
 
@@ -411,9 +409,8 @@ class JobContext:
         """Send command to all agents in the job."""
         tasks = []
 
-        agent_ids = self._get_ctx_agent_ids()
-        for aid in agent_ids:
-            task = self.ctrl._send_command_to_agent(aid, self.job_id, command)
+        for agent_id in self.agent_info.keys():
+            task = self.ctrl._send_command_to_agent(agent_id, self.job_id, command)
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -464,20 +461,19 @@ class JobContext:
         """Set worker's performance metrics."""
         self.wrkr_metrics[wrkr_id] = metrics
 
-    def process_cfg(self, agent_ids: list[str]) -> None:
+    def process_cfg(self) -> None:
         """Process received config from controller and set a deployer of agent ids."""
         self._new_cfg = self.ctrl.planner.build_config(
             self.req.config, self.ctrl.agent_contexts
         )
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
-        agent_data_list = self._get_agents_data(agent_ids)
-        agent_resources = self._get_agent_resources_map(agent_ids)
+        agent_resources = self._get_agent_resources_map()
 
         dev_type = self._decide_dev_type(agent_resources, self._new_cfg)
 
         assignment_map = self.ctrl.deploy_policy.split(
-            dev_type, agent_data_list, agent_resources, self._new_cfg
+            dev_type, self.agent_info, agent_resources, self._new_cfg
         )
 
         self._update_agent_data(assignment_map)
@@ -531,24 +527,12 @@ class JobContext:
 
         return len(new_worker_ids)
 
-    def _get_agent_resources_map(
-        self, agent_ids: list[str]
-    ) -> dict[str, AgentResources]:
+    def _get_agent_resources_map(self) -> dict[str, AgentResources]:
         """Return map with agent resources based on given agent ids."""
         result = {}
 
-        for agent_id in agent_ids:
+        for agent_id in self.agent_info.keys():
             result[agent_id] = self.ctrl.agent_contexts[agent_id].resources
-
-        return result
-
-    def _get_agents_data(self, agent_ids: list[str]) -> list[AgentMetaData]:
-        """Get a list of agent metadata given agent ids."""
-        result = []
-
-        for agent_id in agent_ids:
-            data = self.agent_info[agent_id]
-            result.append(data)
 
         return result
 
@@ -752,16 +736,9 @@ class JobContext:
 
             del self.agent_info[id]
 
-    def _get_ctx_agent_ids(self) -> list[str]:
-        """Return current agent ids."""
-        agent_ids = list(self.agent_info.keys())
-        self._check_agent_ids(agent_ids)
-
-        return agent_ids
-
-    def _check_agent_ids(self, agent_ids: list[str]) -> None:
-        """Check available agent ids or raise exception."""
-        if len(agent_ids) == 0:
+    def _check_agent_info(self) -> None:
+        """Check available agent data or raise exception."""
+        if len(self.agent_info) == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="No agent found",
@@ -906,11 +883,11 @@ class JobContext:
         agent_ids = list(self.ctrl.agent_contexts.keys())
         agent_ips = [ctx.ip for ctx in self.ctrl.agent_contexts.values()]
 
-        self._check_agent_ids(agent_ids)
-
         self._manage_agent_metadata(agent_ids, agent_ips)
 
-        self.process_cfg(agent_ids)
+        self._check_agent_info()
+
+        self.process_cfg()
 
         tasks = []
 

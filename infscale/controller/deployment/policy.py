@@ -40,7 +40,7 @@ class DeploymentPolicy(ABC):
     def split(
         self,
         dev_type: DeviceType,
-        agent_data_list: list[AgentMetaData],
+        agent_info: dict[str, AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
     ) -> dict[str, AssignmentCollection]:
@@ -61,14 +61,14 @@ class DeploymentPolicy(ABC):
         return new_workers
 
     def get_curr_assignment_map(
-        self, agent_data_list: list[AgentMetaData]
+        self, agent_info: dict[str, AgentMetaData]
     ) -> dict[str, AssignmentCollection]:
         """Return current assignment map for each agent."""
         results = {}
 
-        for agent_data in agent_data_list:
+        for id, agent_data in agent_info.items():
             if len(agent_data.assignment_coll):
-                results[agent_data.id] = agent_data.assignment_coll
+                results[id] = agent_data.assignment_coll
 
         return results
 

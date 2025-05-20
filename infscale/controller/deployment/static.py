@@ -41,7 +41,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
     def split(
         self,
         dev_type: DeviceType,
-        agent_data_list: list[AgentMetaData],
+        agent_info: dict[str, AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
     ) -> dict[str, AssignmentCollection]:
@@ -49,7 +49,7 @@ class StaticDeploymentPolicy(DeploymentPolicy):
         temp_res = {}
         try:
             return self._split(
-                dev_type, agent_data_list, agent_resources, job_config, temp_res
+                dev_type, agent_info, agent_resources, job_config, temp_res
             )
         except InfScaleException as e:
             self._rollback_device_state(temp_res)
@@ -59,12 +59,13 @@ class StaticDeploymentPolicy(DeploymentPolicy):
     def _split(
         self,
         dev_type: DeviceType,
-        agent_data_list: list[AgentMetaData],
+        agent_info: dict[str, AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
         temp_res: dict[AgentResources, set[str]] = None,
     ) -> dict[str, AssignmentCollection]:
-        assignment_map = self.get_curr_assignment_map(agent_data_list)
+        assignment_map = self.get_curr_assignment_map(agent_info)
+        agent_data_list = list(agent_info.values())
 
         workers = self.get_new_workers(assignment_map, job_config.workers)
 

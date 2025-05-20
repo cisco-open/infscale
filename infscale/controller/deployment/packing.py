@@ -34,7 +34,7 @@ class PackingPolicy(DeploymentPolicy):
     def split(
         self,
         dev_type: DeviceType,
-        agent_data_list: list[AgentMetaData],
+        agent_info: dict[str, AgentMetaData],
         agent_resources: dict[str, AgentResources],
         job_config: JobConfig,
     ) -> dict[str, AssignmentCollection]:
@@ -45,7 +45,7 @@ class PackingPolicy(DeploymentPolicy):
         Deploy as many workers as the resources allow.
         """
         # dictionary to hold the workers for each agent_id
-        assignment_map = self.get_curr_assignment_map(agent_data_list)
+        assignment_map = self.get_curr_assignment_map(agent_info)
 
         workers = self.get_new_workers(assignment_map, job_config.workers)
 
