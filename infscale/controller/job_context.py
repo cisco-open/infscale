@@ -41,6 +41,7 @@ from infscale.controller.agent_context import (
 from infscale.controller.autoscaler import PerfMetrics
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 from infscale.controller.deployment.assignment import AssignmentCollection
+from infscale.controller.job_monitor import JobMonitor
 
 
 if TYPE_CHECKING:
@@ -372,6 +373,7 @@ class JobContext:
         # list of agent ids that will deploy workers
         self.running_agent_info: list[AgentMetaData] = []
         self.past_running_agent_info: list[AgentMetaData] = []
+        self.job_monitor = JobMonitor(self.wrk_status)
 
         global logger
         logger = get_logger()
@@ -450,6 +452,17 @@ class JobContext:
         """Set worker status."""
         self.wrk_status[wrk_id] = status
 
+        if status == WorkerStatus.FAILED:
+            self._monitor_job()
+
+    def _monitor_job(self) -> None:
+        """Decide wether the job is failed or not."""
+        job_failed = self.job_monitor.is_job_failed()
+
+        if job_failed:
+            self.cleanup()
+            self.set_state(JobStateEnum.FAILED)
+
     def get_wrkr_metrics(self, wrkr_id: str) -> PerfMetrics:
         """Get worker's performance metrics.
 
@@ -489,6 +502,8 @@ class JobContext:
 
         self.past_running_agent_info = self.running_agent_info
         self.running_agent_info = running_agent_info
+
+        self.job_monitor.init_config(self._new_cfg)
 
     def _decide_dev_type(
         self, agent_resources: dict[str, AgentResources], config: JobConfig
