@@ -204,6 +204,7 @@ class Test:
     env_activate_command: str
     log_level: str
     steps: list[TestStep]
+    timeout: int = 60  # test timeout in seconds
     controller: TestControllerConfig = None
 
     def __post_init__(self):

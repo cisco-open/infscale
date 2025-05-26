@@ -3,6 +3,7 @@ controller:
 work_dir: ~/projects/infscale
 env_activate_command: conda activate pytorch-dev
 log_level: INFO
+timeout: 100
 steps:
     - processes:
       - cmd: start job

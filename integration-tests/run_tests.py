@@ -45,6 +45,8 @@ class IntegrationTest:
         self.is_failure = False
         self.monitor_logs_evt = threading.Event()
         self.log_thread: threading.Thread = None
+        self.timeout_timer: threading.Timer = None
+        self.curr_process: subprocess.Popen = None
 
         self._init(test_cfg_path, test_path)
 
@@ -71,12 +73,10 @@ class IntegrationTest:
 
     def run_test(self):
         """Run test based on test file."""
-        work_dir, steps = self.test.work_dir, self.test.steps
-        ctrl_host = self.test_cfg.controller.host
-
+        self._start_test_timer()
         self._create_remote_logs_folder(self.test.work_dir)
 
-        for step in steps:
+        for step in self.test.steps:
             if self.is_failure:
                 break
 
@@ -84,7 +84,14 @@ class IntegrationTest:
             self._run_test(str(step))
 
         self._stop_remote_log_sync()
-        self._cleanup(work_dir, ctrl_host)
+        self._cleanup()
+
+    def _start_test_timer(self) -> None:
+        """Start thread for monitoring test timeout."""
+        self.timeout_timer = threading.Timer(
+            self.test.timeout, self._test_timeout_monitor
+        )
+        self.timeout_timer.start()
 
     def _generate_inventory(self, test_cfg: TestConfig) -> str:
         """Generate inventory temp file based on hosts specified in config."""
@@ -144,7 +151,7 @@ class IntegrationTest:
 
     def _start_process(self, command: str, name: str) -> None:
         """Run process with command."""
-        process = subprocess.Popen(
+        self.curr_process = subprocess.Popen(
             command,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -153,16 +160,16 @@ class IntegrationTest:
         )
 
         # re-route output to the terminal for visual feedback
-        for line in process.stdout:
+        for line in self.curr_process.stdout:
             print(line, end="")
 
-        process.wait()
+        self.curr_process.wait()
 
-        if process.returncode != 0:
+        if self.curr_process.returncode != 0:
             print(
-                f"{PRINT_COLOR['failed']}\n'{name}' failed with exit code {process.returncode}.{PRINT_COLOR['black']}"
+                f"{PRINT_COLOR['failed']}\n'{name}' failed with exit code {self.curr_process.returncode}.{PRINT_COLOR['black']}"
             )
-            sys.exit(f"\n'{name}' failed with exit code {process.returncode}")
+            sys.exit(f"\n'{name}' failed with exit code {self.curr_process.returncode}")
         else:
             print(
                 f"{PRINT_COLOR['success']}\n'{name}' completed successfully.{PRINT_COLOR['black']}"
@@ -183,8 +190,13 @@ class IntegrationTest:
 
         os.remove(file_name)
 
-    def _cleanup(self, work_dir: str, ctrl_host: str) -> None:
+    def _cleanup(self) -> None:
         """Do cleanup after all tests are executed."""
+        work_dir = self.test.work_dir
+        ctrl_host = self.test_cfg.controller.host
+        self.timeout_timer.cancel()
+        self.monitor_logs_evt.set()
+
         # remove temp local logs folder
         shutil.rmtree(LOG_FOLDER)
 
@@ -208,7 +220,6 @@ class IntegrationTest:
         ]
 
         self._start_process(command, "cleanup processes")
-        self.monitor_logs_evt.set()
 
     def _get_temp_file(self, file: str) -> str:
         """Return a temporary yaml file name.
@@ -244,6 +255,17 @@ class IntegrationTest:
                     self._handle_error_block(f, line)
                     self.monitor_logs_evt.set()
                     self.is_failure = True
+
+    def _test_timeout_monitor(self) -> None:
+        """Wait for specified amount of time and do cleanup after."""
+        timeout = self.test.timeout
+        time.sleep(timeout)
+        print(
+            f"{PRINT_COLOR['failed']}\nTimeout reached ({timeout}s, test failed){PRINT_COLOR['black']}"
+        )
+        self.curr_process.terminate()
+
+        self._cleanup()
 
     def _handle_error_block(self, file_obj: TextIO, first_line: str):
         """Collect and handle a multi-line error block starting with `first_line`."""
