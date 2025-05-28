@@ -1,14 +1,5 @@
 - name: {{ cmd }}
   shell: >
     {{{ shell }}}
-{{^wait_response}}
   async: 1
   poll: 0
-{{/wait_response}}
-{{#wait_response}}
-  register: cmd_result
-  until: cmd_result.stdout == "{{ condition.success }}"
-  failed_when: cmd_result.stdout == "{{ condition.fail }}"
-  retries: 60
-  delay: 1
-{{/wait_response}}

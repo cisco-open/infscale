@@ -1,23 +1,17 @@
-- name: poll job status
-  hosts: {{ host }}
-  gather_facts: false
-  tasks:
-    - name: check endpoint health and if job exists
-      uri:
-        url: http://127.0.0.1:8080/job/{{ job_id }}
-        method: GET
-        return_content: yes
-        timeout: 3
-      register: precheck
-      failed_when: precheck.status == -1 or precheck.status == 404
+- name: Check job status until {{ condition.success }} or {{ condition.fail }}
+  shell: >
+   {{{ shell }}}
+  register: cmd_result
+  changed_when: false
+  retries: {{ timeout }}
+  delay: 1
+  until: cmd_result.stdout in ["{{ condition.success }}", "{{ condition.fail }}"]
 
-    - name: poll job status endpoint until {{#statuses}}'{{.}}', {{/statuses}} is returned
-      uri:
-        url: http://127.0.0.1:8080/job/{{ job_id }}
-        method: GET
-        return_content: yes
-        timeout: 3
-      register: job_status
-      until: job_status.json in [{{#statuses}}'{{.}}', {{/statuses}}] # create a list of statuses
-      retries: 60  # 60 seconds
-      delay: 1  # delay between retries in seconds
+- name: Got job status
+  debug:
+    msg: "Job status: {{ cmd_result_stdout }}"
+
+- name: Fail the play if job failed
+  fail:
+    msg: "Job has failed with status: {{ cmd_result_stdout }}"
+  when: cmd_result.stdout == "{{ condition.fail }}"

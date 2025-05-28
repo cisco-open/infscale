@@ -127,10 +127,16 @@ class ProcessConfig:
     type: CmdType = CmdType.INFSCALE_CMD
     args: str = ""
     condition: ProcessCondition = None
+    cmd_result_stdout = ""
+    cmd_result_fail_check = ""
 
     def __post_init__(self):
         if self.condition:
             self.condition = ProcessCondition(**self.condition)
+            self.cmd_result_stdout = "{{ cmd_result.stdout }}"
+            self.cmd_result_fail_check = (
+                f'{{ cmd_result.stdout == "{self.condition.fail}" }}'
+            )
 
         self.wait_response = bool(self.condition)
         self.shell = str(
@@ -146,8 +152,12 @@ class ProcessConfig:
 
     def __str__(self) -> None:
         """Render task from a mustache template."""
-        template = Path("templates/task.yaml").read_text()
-        rendered = pystache.render(template, self)
+        template = "templates/task.yaml"
+
+        if self.wait_response:
+            template = "templates/job_status.yaml"
+
+        rendered = pystache.render(Path(template).read_text(), self)
         return rendered
 
 
@@ -160,6 +170,7 @@ class TestStep:
     log_level: str
     processes: str = ""
     rendered_processes = []
+    timeout: int = 60
     host: str = "all"
 
     def __post_init__(self):
@@ -170,6 +181,7 @@ class TestStep:
         for i, process in enumerate(self.processes):
             process_cfg = ProcessConfig(
                 **process,
+                timeout=self.timeout,
                 work_dir=self.work_dir,
                 env_activate_command=self.env_activate_command,
                 log_level=self.log_level,
@@ -223,6 +235,7 @@ class Test:
                 env_activate_command=self.env_activate_command,
                 log_level=self.log_level,
                 host=ctrl_host,
+                timeout=self.timeout,
                 **step,
             )
             steps.append(test_step)
