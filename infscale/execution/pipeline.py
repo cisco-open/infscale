@@ -283,7 +283,11 @@ class Pipeline:
         recv_task = asyncio.create_task(self._server_recv(self.router))
 
         await asyncio.gather(*[send_task, recv_task])
+
         logger.info("inference serving is done")
+
+        # wait forever
+        await asyncio.Event().wait()
 
     async def _run_worker(self):
         logger.debug("start to run worker")
