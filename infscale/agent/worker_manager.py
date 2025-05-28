@@ -122,8 +122,9 @@ class WorkerManager:
                 message = worker.pipe.recv()
                 self._handle_message(message, worker, fd)
             except EOFError:
-                # EOFError means that the pipe is already closed due to worker termination
-                # so removing the reader is the only thing we need to do here.
+                msg = Message(MessageType.STATUS, WorkerStatus.FAILED, worker.job_id)
+                self._update_worker_status(msg, worker.pipe.fileno())
+
                 loop.remove_reader(fd)
 
     def _handle_message(

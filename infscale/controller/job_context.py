@@ -456,20 +456,23 @@ class JobContext:
         """Get worker status."""
         return self.wrk_status[wrk_id]
 
-    def set_wrk_status(self, wrk_id: str, status: WorkerStatus) -> None:
+    async def set_wrk_status(self, wrk_id: str, status: WorkerStatus) -> None:
         """Set worker status."""
         self.wrk_status[wrk_id] = status
 
         if status == WorkerStatus.FAILED:
-            self._check_job()
+            await self._check_job()
 
-    def _check_job(self) -> None:
+    async def _check_job(self) -> None:
         """Decide wether the job is failed or not."""
         job_failed = self.job_checker.is_job_failed()
 
         if job_failed:
-            self.cleanup()
-            self.set_state(JobStateEnum.FAILED)
+            command = CommandActionModel(
+                action=CommandAction.STOP, job_id=self.job_id
+            )
+
+            await self.send_command_to_agents(command)
 
     def get_wrkr_metrics(self, wrkr_id: str) -> PerfMetrics:
         """Get worker's performance metrics.

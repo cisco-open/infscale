@@ -159,7 +159,7 @@ class Controller:
         try:
             status_enum = WorkerStatus(status)
             job_ctx = self.job_contexts.get(job_id)
-            job_ctx.set_wrk_status(wrk_id, status_enum)
+            await job_ctx.set_wrk_status(wrk_id, status_enum)
 
             await job_ctx.do_wrk_cond(wrk_id, status_enum)
         except ValueError:
