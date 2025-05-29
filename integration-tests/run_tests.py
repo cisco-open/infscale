@@ -30,7 +30,7 @@ from typing import TextIO
 import pystache
 import yaml
 from constants import ERROR_PATTERN, LOG_FOLDER, PRINT_COLOR
-from tests_dtype import Test, TestConfig
+from tests_dtype import Test, TestConfig, TestStep
 
 
 class IntegrationTest:
@@ -67,9 +67,20 @@ class IntegrationTest:
 
     def _create_local_log(self) -> None:
         """Create local log folder and file to store remote logs."""
+        # remove temp local logs folder
+        try:
+            shutil.rmtree(LOG_FOLDER)
+        except FileNotFoundError:
+            pass
+
         log_path = Path(f"{LOG_FOLDER}/test.log")
         log_path.parent.mkdir(parents=True, exist_ok=True)
         log_path.touch(exist_ok=True)
+
+        print(
+            f"{PRINT_COLOR['success']}Remote logs will be pushed to this file:"
+            + f"{LOG_FOLDER}/test.log{PRINT_COLOR['black']}"
+        )
 
     def run_test(self):
         """Run test based on test file."""
@@ -81,7 +92,7 @@ class IntegrationTest:
                 break
 
             self._start_remote_log_sync(step.host, step.work_dir)
-            self._run_test(str(step))
+            self._run_test(step)
 
         self._stop_remote_log_sync()
         self._cleanup()
@@ -116,7 +127,7 @@ class IntegrationTest:
 
         with open(self.local_log_path, "a") as f:
             p = subprocess.Popen(
-                ["ssh", host, cmd],
+                ["ssh", "-q", host, cmd],
                 stdout=f,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
@@ -126,7 +137,18 @@ class IntegrationTest:
 
     def _stop_remote_log_sync(self) -> None:
         """Terminate logs processes."""
-        for proc in self.logs_sync_data.values():
+        for host, proc in self.logs_sync_data.items():
+            try:
+                subprocess.run(
+                    ["ssh", "-q", host, f"pkill -f 'tail -f {LOG_FOLDER}/test.log'"],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                print(f"Remote tail process killed on {host}")
+            except subprocess.CalledProcessError:
+                print(f"Failed to kill remote tail process on {host}")
+
             proc.terminate()
 
     def _create_remote_logs_folder(self, work_dir: str) -> None:
@@ -169,15 +191,16 @@ class IntegrationTest:
             print(
                 f"{PRINT_COLOR['failed']}\n'{name}' failed with exit code {self.curr_process.returncode}.{PRINT_COLOR['black']}"
             )
+            self._cleanup()
             sys.exit(f"\n'{name}' failed with exit code {self.curr_process.returncode}")
         else:
             print(
                 f"{PRINT_COLOR['success']}\n'{name}' completed successfully.{PRINT_COLOR['black']}"
             )
 
-    def _run_test(self, test_content: str) -> None:
+    def _run_test(self, step: TestStep) -> None:
         """Run single test using config."""
-        file_name = self._get_temp_file(test_content)
+        file_name = self._get_temp_file(str(step))
 
         command = [
             "ansible-playbook",
@@ -185,8 +208,8 @@ class IntegrationTest:
             self.inventory,
             file_name,
         ]
-
-        self._start_process(command, file_name)
+        prc_name = ", ".join([process.cmd for process in step.processes])
+        self._start_process(command, prc_name)
 
         os.remove(file_name)
 
@@ -194,11 +217,11 @@ class IntegrationTest:
         """Do cleanup after all tests are executed."""
         work_dir = self.test.work_dir
         ctrl_host = self.test_cfg.controller.host
+        # cancel test timeout
         self.timeout_timer.cancel()
-        self.monitor_logs_evt.set()
 
-        # remove temp local logs folder
-        shutil.rmtree(LOG_FOLDER)
+        # set remote logs monitor event
+        self.monitor_logs_evt.set()
 
         template = Path("templates/cleanup_processes.yaml").read_text()
         rendered = pystache.render(

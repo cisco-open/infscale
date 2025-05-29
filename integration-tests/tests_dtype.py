@@ -124,6 +124,7 @@ class ProcessConfig:
     work_dir: str
     env_activate_command: str
     log_level: str
+    timeout: int
     type: CmdType = CmdType.INFSCALE_CMD
     args: str = ""
     condition: ProcessCondition = None
@@ -168,16 +169,13 @@ class TestStep:
     work_dir: str
     env_activate_command: str
     log_level: str
-    processes: str = ""
-    rendered_processes = []
+    processes: list[ProcessConfig]
     timeout: int = 60
     host: str = "all"
 
     def __post_init__(self):
         if not self.processes:
             return
-        self.rendered_processes = list(self.processes)
-
         for i, process in enumerate(self.processes):
             process_cfg = ProcessConfig(
                 **process,
@@ -186,13 +184,13 @@ class TestStep:
                 env_activate_command=self.env_activate_command,
                 log_level=self.log_level,
             )
-            self.rendered_processes[i] = str(process_cfg)
+            self.processes[i] = process_cfg
 
     def __str__(self) -> None:
         """Render config from a mustache template."""
         template = Path("templates/play.yaml").read_text()
         rendered_tasks = "\n".join(
-            indent(process, 4) for process in self.rendered_processes
+            indent(str(process), 4) for process in self.processes
         )
 
         render_data = {
@@ -229,7 +227,7 @@ class Test:
         self._add_ctrl_step(steps)
         self._add_agent_steps(steps)
 
-        for i, step in enumerate(list(self.steps)):
+        for step in list(self.steps):
             test_step = TestStep(
                 work_dir=self.work_dir,
                 env_activate_command=self.env_activate_command,

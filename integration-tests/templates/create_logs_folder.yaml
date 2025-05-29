@@ -13,3 +13,4 @@
     file:
       path: "{{ log_folder }}/test.log"
       state: touch
+    ignore_errors: true
