@@ -19,6 +19,7 @@
 import argparse
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -95,7 +96,7 @@ class IntegrationTest:
             self._run_test(step)
 
         self._stop_remote_log_sync()
-        self._cleanup()
+        self.cleanup()
 
     def _start_test_timer(self) -> None:
         """Start thread for monitoring test timeout."""
@@ -179,6 +180,7 @@ class IntegrationTest:
             stderr=subprocess.STDOUT,
             bufsize=1,
             universal_newlines=True,
+            start_new_session=True,
         )
 
         # re-route output to the terminal for visual feedback
@@ -191,7 +193,7 @@ class IntegrationTest:
             print(
                 f"{PRINT_COLOR['failed']}\n'{name}' failed with exit code {self.curr_process.returncode}.{PRINT_COLOR['black']}"
             )
-            self._cleanup()
+            self.cleanup()
             sys.exit(f"\n'{name}' failed with exit code {self.curr_process.returncode}")
         else:
             print(
@@ -213,7 +215,7 @@ class IntegrationTest:
 
         os.remove(file_name)
 
-    def _cleanup(self) -> None:
+    def cleanup(self) -> None:
         """Do cleanup after all tests are executed."""
         work_dir = self.test.work_dir
         ctrl_host = self.test_cfg.controller.host
@@ -222,6 +224,14 @@ class IntegrationTest:
 
         # set remote logs monitor event
         self.monitor_logs_evt.set()
+
+        try:
+            os.killpg(self.curr_process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+        # remove temp local logs folder
+        shutil.rmtree(LOG_FOLDER)
 
         template = Path("templates/cleanup_processes.yaml").read_text()
         rendered = pystache.render(
@@ -286,9 +296,8 @@ class IntegrationTest:
         print(
             f"{PRINT_COLOR['failed']}\nTimeout reached ({timeout}s, test failed){PRINT_COLOR['black']}"
         )
-        self.curr_process.terminate()
 
-        self._cleanup()
+        self.cleanup()
 
     def _handle_error_block(self, file_obj: TextIO, first_line: str):
         """Collect and handle a multi-line error block starting with `first_line`."""
@@ -311,4 +320,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     int_test = IntegrationTest(args.config, args.test)
-    int_test.run_test()
+    try:
+        int_test.run_test()
+    except KeyboardInterrupt:
+        print("\nCancelling test, please wait for the cleanup process to finish.")
+
+        int_test.cleanup()
