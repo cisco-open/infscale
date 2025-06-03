@@ -151,7 +151,6 @@ class Stage(nn.Module):
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
 
-        logger.debug("run llm first stage")
         logger.debug(
             f"input_ids's size: {input_ids.size()} "
             + f"attention_mask's size: {attention_mask.size()}"
@@ -168,7 +167,6 @@ class Stage(nn.Module):
         self, seqno: int, cache: DynamicCache, **inputs
     ) -> dict[str, Tensor]:
         """Run a middle stage of llm."""
-        logger.debug("run llm middle stage")
         # attention mask passed from the upstream stage shouldn't be used
         # during inference. we save it to pass it to the next stage
         attention_mask = inputs["attention_mask"]
@@ -185,7 +183,6 @@ class Stage(nn.Module):
         self, seqno: int, cache: DynamicCache, **inputs
     ) -> dict[str, Tensor]:
         """Run the last stage of llm."""
-        logger.debug("run llm last stage")
         # attention mask passed from the upstream stage shouldn't be used
         # during inference. we save it to use during output parsing
         attention_mask = inputs["attention_mask"]

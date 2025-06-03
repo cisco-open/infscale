@@ -75,12 +75,7 @@ class Channel:
 
     async def _setup_server(self, setup_done: asyncio.Event) -> None:
         server = await asyncio.start_server(self._handle_client, self.addr, self.port)
-
-        addrs = ", ".join(str(sock.getsockname()) for sock in server.sockets)
-        logger.info(f"Serving on {addrs}")
-
         setup_done.set()
-        logger.info("set the setup_done event")
 
         async with server:
             await server.serve_forever()
@@ -90,34 +85,29 @@ class Channel:
         message = data.decode()
         peer_rank = int(message)
 
-        logger.info(f"peer rank: {peer_rank}")
         # save reader and writer streams for peer rank
         self.peers[peer_rank] = (reader, writer)
 
     async def _setup_client(self, setup_done: asyncio.Event) -> None:
-        logger.info(f"setting up a client: {self.addr}:{self.port}")
         for i in range(NUM_OF_RETRIES):
             try:
                 reader, writer = await asyncio.open_connection(self.addr, self.port)
             except Exception as e:
                 if i + 1 == NUM_OF_RETRIES:
-                    logger.warn(f"max number ({i+1}) of tries reached")
+                    logger.warning(f"max number ({i+1}) of tries reached")
                     raise e
 
-                logger.info(f"({i+1}): exception occurred: {e}; retrying...")
+                logger.debug(f"({i+1}): exception occurred: {e}; retrying...")
                 await asyncio.sleep(WAIT_DURATION)
-        logger.info("done with setting up a client")
 
         # send my rank to rank 0
         message = f"{self.rank}"
         writer.write(message.encode())
         await writer.drain()
-        logger.info(f"sent rank info({message}) to server")
         # server is always rank 0
         self.peers[0] = (reader, writer)
 
         setup_done.set()
-        logger.info("set the setup_done event")
 
     async def wait_readiness(self):
         """Wait until control channel is fully configured."""
@@ -140,8 +130,6 @@ class Channel:
 
         # wait until setting up either server or client is done
         await setup_done.wait()
-
-        logger.info("channel setup is done")
 
     async def send_ctrl_msg(
         self, rank: int, tensors: dict[str, Tensor], seqno: int = 0

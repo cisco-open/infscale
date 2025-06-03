@@ -124,28 +124,28 @@ class Llama3ModelMetaData(BaseModelMetaData):
         self.bos_token_id = 128000
         if hasattr(self.config, "bos_token_id"):
             self.bos_token_id = self.config.bos_token_id
-        logger.info(f"bos_token_id = {self.bos_token_id}")
+        logger.debug(f"bos_token_id = {self.bos_token_id}")
 
         if hasattr(self.config, "do_sample"):
             self.do_sample = self.config.do_sample
         # let's keep sampling true
         self.do_sample = True
-        logger.info(f"do_sample = {self.do_sample}")
+        logger.debug(f"do_sample = {self.do_sample}")
 
         self.eos_token_id = 128001
         if hasattr(self.config, "eos_token_id"):
             self.eos_token_id = self.config.eos_token_id
-        logger.info(f"eos_token_id = {self.eos_token_id}")
+        logger.debug(f"eos_token_id = {self.eos_token_id}")
 
         self.temperature = 0.6
         if hasattr(self.config, "temperature"):
             self.temperature = self.config.temperature
-        logger.info(f"temperature = {self.temperature}")
+        logger.debug(f"temperature = {self.temperature}")
 
         self.top_p = 1.0
         if hasattr(self.config, "top_p"):
             self.top_p = self.config.top_p
-        logger.info(f"top_p = {self.top_p}")
+        logger.debug(f"top_p = {self.top_p}")
 
         self.max_new_tokens = 64
 
@@ -161,7 +161,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
             "use_cache",
             "past_key_values",
         ]
-        logger.info(f"llama3 trace inputs: {self._trace_inputs}")
+        logger.debug(f"llama3 trace inputs: {self._trace_inputs}")
 
     def get_model(self) -> AutoModelType:
         """Get model."""
@@ -187,7 +187,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
         self.split_points.append("model.norm")
         self.split_points.append("lm_head")
 
-        logger.info(f"#hidden_layers = {self.config.num_hidden_layers}")
+        logger.debug(f"#hidden_layers = {self.config.num_hidden_layers}")
 
         return self.split_points
 

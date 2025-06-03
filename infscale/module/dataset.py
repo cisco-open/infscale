@@ -35,11 +35,7 @@ from transformers import AutoImageProcessor, AutoTokenizer
 from transformers.image_processing_utils import BaseImageProcessor
 from transformers.tokenization_utils import PreTrainedTokenizerBase
 
-from infscale import get_logger
 from infscale.module.model_metadata import BaseModelMetaData, ModelGroup
-
-
-logger = None
 
 
 class HuggingFaceDataset:
@@ -57,9 +53,6 @@ class HuggingFaceDataset:
         max_seq_length: Optional[int] = None,
     ):
         """Initialize the class."""
-        global logger
-        logger = get_logger()
-
         if mmd.model_group == ModelGroup.LANG:
             self.tokenizer, self.dataset = HuggingFaceDataset.create_language_dataset(
                 mmd.name,
@@ -151,8 +144,6 @@ class HuggingFaceDataset:
             self.batches.append(batch)
 
         self.data_iter = iter(self.batches)
-
-        logger.debug("loaded dataset into memory")
 
     def _handle_dataset_playback(self) -> Tensor | None:
         if self._replay == 0:

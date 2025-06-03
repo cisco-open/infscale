@@ -89,9 +89,6 @@ class Pipeline:
             world_info.me,
         )
 
-        logger.info(f"configuring world {name} of size {world_size}")
-        logger.info(f"my rank: {my_rank} backend: {backend}")
-        logger.info(f"leader addr={addr}, port={port}")
         try:
             await self.world_manager.initialize_world(
                 name,
@@ -114,10 +111,8 @@ class Pipeline:
 
     async def _configure_control_channel(self, world_info: WorldInfo) -> None:
         await world_info.channel.setup()
-        logger.debug(f"done configuring control channel for {world_info.name}")
 
         await world_info.channel.wait_readiness()
-        logger.info(f"control channel for {world_info.name} is ready")
 
     def _reset_multiworld(self, world_info: WorldInfo) -> None:
         # TODO: implement this
@@ -169,7 +164,6 @@ class Pipeline:
         # handle unnecessary world
         # remove is executed in the reverse order of add
         for world_info in worlds_to_remove:
-            logger.info(f"remove world {world_info.name}")
             # 1. remove unnecessary world from control channel
             self._reset_control_channel(world_info)
             # 2. remove unnecessary world from multiworld
@@ -204,8 +198,6 @@ class Pipeline:
         self._seqno = 0
         self._end_of_send = False
 
-        logger.info("start to send requests")
-
         async def _inner_send(batches: list[torch.Tensor | None]) -> None:
             for batch in batches:
                 if batch is None:
@@ -214,7 +206,6 @@ class Pipeline:
 
                 await self._wait_tx_permission()
 
-                logger.info(f"sending batch {self._seqno}")
                 # send batch to the first stage
                 await router.send(self._seqno, batch, 0)
                 self._seqno += 1
@@ -227,16 +218,12 @@ class Pipeline:
             if self._end_of_send:
                 break
 
-        logger.info("_server_send task done")
-
     async def _server_recv(self, router: Router):
         """Receive inference results from the last stage."""
         global start_time
 
-        logger.info("start to receive responses")
         count = 0
         while not self._end_of_send or self._seqno > count:
-            logger.debug("waiting for response")
             outputs, seqno = await router.recv()
             results = self._predict_fn(outputs)
             logger.info(f"response for {seqno}: {results}")
@@ -253,8 +240,6 @@ class Pipeline:
         )
 
         self._send_status_message(WorkerStatus.DONE)
-
-        logger.info("_server_recv task done")
 
     async def _run_server(self):
         # we disable metrics collection in router in case the worker is server
@@ -290,7 +275,6 @@ class Pipeline:
         await asyncio.Event().wait()
 
     async def _run_worker(self):
-        logger.debug("start to run worker")
         while True:
             inputs, seqno = await self.router.recv()
 
@@ -313,7 +297,6 @@ class Pipeline:
         status = WorkerStatus.TERMINATED
         resp = Message(MessageType.STATUS, status, self.job_id)
         self.wcomm.send(resp)
-        logger.info("worker is terminated")
 
         sys.stdout.flush()
         # TODO: This forcibly terminates the entire process.
@@ -341,7 +324,6 @@ class Pipeline:
                     status = WorkerStatus.DONE
                     resp = Message(MessageType.STATUS, status, self.job_id)
                     self.wcomm.send(resp)
-                    logger.info("worker is done")
 
                     sys.stdout.flush()
                     # TODO: This forcibly terminates the entire process.
@@ -449,10 +431,8 @@ class Pipeline:
 
     def _prepare_worker(self) -> None:
         if self.spec.is_server:
-            logger.info("I am server and leader")
             self._predict_fn = self.modelir.predict_fn
         else:
-            logger.info("I am a worker")
             self._initialize_worker(self.modelir)
 
     async def run(self) -> None:
