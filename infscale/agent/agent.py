@@ -234,11 +234,11 @@ class Agent:
             reg_req = pb2.RegReq(id=self.id, ip=self.ip_address)  # register agent
             reg_res = await self.stub.register(reg_req)
         except grpc.aio.AioRpcError as e:
-            logger.debug(f"can't register: {e}")
+            logger.warning(f"can't register: {e}")
             return False
 
         if not reg_res.status:
-            logger.error(f"registration failed: {reg_res.reason}")
+            logger.warning(f"registration failed: {reg_res.reason}")
             return False
 
         # create a task to send heart beat periodically
@@ -257,7 +257,7 @@ class Agent:
         try:
             await self._fetch_command()
         except Exception as e:
-            logger.error(f"Error in connection: {e}")
+            logger.warning(f"Error in connection: {e}")
 
     async def _fetch_command(self) -> None:
         """Listen for commands from the ManagementRoute."""
@@ -314,7 +314,6 @@ class Agent:
         match action.type:
             case CommandAction.START | CommandAction.UPDATE:
                 config = JobConfig(**json.loads(action.manifest.decode("utf-8")))
-                logger.debug(f"got a new config for job {config.job_id}")
 
                 self.job_mgr.process_config(config)
 
@@ -334,8 +333,6 @@ class Agent:
             case CommandAction.SETUP:
                 port_count = int.from_bytes(action.manifest, byteorder="big")
                 ports = self._reserve_ports(port_count)
-
-                logger.debug(f"ports assigned: {ports} for {port_count / 2} worlds")
 
                 req = pb2.JobSetupReq(
                     ports=ports,
@@ -366,7 +363,6 @@ class Agent:
 
         job_config = self.job_mgr.get_config(job_id)
         if not job_config:
-            logger.debug(f"no worker to start for job {job_id}")
             return
 
         start_wrkrs = self.job_mgr.get_workers(job_id)
@@ -397,13 +393,11 @@ class Agent:
     def _update_workers(self, job_id: str) -> None:
         job_config = self.job_mgr.get_config(job_id)
         if not job_config:
-            logger.debug(f"no config for job {job_id}")
             return
 
         update_wrkrs = self.job_mgr.get_workers(job_id, CommandAction.UPDATE)
         workers = self.worker_mgr.get_workers(job_id, update_wrkrs)
 
-        logger.debug(f"workers to update: {update_wrkrs}")
         for config in job_config.get_serve_configs():
             if config.stage.id not in update_wrkrs:
                 continue
@@ -452,8 +446,6 @@ class Agent:
 
     async def run(self):
         """Start the agent."""
-        logger.info("run agent")
-
         if not await self._init_controller_session():
             return
 

@@ -18,14 +18,10 @@
 
 from dataclasses import dataclass
 
-from infscale import get_logger
 from infscale.common.job_msg import JobStatus
 from infscale.configs.job import JobConfig
 from infscale.controller.ctrl_dtype import CommandAction
 from infscale.controller.job_context import JobStateEnum
-
-
-logger = None
 
 
 @dataclass
@@ -46,9 +42,6 @@ class JobManager:
 
     def __init__(self):
         """Initialize an instance."""
-        global logger
-        logger = get_logger()
-
         self.jobs: dict[str, JobMetaData] = {}
 
     def cleanup(self, job_id: str) -> None:
@@ -61,7 +54,6 @@ class JobManager:
 
     def process_config(self, config: JobConfig) -> None:
         """Process a config."""
-        logger.debug(f"got new config: {config}")
 
         curr_config = None
         if config.job_id in self.jobs:

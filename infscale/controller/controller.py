@@ -92,7 +92,6 @@ class Controller:
 
     async def run(self):
         """Run controller."""
-        logger.info("starting controller")
         _ = asyncio.create_task(self._start_server())
 
         if self.autoscaler is not None:
@@ -102,15 +101,12 @@ class Controller:
 
     async def handle_register(self, req: pb2.RegReq) -> tuple[bool, str]:
         """Handle registration message."""
-        logger.debug(f"recevied req = {req}")
         if req.id in self.agent_contexts:
             return False, f"{req.id} already registered"
 
         self.agent_contexts[req.id] = AgentContext(self, req.id, req.ip)
         # since registration is done, let's keep agent context alive
         self.agent_contexts[req.id].keep_alive()
-
-        logger.debug(f"successfully registered {req.id}")
 
         return True, ""
 
@@ -125,16 +121,9 @@ class Controller:
     async def handle_resources(self, request: pb2.ResourceStats) -> None:
         """Handle agent resource stats."""
         gpu_stats = GpuMonitor.proto_to_stats(request.gpu_stats)
-        logger.debug(f"gpu_stats = {gpu_stats}")
-
         vram_stats = GpuMonitor.proto_to_stats(request.vram_stats)
-        logger.debug(f"vram_stats = {vram_stats}")
-
         cpu_stats = CpuMonitor.proto_to_stats(request.cpu_stats)
-        logger.debug(f"cpu_stats = {cpu_stats}")
-
         dram_stats = CpuMonitor.proto_to_stats(request.dram_stats)
-        logger.debug(f"dram_stats = {dram_stats}")
 
         agent_context = self.agent_contexts.get(request.id)
         agent_context.update_resource_statistics(
@@ -206,10 +195,7 @@ class Controller:
     async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""
         if type != ReqType.JOB_ACTION:
-            logger.debug(f"unknown fastapi request type: {type}")
             return None
-
-        logger.debug(f"got {req.action} request")
 
         job_id = req.config.job_id if req.config else req.job_id
 
@@ -337,8 +323,8 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         # returned. For that, we create an asyncio event and let the event wait
         # forever. The event will be released only when agent is unreachable.
         if request.id not in self.ctrl.agent_contexts:
-            logger.debug(f"{request.id} is not in controller'context")
             return
+
         agent_context = self.ctrl.agent_contexts[request.id]
         agent_context.set_grpc_ctx(context)
         event = agent_context.get_grpc_ctx_event()
