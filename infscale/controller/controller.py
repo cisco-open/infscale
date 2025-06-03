@@ -150,6 +150,9 @@ class Controller:
             job_ctx = self.job_contexts.get(job_id)
             job_ctx.set_wrk_status(wrk_id, status_enum)
 
+            if status_enum == WorkerStatus.FAILED:
+                await job_ctx.handle_potential_job_failure()
+
             await job_ctx.do_wrk_cond(wrk_id, status_enum)
         except ValueError:
             logger.warning(f"'{status}' is not a valid WorkerStatus")
