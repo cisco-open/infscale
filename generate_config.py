@@ -141,6 +141,23 @@ def create_flow_graph(pipeline_stages, cluster_ips, gpus_per_machine, worker_to_
                 current_world_id += 1
             flow_graph[wid] = connections
 
+    # Add feedback connections for llama generation
+    if model_type == "llama" and len(pipeline_stages) > 1:
+        first_stage = pipeline_stages[0]
+        first_stage_id = first_stage["stage_id"] + stage_id_offset
+        for r in range(first_stage["num_replicas"]):
+            wid = f"{first_stage_id}-{r}"
+            worker_machine = worker_to_machine[wid]
+            for rr in range(last_stage["num_replicas"]):
+                peer = f"{last_stage_id}-{rr}"
+                flow_graph[wid].append({
+                    "name": f"w{current_world_id}",
+                    "peers": FlowList([peer]),
+                    "addr": cluster_ips[worker_machine],
+                    "backend": "nccl"   # We have nccl connections between all workers
+                })
+                current_world_id += 1
+
     return flow_graph, server_connections
 
 def create_workers(pipeline_stages, model_layers, worker_to_machine, worker_to_gpu, server_machine, dispatcher_device="cpu", gpus_per_machine=4, stage_id_offset=0):
