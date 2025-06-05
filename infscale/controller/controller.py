@@ -169,13 +169,13 @@ class Controller:
 
         await self.autoscaler.set_event(req.job_id, req.worker_id)
 
-    def _cleanup_job_ctx(self, agent_id: str) -> None:
-        """Cleanup job context by agent id."""
-        for k, v in list(self.job_contexts.items()):
-            if agent_id in v.agent_info:
-                del self.job_contexts[k]
+    async def _handle_agent_failure(self, agent_id: str) -> None:
+        """Handle agent failure in job context."""
+        for ctx in self.job_contexts.values():
+            if agent_id in ctx.agent_info:
+                await ctx.handle_agent_failure(agent_id)
 
-    def reset_agent_context(self, id: str) -> None:
+    async def reset_agent_context(self, id: str) -> None:
         """Remove agent context from contexts dictionary."""
         if id not in self.agent_contexts:
             # nothing to do
@@ -183,8 +183,8 @@ class Controller:
 
         context = self.agent_contexts[id]
         context.reset()
+        await self._handle_agent_failure(id)
         del self.agent_contexts[id]
-        self._cleanup_job_ctx(id)
 
     def get_job_status(self, job_id: str) -> JobStateEnum | None:
         """Return current job status."""

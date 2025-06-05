@@ -514,6 +514,18 @@ class JobContext:
         """Set worker status."""
         self.wrk_status[wrk_id] = status
 
+    async def handle_agent_failure(self, agent_id: str) -> None:
+        """Handle agent failure."""
+        agent_data = self.agent_info.pop(agent_id, None)
+
+        if agent_data is None:
+            return
+
+        for wid in agent_data.wids_to_deploy:
+            self.set_wrk_status(wid, WorkerStatus.FAILED)
+
+        await self.handle_potential_job_failure()
+
     async def handle_potential_job_failure(self) -> None:
         """Decide job failure and stop all workers."""
         job_failed = self.job_checker.is_job_failed()
