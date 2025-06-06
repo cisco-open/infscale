@@ -176,7 +176,7 @@ class RunningState(BaseJobState):
 
         tasks = []
 
-        for info in self.context.running_agent_info:
+        for info in self.context.running_agent_info.values():
             task = asyncio.create_task(self.context.prepare_config(info))
             tasks.append(task)
 
@@ -286,11 +286,11 @@ class UpdatingState(BaseJobState):
         """Handle the transition to running."""
         # cleanup on agents after update in case there's no running workers
         # we rely on running agents to decide state transitions
-        self.context.running_agent_info = [
-            agent_data
-            for agent_data in self.context.running_agent_info
+        self.context.running_agent_info = {
+            agent_id: agent_data
+            for agent_id, agent_data in self.context.running_agent_info.items()
             if len(agent_data.assignment_coll)
-        ]
+        }
 
         if self.context.in_statuses_for_all_agents({JobStatus.UPDATED}):
             self.context.set_state(JobStateEnum.RUNNING)
@@ -374,8 +374,8 @@ class JobContext:
         # event to update the config after all agents added ports and ip address
         self.agents_setup_event = asyncio.Event()
         # list of agent ids that will deploy workers
-        self.running_agent_info: list[AgentMetaData] = []
-        self.past_running_agent_info: list[AgentMetaData] = []
+        self.running_agent_info: dict[str, AgentMetaData] = {}
+        self.past_running_agent_info: dict[str, AgentMetaData] = {}
         self.job_checker = JobChecker(self.wrk_status)
 
         self._desired_rate = 0.0
@@ -507,9 +507,10 @@ class JobContext:
         self._update_agent_data(assignment_map)
 
         # create a list of agent info that will deploy workers
-        running_agent_info: list[AgentMetaData] = [
-            self.agent_info[agent_id] for agent_id in assignment_map.keys()
-        ]
+        running_agent_info: dict[str, AgentMetaData] = {
+            agent_id: self.agent_info[agent_id]
+            for agent_id in assignment_map.keys()
+        }
 
         self.past_running_agent_info = self.running_agent_info
         self.running_agent_info = running_agent_info
@@ -546,7 +547,7 @@ class JobContext:
     def _get_new_workers_count(self, config: JobConfig) -> int:
         """Return number of new workers."""
         existing_worker_ids = {
-            wid for info in self.running_agent_info for wid in info.wids_to_deploy
+            wid for info in self.running_agent_info.values() for wid in info.wids_to_deploy
         }
 
         new_worker_ids = [
@@ -588,7 +589,7 @@ class JobContext:
 
         # agent is ready to perform setup
         agent_data.ready_to_config = True
-        if any(info.ready_to_config is False for info in self.running_agent_info):
+        if any(info.ready_to_config is False for info in self.running_agent_info.values()):
             await self.agents_setup_event.wait()
 
         # all agents have their conn data available, release the agent setup event
@@ -685,7 +686,7 @@ class JobContext:
         """Create map between agent id and available ports."""
         agent_ports = {}
 
-        for data in self.running_agent_info:
+        for data in self.running_agent_info.values():
             agent_ports[data.id] = iter(data.ports)
 
         return agent_ports
@@ -800,13 +801,14 @@ class JobContext:
 
     def cleanup(self) -> None:
         """Do cleanup on context resources."""
-        for agent_data in self.running_agent_info:
+        for agent_data in self.running_agent_info.values():
             self._release_gpu_resources(agent_data)
 
         self.agent_info = {}
         self.req = None
         self.wrk_status = {}
-        self.running_agent_info = []
+        self.running_agent_info = {}
+        self.past_running_agent_info = {}
         self._cur_cfg = None
         self._new_cfg = None
         self._flow_graph_patched = False
@@ -827,8 +829,8 @@ class JobContext:
             gpu_stat.job_id = ""
 
     def _release_gpu_resource_by_worker_id(self, wid: str):
-        running_agent_info = set(self.running_agent_info)
-        running_agent_info |= set(self.past_running_agent_info)
+        running_agent_info = set(self.running_agent_info.values())
+        running_agent_info |= set(self.past_running_agent_info.values())
         for agent_data in running_agent_info:
             resources = self.ctrl.agent_contexts[agent_data.id].resources
             if resources is None:
@@ -873,7 +875,7 @@ class JobContext:
 
     def in_statuses_for_all_agents(self, statuses: set[JobStatus]) -> bool:
         """Return true if agent is in one of given statuses."""
-        return all(amd.job_status in statuses for amd in self.running_agent_info)
+        return all(amd.job_status in statuses for amd in self.running_agent_info.values())
 
     async def start(self):
         """Transition to STARTING state."""
@@ -922,7 +924,7 @@ class JobContext:
 
         tasks = []
 
-        for info in self.running_agent_info:
+        for info in self.running_agent_info.values():
             task = asyncio.create_task(self.prepare_config(info))
             tasks.append(task)
 
