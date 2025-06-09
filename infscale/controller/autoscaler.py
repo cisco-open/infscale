@@ -58,7 +58,7 @@ class AutoScaler:
             job_id, wrkr_id = await self._event_queue.get()
 
             job_ctx = self._ctrl.job_contexts.get(job_id)
-            if job_ctx.state_enum != JobStateEnum.RUNNING:
+            if job_ctx.state.enum_() != JobStateEnum.RUNNING:
                 logger.debug("job not in running state; autoscaling disallowed")
                 continue
 

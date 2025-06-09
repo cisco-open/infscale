@@ -190,7 +190,7 @@ class Controller:
         if not job_ctx:
             return None
 
-        return job_ctx.state_enum.name.lower()
+        return job_ctx.state.enum_()
 
     async def handle_fastapi_request(self, type: ReqType, req: CtrlRequest) -> Any:
         """Handle fastapi request."""

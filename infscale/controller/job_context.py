@@ -98,60 +98,71 @@ class BaseJobState:
         self.context = context
         self.job_id = context.job_id
 
+    def enum_(self) -> JobStateEnum:
+        """Return the state enum."""
+        pass
+
     async def start(self):
         """Transition to STARTING state."""
-        raise InvalidJobStateAction(self.job_id, "start", self.context.state_enum.value)
+        raise InvalidJobStateAction(
+            self.job_id, "start", self.context.state.enum_().value
+        )
 
     async def stop(self):
         """Transition to STOPPING state."""
-        raise InvalidJobStateAction(self.job_id, "stop", self.context.state_enum.value)
+        raise InvalidJobStateAction(
+            self.job_id, "stop", self.context.state.enum_().value
+        )
 
     async def update(self):
         """Transition to UPDATING state."""
         raise InvalidJobStateAction(
-            self.job_id, "update", self.context.state_enum.value
+            self.job_id, "update", self.context.state.enum_().value
         )
 
     def cond_running(self):
         """Handle the transition to running."""
         raise InvalidJobStateAction(
-            self.job_id, "running", self.context.state_enum.value
+            self.job_id, "running", self.context.state.enum_().value
         )
 
     def cond_updated(self):
         """Handle the transition to running."""
         raise InvalidJobStateAction(
-            self.job_id, "updating", self.context.state_enum.value
+            self.job_id, "updating", self.context.state.enum_().value
         )
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
         raise InvalidJobStateAction(
-            self.job_id, "stopping", self.context.state_enum.value
+            self.job_id, "stopping", self.context.state.enum_().value
         )
 
     async def cond_completing(self):
         """Handle the transition to completing."""
         raise InvalidJobStateAction(
-            self.job_id, "completing", self.context.state_enum.value
+            self.job_id, "completing", self.context.state.enum_().value
         )
 
     def cond_complete(self):
         """Handle the transition to complete."""
         raise InvalidJobStateAction(
-            self.job_id, "complete", self.context.state_enum.value
+            self.job_id, "complete", self.context.state.enum_().value
         )
 
 
 class ReadyState(BaseJobState):
     """ReadyState class."""
 
+    def enum_(self) -> JobStateEnum:
+        """Return ready state enum."""
+        return JobStateEnum.READY
+
     async def start(self):
         """Transition to STARTING state."""
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
-            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -160,6 +171,10 @@ class ReadyState(BaseJobState):
 
 class RunningState(BaseJobState):
     """RunningState class."""
+
+    def enum_(self) -> JobStateEnum:
+        """Return running state enum."""
+        return JobStateEnum.RUNNING
 
     async def stop(self):
         """Transition to STOPPING state."""
@@ -213,6 +228,10 @@ class RunningState(BaseJobState):
 class StartingState(BaseJobState):
     """StartingState class."""
 
+    def enum_(self) -> JobStateEnum:
+        """Return starting state enum."""
+        return JobStateEnum.STARTING
+
     async def stop(self):
         """Transition to STOPPING state."""
         await self.context.send_command_to_agents(self.context.req)
@@ -227,12 +246,20 @@ class StartingState(BaseJobState):
 class StoppedState(BaseJobState):
     """StoppedState class."""
 
+    def __init__(self, context: JobContext):
+        """Initialize StoppedState instance."""
+        super().__init__(context)
+        self.context.cleanup()
+
+    def enum_(self) -> JobStateEnum:
+        """Return stopped state enum."""
+        return JobStateEnum.STOPPED
+
     async def start(self):
         """Transition to STARTING state."""
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
-            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -242,15 +269,22 @@ class StoppedState(BaseJobState):
 class StoppingState(BaseJobState):
     """StoppingState class."""
 
+    def enum_(self) -> JobStateEnum:
+        """Return stopping state enum."""
+        return JobStateEnum.STOPPING
+
     def cond_stopped(self):
         """Handle the transition to stopped."""
         if self.context.in_statuses_for_all_agents({JobStatus.STOPPED}):
-            self.context.cleanup()
             self.context.set_state(JobStateEnum.STOPPED)
 
 
 class CompletingState(BaseJobState):
     """CompletingState class."""
+
+    def enum_(self) -> JobStateEnum:
+        """Return completing state enum."""
+        return JobStateEnum.COMPLETING
 
     async def cond_completing(self):
         """Handle the transition to completing.
@@ -264,12 +298,15 @@ class CompletingState(BaseJobState):
     def cond_complete(self):
         """Handle the transition to complete."""
         if self.context.in_statuses_for_all_agents({JobStatus.COMPLETED}):
-            self.context.cleanup()
             self.context.set_state(JobStateEnum.COMPLETE)
 
 
 class UpdatingState(BaseJobState):
     """UpdatingState class."""
+
+    def enum_(self) -> JobStateEnum:
+        """Return updating state enum."""
+        return JobStateEnum.UPDATING
 
     async def stop(self):
         """Transition to STOPPING state."""
@@ -316,12 +353,15 @@ class UpdatingState(BaseJobState):
 class CompleteState(BaseJobState):
     """CompleteState class."""
 
+    def enum_(self) -> JobStateEnum:
+        """Return complete state enum."""
+        return JobStateEnum.COMPLETE
+
     async def start(self):
         """Transition to STARTING state."""
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
-            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -340,12 +380,20 @@ class CompleteState(BaseJobState):
 class FailedState(BaseJobState):
     """FailedState class."""
 
+    def __init__(self, context: JobContext):
+        """Initialize FailedState instance."""
+        super().__init__(context)
+        self.context.cleanup()
+
+    def enum_(self) -> JobStateEnum:
+        """Return failed state enum."""
+        return JobStateEnum.FAILED
+
     async def start(self):
         """Transition to STARTING state."""
         try:
             await self.context._JobContext__start()
         except InfScaleException as e:
-            self.context.cleanup()
             self.context.set_state(JobStateEnum.FAILED)
             raise e
 
@@ -360,7 +408,6 @@ class JobContext:
         self.ctrl = ctrl
         self.job_id = job_id
         self.state = ReadyState(self)
-        self.state_enum = JobStateEnum.READY
         self.agent_info: dict[str, AgentMetaData] = {}
         self.req: CommandActionModel = None
         self.wrk_status: dict[str, WorkerStatus] = {}
@@ -401,11 +448,10 @@ class JobContext:
         agent_data.ports = ports
         agent_data.job_setup_event.set()
 
-    def set_state(self, state_enum):
+    def set_state(self, state_enum: JobStateEnum):
         """Transition the job to a new state."""
-        self.state_enum = state_enum
         self.state = self._get_state_class(state_enum)(self)
-        logger.info(f"current state for {self.job_id} is {self.state_enum}")
+        logger.info(f"current state for {self.job_id} is {state_enum}")
 
     def handle_job_status(self, status: str, agent_id: str) -> None:
         """Handle job status received from the agent."""
@@ -468,7 +514,6 @@ class JobContext:
         job_failed = self.job_checker.is_job_failed()
 
         if job_failed:
-            self.cleanup()
             self.set_state(JobStateEnum.FAILED)
 
     def get_wrkr_metrics(self, wrkr_id: str) -> PerfMetrics:
@@ -508,8 +553,7 @@ class JobContext:
 
         # create a list of agent info that will deploy workers
         running_agent_info: dict[str, AgentMetaData] = {
-            agent_id: self.agent_info[agent_id]
-            for agent_id in assignment_map.keys()
+            agent_id: self.agent_info[agent_id] for agent_id in assignment_map.keys()
         }
 
         self.past_running_agent_info = self.running_agent_info
@@ -547,7 +591,9 @@ class JobContext:
     def _get_new_workers_count(self, config: JobConfig) -> int:
         """Return number of new workers."""
         existing_worker_ids = {
-            wid for info in self.running_agent_info.values() for wid in info.wids_to_deploy
+            wid
+            for info in self.running_agent_info.values()
+            for wid in info.wids_to_deploy
         }
 
         new_worker_ids = [
@@ -589,7 +635,9 @@ class JobContext:
 
         # agent is ready to perform setup
         agent_data.ready_to_config = True
-        if any(info.ready_to_config is False for info in self.running_agent_info.values()):
+        if any(
+            info.ready_to_config is False for info in self.running_agent_info.values()
+        ):
             await self.agents_setup_event.wait()
 
         # all agents have their conn data available, release the agent setup event
@@ -736,7 +784,7 @@ class JobContext:
 
         return world_names
 
-    def _get_state_class(self, state_enum):
+    def _get_state_class(self, state_enum: JobStateEnum):
         """Map a JobStateEnum to its corresponding state class."""
         state_mapping = {
             JobStateEnum.READY: ReadyState,
@@ -870,12 +918,14 @@ class JobContext:
                 await self.stop()
             case _:
                 raise InvalidJobStateAction(
-                    self.job_id, req.action, self.state_enum.value
+                    self.job_id, req.action, self.state.enum_().value
                 )
 
     def in_statuses_for_all_agents(self, statuses: set[JobStatus]) -> bool:
         """Return true if agent is in one of given statuses."""
-        return all(amd.job_status in statuses for amd in self.running_agent_info.values())
+        return all(
+            amd.job_status in statuses for amd in self.running_agent_info.values()
+        )
 
     async def start(self):
         """Transition to STARTING state."""
