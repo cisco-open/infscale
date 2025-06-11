@@ -104,7 +104,10 @@ class WorkerManager:
 
     def send(self, worker: WorkerMetaData, message: Message) -> None:
         """Send message to worker."""
-        worker.pipe.send(message)
+        try:
+            worker.pipe.send(message)
+        except OSError:
+            return
 
     def initialize_listener(self, worker: WorkerMetaData) -> None:
         """Initialize a listener to handle communication with workers."""
@@ -122,9 +125,15 @@ class WorkerManager:
                 message = worker.pipe.recv()
                 self._handle_message(message, worker, fd)
             except EOFError:
-                # EOFError means that the pipe is already closed due to worker termination
-                # so removing the reader is the only thing we need to do here.
-                loop.remove_reader(fd)
+                # When DONE workers are being killed, EOF error is raised
+                # Therefore, we need to skip these workers from marking as failed
+                if worker.status != WorkerStatus.DONE:
+                    msg = Message(
+                        MessageType.STATUS, WorkerStatus.FAILED, worker.job_id
+                    )
+                    self._handle_status(msg, worker.pipe.fileno())
+
+                self._remove_reader(worker)
 
     def _handle_message(
         self, message: Message, worker: WorkerMetaData, fd: int
@@ -142,22 +151,13 @@ class WorkerManager:
 
     def _handle_status(self, message: Message, fd: int) -> None:
         """Handle status update from Workers."""
+        if fd not in self._workers:
+            return
+
         self._update_worker_status(message, fd)
 
-        match message.content:
-            case WorkerStatus.RUNNING:
-                pass
-
-            case WorkerStatus.TERMINATED:
-                loop = asyncio.get_event_loop()
-                wrk = self._workers[fd]
-                loop.remove_reader(wrk.pipe.fileno())
-                wrk.pipe.close()
-
-                del self._workers[fd]
-
-            case WorkerStatus.FAILED:
-                pass
+        if message.content in [WorkerStatus.TERMINATED, WorkerStatus.FAILED]:
+            del self._workers[fd]
 
     def _handle_metrics(self, message: Message, fd: int) -> None:
         wrk = self._workers[fd]
@@ -175,6 +175,12 @@ class WorkerManager:
         asyncio.run_coroutine_threadsafe(self.status_q.put(msg), loop)
 
         self._workers[fd].status = message.content
+
+    def _remove_reader(self, worker: WorkerMetaData) -> None:
+        """Remove and close pipe reader."""
+        loop = asyncio.get_event_loop()
+        loop.remove_reader(worker.pipe.fileno())
+        worker.pipe.close()
 
     def _signal_terminate_wrkrs(
         self,

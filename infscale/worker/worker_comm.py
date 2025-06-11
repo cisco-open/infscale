@@ -39,7 +39,10 @@ class WorkerCommunicator:
 
     def send(self, message: Message) -> None:
         """Send a message to agent."""
-        self.pipe.send(message)
+        try:
+            self.pipe.send(message)
+        except OSError:
+            return
 
     async def recv(self) -> Message:
         """Receive a message."""
@@ -64,8 +67,10 @@ class WorkerCommunicator:
             try:
                 message = self.pipe.recv()
             except EOFError:
-                # TODO: TBD on pipe failure case
                 loop.remove_reader(self.pipe.fileno())
+                self.pipe.close()
+
+                return
 
             # put the message into the message queue
             # so that it can be comsumed in the pipeline

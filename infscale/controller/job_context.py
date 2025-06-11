@@ -457,8 +457,16 @@ class JobContext:
         """Handle job status received from the agent."""
         try:
             status_enum = JobStatus(status)
-            self.agent_info[agent_id].job_status = status_enum
-            self._do_cond(status_enum)
+            agent_data = self.agent_info.get(agent_id, None)
+
+            # 1. worker failed -> job transitions to FAILED - cleanup is called in job_context -> self.agent_info is reset.
+            # 2. job status is updated from the agent -> stopped (after finish_job command),
+            # agent_id is not in self.agent_info, due to cleanup from step 1.
+
+            # TODO: revise this when job state is handled in job context based on worker status.
+            if agent_data:
+                agent_data.job_status = status_enum
+                self._do_cond(status_enum)
         except InvalidJobStateAction as e:
             logger.warning(e)
         except ValueError:
@@ -481,7 +489,7 @@ class JobContext:
                 self._release_gpu_resource_by_worker_id(wid)
                 await self.cond_completing()
 
-            case WorkerStatus.TERMINATED:
+            case WorkerStatus.TERMINATED | WorkerStatus.FAILED:
                 self._release_gpu_resource_by_worker_id(wid)
 
     def _do_cond(self, status: JobStatus) -> None:
@@ -506,14 +514,17 @@ class JobContext:
         """Set worker status."""
         self.wrk_status[wrk_id] = status
 
-        if status == WorkerStatus.FAILED:
-            self._check_job()
-
-    def _check_job(self) -> None:
-        """Decide wether the job is failed or not."""
+    async def handle_potential_job_failure(self) -> None:
+        """Decide job failure and stop all workers."""
         job_failed = self.job_checker.is_job_failed()
 
         if job_failed:
+            command = CommandActionModel(
+                action=CommandAction.STOP, job_id=self.job_id
+            )
+
+            await self.send_command_to_agents(command)
+
             self.set_state(JobStateEnum.FAILED)
 
     def get_wrkr_metrics(self, wrkr_id: str) -> PerfMetrics:

@@ -35,7 +35,7 @@ class CommandAction(str, Enum):
     """Enum class for request type."""
 
     START = "start"  # CLI - Controller start command
-    STOP = "stop"  # CLI - Controller stop command
+    STOP = "stop"  # CLI - Controller stop command, ctrl<->agent on worker failure
     UPDATE = "update"  # CLI - Controller update command
     SETUP = "setup"  # ctrl<->agent setup job, assign port numbers to workers
     FINISH_JOB = "finish_job"  # ctrl<->agent action to notify job's completion
