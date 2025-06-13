@@ -88,6 +88,7 @@ class JobStateEnum(Enum):
     COMPLETING = "completing"
     COMPLETE = "complete"
     FAILED = "failed"
+    FAILING = "failing"
 
 
 class BaseJobState:
@@ -148,6 +149,12 @@ class BaseJobState:
         """Handle the transition to complete."""
         raise InvalidJobStateAction(
             self.job_id, "complete", self.context.state.enum_().value
+        )
+
+    async def cond_failing(self):
+        """Handle the transition to failing."""
+        raise InvalidJobStateAction(
+            self.job_id, "failing", self.context.state.enum_().value
         )
 
 
@@ -212,7 +219,8 @@ class RunningState(BaseJobState):
         server_ids = self.context.get_server_ids()
 
         verdict = all(
-            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_ids
+            self.context.get_wrk_status(wid) == WorkerStatus.SERVING_DONE
+            for wid in server_ids
         )
 
         if not verdict:
@@ -223,6 +231,17 @@ class RunningState(BaseJobState):
         )
         await self.context.send_command_to_agents(command)
         self.context.set_state(JobStateEnum.COMPLETING)
+
+    async def cond_failing(self):
+        """Handle the transition to failing."""
+        job_failed = self.context.job_checker.is_job_failed()
+
+        if job_failed:
+            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
+
+            await self.context.send_command_to_agents(command)
+
+            self.context.set_state(JobStateEnum.FAILING)
 
 
 class StartingState(BaseJobState):
@@ -239,7 +258,7 @@ class StartingState(BaseJobState):
 
     def cond_running(self):
         """Handle the transition to running."""
-        if self.context.in_statuses_for_all_agents({JobStatus.RUNNING}):
+        if self.context.in_statuses_for_all_workers({WorkerStatus.RUNNING}):
             self.context.set_state(JobStateEnum.RUNNING)
 
 
@@ -275,8 +294,23 @@ class StoppingState(BaseJobState):
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
-        if self.context.in_statuses_for_all_agents({JobStatus.STOPPED}):
+        if self.context.in_statuses_for_all_workers({WorkerStatus.TERMINATED}):
             self.context.set_state(JobStateEnum.STOPPED)
+
+
+class FailingState(BaseJobState):
+    """FailingState class."""
+
+    def enum_(self) -> JobStateEnum:
+        """Return failing state enum."""
+        return JobStateEnum.FAILING
+
+    def cond_stopped(self):
+        """Handle the transition to failed."""
+        if self.context.in_statuses_for_all_workers(
+            {WorkerStatus.TERMINATED, WorkerStatus.FAILED}
+        ):
+            self.context.set_state(JobStateEnum.FAILED)
 
 
 class CompletingState(BaseJobState):
@@ -286,18 +320,9 @@ class CompletingState(BaseJobState):
         """Return completing state enum."""
         return JobStateEnum.COMPLETING
 
-    async def cond_completing(self):
-        """Handle the transition to completing.
-
-        This is executed because non-server workers send DONE status message
-        once server workers are DONE. In this case, we don't need to do
-        anything. So, we simply return here.
-        """
-        return
-
     def cond_complete(self):
         """Handle the transition to complete."""
-        if self.context.in_statuses_for_all_agents({JobStatus.COMPLETED}):
+        if self.context.in_statuses_for_all_workers({WorkerStatus.DONE}):
             self.context.set_state(JobStateEnum.COMPLETE)
 
 
@@ -321,15 +346,9 @@ class UpdatingState(BaseJobState):
 
     def cond_updated(self):
         """Handle the transition to running."""
-        # cleanup on agents after update in case there's no running workers
-        # we rely on running agents to decide state transitions
-        self.context.running_agent_info = {
-            agent_id: agent_data
-            for agent_id, agent_data in self.context.running_agent_info.items()
-            if len(agent_data.assignment_coll)
-        }
-
-        if self.context.in_statuses_for_all_agents({JobStatus.UPDATED}):
+        if self.context.in_statuses_for_all_workers(
+            {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
+        ):
             self.context.set_state(JobStateEnum.RUNNING)
 
     async def cond_completing(self):
@@ -348,6 +367,17 @@ class UpdatingState(BaseJobState):
         )
         await self.context.send_command_to_agents(command)
         self.context.set_state(JobStateEnum.COMPLETING)
+
+    async def cond_failing(self):
+        """Handle the transition to failing."""
+        job_failed = self.context.job_checker.is_job_failed()
+
+        if job_failed:
+            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
+
+            await self.context.send_command_to_agents(command)
+
+            self.context.set_state(JobStateEnum.FAILING)
 
 
 class CompleteState(BaseJobState):
@@ -371,15 +401,6 @@ class CompleteState(BaseJobState):
             raise e
 
         self.context.set_state(JobStateEnum.STARTING)
-
-    async def cond_completing(self):
-        """Handle the transition to completing.
-
-        This is executed because non-server workers send DONE status message
-        once server workers are DONE. In this case, we don't need to do
-        anything. So, we simply return here.
-        """
-        return
 
 
 class FailedState(BaseJobState):
@@ -460,6 +481,8 @@ class JobContext:
 
     def handle_job_status(self, status: str, agent_id: str) -> None:
         """Handle job status received from the agent."""
+        # TODO: remove this when job state transition is fully
+        # refactored to use worker status messages.
         try:
             status_enum = JobStatus(status)
             agent_data = self.agent_info.get(agent_id, None)
@@ -490,15 +513,31 @@ class JobContext:
     async def do_wrk_cond(self, wid: str, status: WorkerStatus) -> None:
         """Handle worker status by calling conditional action."""
         match status:
-            case WorkerStatus.DONE:
-                self._release_gpu_resource_by_worker_id(wid)
+            case WorkerStatus.RUNNING:
+                self.cond_running()
+
+            case WorkerStatus.UPDATED:
+                self.cond_updated()
+
+            case WorkerStatus.SERVING_DONE:
                 await self.cond_completing()
 
-            case WorkerStatus.TERMINATED | WorkerStatus.FAILED:
+            case WorkerStatus.DONE:
                 self._release_gpu_resource_by_worker_id(wid)
+                self.cond_complete()
+
+            case WorkerStatus.FAILED:
+                self._release_gpu_resource_by_worker_id(wid)
+                await self.cond_failing()
+
+            case WorkerStatus.TERMINATED:
+                self._release_gpu_resource_by_worker_id(wid)
+                self.cond_stopped()
 
     def _do_cond(self, status: JobStatus) -> None:
         """Handle job status by calling conditional action."""
+        # TODO: remove this when job state transition is fully
+        # refactored to use worker status messages.
         match status:
             case JobStatus.RUNNING:
                 self.cond_running()
@@ -556,6 +595,12 @@ class JobContext:
         """Set worker's performance metrics."""
         self.wrkr_metrics[wrkr_id] = metrics
 
+    def _init_wrk_status(self) -> None:
+        """Create worker status dict with default status."""
+        for w in self._new_cfg.workers:
+            if w.id not in self.wrk_status:
+                self.wrk_status[w.id] = WorkerStatus.READY
+
     def process_cfg(self) -> None:
         """Process received config from controller and set a deployer of agent ids."""
         self._new_cfg = self.ctrl.planner.build_config(
@@ -567,6 +612,8 @@ class JobContext:
 
         if JobConfig.is_identical(self._cur_cfg, self._new_cfg):
             raise InvalidConfig("current and new configs are identical")
+
+        self._init_wrk_status()
 
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
@@ -825,6 +872,7 @@ class JobContext:
             JobStateEnum.COMPLETING: CompletingState,
             JobStateEnum.COMPLETE: CompleteState,
             JobStateEnum.FAILED: FailedState,
+            JobStateEnum.FAILING: FailingState,
         }
         return state_mapping[state_enum]
 
@@ -951,9 +999,15 @@ class JobContext:
 
     def in_statuses_for_all_agents(self, statuses: set[JobStatus]) -> bool:
         """Return true if agent is in one of given statuses."""
+        # TODO: remove this when job state transition is fully
+        # refactored to use worker status messages.
         return all(
             amd.job_status in statuses for amd in self.running_agent_info.values()
         )
+
+    def in_statuses_for_all_workers(self, statuses: set[WorkerStatus]) -> bool:
+        """Return true if worker is in one of given statuses."""
+        return all(status in statuses for status in self.wrk_status.values())
 
     async def start(self):
         """Transition to STARTING state."""
@@ -986,6 +1040,10 @@ class JobContext:
     async def cond_completing(self):
         """Handle the transition to completing."""
         await self.state.cond_completing()
+
+    async def cond_failing(self):
+        """Handle the transition to failing."""
+        await self.state.cond_failing()
 
     async def __start(self):
         # DO NOT call this method in job_context instance or any other places.
