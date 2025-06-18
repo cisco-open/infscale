@@ -90,7 +90,11 @@ class Planner:
         self._colls: dict[str, PlanCollection] = {}
 
     def build_config(
-        self, source: JobConfig, agent_ctxts: dict[str, AgentContext], demand: float = 0
+        self,
+        source: JobConfig,
+        agent_ctxts: dict[str, AgentContext],
+        demand: float = 0,
+        base_cfg: JobConfig = None,
     ) -> JobConfig:
         """Build a config based on source config."""
         if not self._autoscale:
@@ -101,7 +105,7 @@ class Planner:
 
         # configure plan collection to set a subset of execution plans to be considered
         plan_list = self._colls[source.model].pick_plans(demand)
-        gen = CfgGen(agent_ctxts, source, plan_list, "cuda")
+        gen = CfgGen(agent_ctxts, source, plan_list, "cuda", base_cfg)
         return gen.generate()
 
     def _load_plans(self, model_name: str) -> None:

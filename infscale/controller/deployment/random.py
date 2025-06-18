@@ -65,7 +65,7 @@ class RandomDeploymentPolicy(DeploymentPolicy):
             )  # choose an agent randomly
             resources = agent_resources[agent_data.id]
 
-            device = resources.get_n_set_device(dev_type, job_config.job_id)
+            device = resources.get_n_set_device(dev_type)
 
             # this means that current agent don't have enough resources,
             # so we have to move to the next agent before popping the worker

@@ -89,7 +89,7 @@ class AutoScaler:
         try:
             await ctx.update()
         except Exception as e:
-            logger.debug(f"exception: {e}")
+            logger.warning(f"exception: {e}")
             self._last_run = time.perf_counter()
             return
 

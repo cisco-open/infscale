@@ -84,7 +84,7 @@ class PackingPolicy(DeploymentPolicy):
             )
 
         for _ in range(workers_to_deploy):
-            device = resources.get_n_set_device(dev_type, job_config.job_id)
+            device = resources.get_n_set_device(dev_type)
             self._assign_worker(
                 workers,
                 agent_id,

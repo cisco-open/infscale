@@ -63,7 +63,6 @@ class GpuStat:
     type: GpuType
     used: bool
     util: int
-    job_id: str = ""
 
 
 @dataclass

@@ -63,7 +63,7 @@ class AgentResources:
         self.cpu_stats: CPUStats = cpu_stats
         self.dram_stats: DRAMStats = dram_stats
 
-    def get_n_set_device(self, dev_type: DeviceType, job_id: str) -> str | None:
+    def get_n_set_device(self, dev_type: DeviceType) -> str | None:
         """
         Return device string based on device type.
 
@@ -76,7 +76,6 @@ class AgentResources:
 
         if stat is not None:
             stat.used = True
-            stat.job_id = job_id
             return f"cuda:{stat.id}"
         return None
 
@@ -172,45 +171,19 @@ class AgentContext:
         """
         self.grpc_ctx_event.set()
 
-    def avail_gpu_count(self, job_id: str = "") -> int:
-        """Return unused GPU count.
-
-        When a job id is given, we treat GPUs assigned for the given job as available.
-
-        Attributes:
-            job_id (str): Job Id.
-        """
+    def avail_gpu_count(self) -> int:
+        """Return unused GPU count."""
         if self.resources.gpu_stats is None:
             return 0
 
-        count = 0
-        for gpu in self.resources.gpu_stats:
-            if not gpu.used:
-                count += 1
-            elif job_id != "" and gpu.job_id == job_id:
-                count += 1
+        return sum(not gpu.used for gpu in self.resources.gpu_stats)
 
-        return count
-
-    def avail_gpus(self, job_id: str = "") -> set[int]:
-        """Return a set of IDs of available GPUs.
-
-        When a job id is given, we treat GPUs assigned for the given job as available.
-
-        Attributes:
-            job_id (str): Job Id.
-        """
+    def avail_gpus(self) -> set[int]:
+        """Return a set of IDs of available GPUs."""
         if self.resources.gpu_stats is None:
             return set()
 
-        gpus = set()
-        for gpu in self.resources.gpu_stats:
-            if not gpu.used:
-                gpus.add(gpu.id)
-            elif job_id != "" and gpu.job_id == job_id:
-                gpus.add(gpu.id)
-
-        return gpus
+        return {gpu.id for gpu in self.resources.gpu_stats if not gpu.used}
 
     def update_resource_statistics(
         self,

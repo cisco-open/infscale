@@ -90,6 +90,6 @@ class EvenDeploymentPolicy(DeploymentPolicy):
             agent_data = next(agent_cycle)  # Get the next agent
             resources = agent_resources[agent_data.id]
 
-            device = resources.get_n_set_device(dev_type, job_id)
+            device = resources.get_n_set_device(dev_type)
             if device:
                 return device, agent_data

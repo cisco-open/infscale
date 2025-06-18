@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Optional
 
@@ -244,6 +245,47 @@ class JobConfig:
 
         return serve_configs
 
+    def max_stage_id(self) -> int:
+        """Return the maximum stage id from config."""
+        max_id = 0
+
+        for worker in self.workers:
+            if worker.id.startswith("s"):
+                continue
+
+            stage_id = int(worker.id.split("-")[0])
+            max_id = max(max_id, stage_id)
+
+        return max_id
+
+    def max_world_id(self) -> int:
+        """Return the maximum world id from config."""
+        max_id = 0
+
+        for world_info_list in self.flow_graph.values():
+            for world_info in world_info_list:
+                # we assume that the prefix is a single character (e.g., w)
+                world_id = int(world_info.name[1:])
+                max_id = max(max_id, world_id)
+
+        return max_id
+
+    def _server_id(self) -> str | None:
+        """Return server id."""
+        for worker in self.workers:
+            if worker.is_server:
+                return worker.id
+
+        return None
+
+    def server_ip(self) -> str:
+        """Return IP address of server."""
+        server_id = self._server_id()
+        if server_id is None:
+            return ""
+
+        return self.flow_graph[server_id][0].addr
+
     @staticmethod
     def is_identical(x: JobConfig, y: JobConfig) -> bool:
         """Determine if two job configs are structurally identical.
@@ -286,3 +328,26 @@ class JobConfig:
                     return False
 
         return True
+
+    @staticmethod
+    def world_name(world_id: int) -> str:
+        """Return world name given a world id."""
+        return f"w{world_id}"
+
+    @staticmethod
+    def merge(base: JobConfig, extra: JobConfig) -> JobConfig:
+        """Merge two job configs and create a merged job config."""
+        if base is None:
+            return extra
+
+        cfg = copy.deepcopy(base)
+        for worker_id, world_info_list in extra.flow_graph.items():
+            if worker_id not in cfg.flow_graph:
+                cfg.flow_graph[worker_id] = world_info_list
+            else:
+                tmp = cfg.flow_graph[worker_id]
+                cfg.flow_graph[worker_id] = tmp + world_info_list
+
+        cfg.workers = cfg.workers + extra.workers
+
+        return cfg

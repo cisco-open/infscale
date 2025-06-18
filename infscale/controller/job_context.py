@@ -353,6 +353,11 @@ class UpdatingState(BaseJobState):
 class CompleteState(BaseJobState):
     """CompleteState class."""
 
+    def __init__(self, context: JobContext):
+        """Initialize CompleteState instance."""
+        super().__init__(context)
+        self.context.cleanup()
+
     def enum_(self) -> JobStateEnum:
         """Return complete state enum."""
         return JobStateEnum.COMPLETE
@@ -531,9 +536,7 @@ class JobContext:
         job_failed = self.job_checker.is_job_failed()
 
         if job_failed:
-            command = CommandActionModel(
-                action=CommandAction.STOP, job_id=self.job_id
-            )
+            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
 
             await self.send_command_to_agents(command)
 
@@ -556,7 +559,10 @@ class JobContext:
     def process_cfg(self) -> None:
         """Process received config from controller and set a deployer of agent ids."""
         self._new_cfg = self.ctrl.planner.build_config(
-            self.req.config, self.ctrl.agent_contexts, self._desired_rate
+            self.req.config,
+            self.ctrl.agent_contexts,
+            self._desired_rate,
+            self._cur_cfg,
         )
 
         if JobConfig.is_identical(self._cur_cfg, self._new_cfg):
@@ -897,7 +903,6 @@ class JobContext:
 
             # mark unused only for gpu used in this job
             gpu_stat.used = False
-            gpu_stat.job_id = ""
 
     def _release_gpu_resource_by_worker_id(self, wid: str):
         running_agent_info = set(self.running_agent_info.values())

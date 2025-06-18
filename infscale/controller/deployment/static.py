@@ -165,6 +165,5 @@ class StaticDeploymentPolicy(DeploymentPolicy):
             raise InvalidConfig(f"GPU {gpu_stat.id} is used; try another device.")
 
         gpu_stat.used = True
-        gpu_stat.job_id = job_id
 
         return device

@@ -53,8 +53,12 @@ class PerfMetrics:
         return cond
 
     def rate_to_decongest(self) -> float:
-        """Return a required rate to relieve congestion."""
-        return self.input_rate * self._weight_factor
+        """Return a required rate to relieve congestion.
+
+        The required rate means the additional rate by subtracting the output
+        rate from the weighted input rate.
+        """
+        return self.input_rate * self._weight_factor - self.output_rate
 
     def __str__(self) -> str:
         """Return string representation for the object."""

@@ -48,13 +48,21 @@ class CfgGen:
         source: JobConfig,
         plan_list: list[ExecPlan],
         dispatcher_device="cpu",
+        base_cfg: JobConfig = None,
     ):
         """Initialize an instance."""
         self._source = source
         self._plan_list = plan_list
         self._dispatcher_device = dispatcher_device
+        self._base_cfg = base_cfg
 
         self._agent_ctxts = agent_ctxts
+
+        # key: agent id and value is AgentContext
+        # sort agent context by # of unused gpus in a decreasing order
+        # and then by agent id in an increasing order to break a tie
+        tmp = sorted(agent_ctxts.items(), key=lambda i: (-i[1].avail_gpu_count(), i[0]))
+        self._agent_ctxts = dict(tmp)
 
         self._server_worker = {
             "id": "s-0",
@@ -79,21 +87,34 @@ class CfgGen:
 
         # machine to place the dispatcher
         self._server_machine = 0
+        self._server_machine_ip = ""
 
         # All last stage replicas connections to the server
         self._final_server_connections = []
 
     def generate(self) -> JobConfig:
         """Generate a config."""
+        self._set_offsets()
+
         self._map_machine_to_agent_id()
 
         config_data = self._process_multiple_exec_plans()
 
         config = JobConfig(**config_data)
 
+        config = JobConfig.merge(self._base_cfg, config)
+
         config.validate()
 
         return config
+
+    def _set_offsets(self) -> None:
+        if self._base_cfg is None:
+            return
+
+        self._stage_id_offset = self._base_cfg.max_stage_id() + 1
+        self._world_id_offset = self._base_cfg.max_world_id() + 1
+        self._server_machine_ip = self._base_cfg.server_ip()
 
     def _process_multiple_exec_plans(self):
         """Process multiple execution configuration plans and generate a unified config."""
@@ -150,7 +171,7 @@ class CfgGen:
                 server_machine_gpu_used.add(self._combined_worker_to_gpu[worker])
 
         # Find the first available GPU on the final server machine
-        for gpu_id in agent_ctxt.avail_gpus(self._source.job_id):
+        for gpu_id in agent_ctxt.avail_gpus():
             if gpu_id not in server_machine_gpu_used:
                 self._server_worker["device"] = f"cuda:{gpu_id}"
                 return
@@ -159,20 +180,26 @@ class CfgGen:
         raise InsufficientResources("server's device not set")
 
     def _combine(self, micro_batch_size) -> dict:
-        agent_id = self._machine_to_agent_id[self._server_machine]
-        agent_ctxt = self._agent_ctxts[agent_id]
+        server_already_exists = True if self._server_machine_ip else False
 
-        self._set_server_device_id(agent_ctxt)
+        if not server_already_exists:
+            # coming to this part means that this is the first time to generate
+            # a config. In that case, we decide server machine's IP and device
+            agent_id = self._machine_to_agent_id[self._server_machine]
+            agent_ctxt = self._agent_ctxts[agent_id]
 
-        # Add server at the beginning of the workers list
-        self._combined_workers = [self._server_worker] + self._combined_workers
+            self._server_machine_ip = agent_ctxt.ip
+            self._set_server_device_id(agent_ctxt)
+
+            # Add server at the beginning of the workers list
+            self._combined_workers = [self._server_worker] + self._combined_workers
 
         for connection, world_id in zip(
             self._final_server_connections, self._server_starting_world_ids
         ):
             # We need to update the address and backend of the server connections
-            connection["addr"] = agent_ctxt.ip
-            connection["name"] = f"w{world_id}"
+            connection["addr"] = self._server_machine_ip
+            connection["name"] = JobConfig.world_name(world_id)
 
         self._combined_flow_graph["s-0"] = self._final_server_connections
 
@@ -263,7 +290,7 @@ class CfgGen:
             mid, count = mwc[0], mwc[1]
             agent_id, agent_ctxt = ac[0], ac[1]
 
-            avail_count = agent_ctxt.avail_gpu_count(self._source.job_id)
+            avail_count = agent_ctxt.avail_gpu_count()
             if count > avail_count:
                 err_msg = f"node {mid} needs {count} GPUs; agent {agent_id} has {avail_count} GPUs"
                 raise InsufficientResources(err_msg)
@@ -318,7 +345,7 @@ class CfgGen:
             for machine_id, count in machine_allocs:
                 agent_id = self._machine_to_agent_id[machine_id]
                 agent_ctxt = self._agent_ctxts[agent_id]
-                avail_gpus = agent_ctxt.avail_gpus(self._source.job_id)
+                avail_gpus = agent_ctxt.avail_gpus()
 
                 for _ in range(count):
                     wid = f"{stage_id}-{worker_idx}"
@@ -411,7 +438,7 @@ class CfgGen:
                 connections = []
                 for peer in peers:
                     conn = {
-                        "name": f"w{current_world_id}",
+                        "name": JobConfig.world_name(current_world_id),
                         "peers": FlowList([peer]),
                         "addr": agent_ctxt.ip,
                         "backend": backend if peer != "s-0" else server_backend,
