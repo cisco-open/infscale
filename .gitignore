@@ -27,3 +27,9 @@ examples/resnet_profiling/*
 
 # profile results
 profile_data/
+
+# generated config
+infscale_config/
+
+# blueprint solutions
+solution/
