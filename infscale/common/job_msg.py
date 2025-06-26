@@ -41,8 +41,11 @@ class WorkerStatus(Enum):
     READY = "ready"
     RUNNING = "running"
     DONE = "done"
+    SERVING_DONE = "serving_done"  # notify that serving is done
     TERMINATED = "terminated"
     FAILED = "failed"
+    UPDATING = "updating"
+    UPDATED = "updated"
 
 
 class JobStatus(Enum):

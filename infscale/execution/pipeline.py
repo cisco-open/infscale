@@ -239,7 +239,7 @@ class Pipeline:
             f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
         )
 
-        self._send_status_message(WorkerStatus.DONE)
+        self._send_status_message(WorkerStatus.SERVING_DONE)
 
     async def _run_server(self):
         # we disable metrics collection in router in case the worker is server
@@ -335,6 +335,10 @@ class Pipeline:
         if spec is None:
             return
 
+        is_first_run = not self.world_infos
+        if not is_first_run:
+            self._send_status_message(WorkerStatus.UPDATING)
+
         self._configure_variables(spec)
 
         self._initialize_once()
@@ -343,8 +347,10 @@ class Pipeline:
         await self._configure()
 
         self.cfg_event.set()
+        
+        worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
 
-        self._send_status_message(WorkerStatus.RUNNING)
+        self._send_status_message(worker_status)
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}

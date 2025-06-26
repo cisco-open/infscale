@@ -132,6 +132,8 @@ class Controller:
 
     def handle_job_status(self, request: pb2.JobStatus) -> None:
         """Handle job status message."""
+        # TODO: remove this when job state transition is fully
+        # refactored to use worker status messages.
         job_id, status, agent_id = request.job_id, request.status, request.agent_id
 
         job_ctx = self.job_contexts.get(job_id)
@@ -149,9 +151,6 @@ class Controller:
             status_enum = WorkerStatus(status)
             job_ctx = self.job_contexts.get(job_id)
             job_ctx.set_wrk_status(wrk_id, status_enum)
-
-            if status_enum == WorkerStatus.FAILED:
-                await job_ctx.handle_potential_job_failure()
 
             await job_ctx.do_wrk_cond(wrk_id, status_enum)
         except ValueError:
@@ -314,7 +313,11 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         self, request: pb2.JobStatus, unused_context: ServicerContext
     ) -> None:
         """Handle update message for job status."""
-        self.ctrl.handle_job_status(request)
+        # TODO: remove this when job state transition is fully
+        # refactored to use worker status messages.
+        # Also, remove RPC endpoint
+
+        # self.ctrl.handle_job_status(request)
 
         return empty_pb2.Empty()
 
