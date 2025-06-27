@@ -32,7 +32,7 @@ from infscale.common.exceptions import (
     InvalidConfig,
     InvalidJobStateAction,
 )
-from infscale.common.job_msg import JobStatus, WorkerStatus
+from infscale.common.job_msg import WorkerStatus
 from infscale.common.metrics import PerfMetrics
 from infscale.configs.job import JobConfig, WorldInfo
 from infscale.controller.agent_context import (
@@ -59,14 +59,12 @@ class AgentMetaData:
         self,
         id: str = None,
         ip: str = None,
-        job_status: JobStatus = None,
         num_new_worlds: int = 0,
         ports: list[int] = None,
     ):
         """Initialize AgentMedataData instance."""
         self.id = id
         self.ip = ip
-        self.job_status = job_status
         self.num_new_worlds = num_new_worlds
         self.ports = ports
         self.job_setup_event = asyncio.Event()
@@ -340,15 +338,14 @@ class UpdatingState(BaseJobState):
 
     def cond_running(self):
         """Handle the transition to running."""
-        statuses = {JobStatus.RUNNING, JobStatus.UPDATED}
-        if self.context.in_statuses_for_all_agents(statuses):
+        statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
+        if self.context.in_statuses_for_all_workers(statuses):
             self.context.set_state(JobStateEnum.RUNNING)
 
     def cond_updated(self):
         """Handle the transition to running."""
-        if self.context.in_statuses_for_all_workers(
-            {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
-        ):
+        statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
+        if self.context.in_statuses_for_all_workers(statuses):
             self.context.set_state(JobStateEnum.RUNNING)
 
     async def cond_completing(self):
@@ -464,10 +461,6 @@ class JobContext:
         """Return agent metadata."""
         return self.agent_info[agent_id]
 
-    def _set_job_status_on_agent(self, agent_id: str, job_status: JobStatus) -> None:
-        """Set job status on agent id."""
-        self.agent_info[agent_id].job_status = job_status
-
     def set_ports(self, agent_id: str, ports: list[int]) -> None:
         """Set port numbers for workers."""
         agent_data = self.agent_info[agent_id]
@@ -478,27 +471,6 @@ class JobContext:
         """Transition the job to a new state."""
         self.state = self._get_state_class(state_enum)(self)
         logger.info(f"current state for {self.job_id} is {state_enum}")
-
-    def handle_job_status(self, status: str, agent_id: str) -> None:
-        """Handle job status received from the agent."""
-        # TODO: remove this when job state transition is fully
-        # refactored to use worker status messages.
-        try:
-            status_enum = JobStatus(status)
-            agent_data = self.agent_info.get(agent_id, None)
-
-            # 1. worker failed -> job transitions to FAILED - cleanup is called in job_context -> self.agent_info is reset.
-            # 2. job status is updated from the agent -> stopped (after finish_job command),
-            # agent_id is not in self.agent_info, due to cleanup from step 1.
-
-            # TODO: revise this when job state is handled in job context based on worker status.
-            if agent_data:
-                agent_data.job_status = status_enum
-                self._do_cond(status_enum)
-        except InvalidJobStateAction as e:
-            logger.warning(e)
-        except ValueError:
-            logger.warning(f"'{status}' is not a valid JobStatus")
 
     async def send_command_to_agents(self, command: CommandActionModel) -> None:
         """Send command to all agents in the job."""
@@ -533,22 +505,6 @@ class JobContext:
             case WorkerStatus.TERMINATED:
                 self._release_gpu_resource_by_worker_id(wid)
                 self.cond_stopped()
-
-    def _do_cond(self, status: JobStatus) -> None:
-        """Handle job status by calling conditional action."""
-        # TODO: remove this when job state transition is fully
-        # refactored to use worker status messages.
-        match status:
-            case JobStatus.RUNNING:
-                self.cond_running()
-            case JobStatus.COMPLETED:
-                self.cond_complete()
-            case JobStatus.STOPPED:
-                self.cond_stopped()
-            case JobStatus.UPDATED:
-                self.cond_updated()
-            case _:
-                logger.warning(f"unsupported job status: '{status}'")
 
     def get_wrk_status(self, wrk_id: str) -> WorkerStatus:
         """Get worker status."""
@@ -996,14 +952,6 @@ class JobContext:
                 raise InvalidJobStateAction(
                     self.job_id, req.action, self.state.enum_().value
                 )
-
-    def in_statuses_for_all_agents(self, statuses: set[JobStatus]) -> bool:
-        """Return true if agent is in one of given statuses."""
-        # TODO: remove this when job state transition is fully
-        # refactored to use worker status messages.
-        return all(
-            amd.job_status in statuses for amd in self.running_agent_info.values()
-        )
 
     def in_statuses_for_all_workers(self, statuses: set[WorkerStatus]) -> bool:
         """Return true if worker is in one of given statuses."""

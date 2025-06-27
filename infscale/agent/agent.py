@@ -31,7 +31,6 @@ from infscale.agent.job_manager import JobManager
 from infscale.agent.worker_manager import WorkerManager
 from infscale.common.constants import GRPC_MAX_MESSAGE_LENGTH, HEART_BEAT_PERIOD
 from infscale.common.job_msg import (
-    JobStatus,
     Message,
     MessageType,
     WorkerStatus,
@@ -115,9 +114,9 @@ class Agent:
             status_msg = await self.worker_mgr.status_q.get()
             if status_msg is None:
                 continue
-            await self.update_worker_status(status_msg)
 
-            await self.update_job_status(status_msg)
+            await self.update_worker_status(status_msg)
+            self._handle_worker(status_msg)
 
     async def _monitor_metrics(self) -> None:
         while True:
@@ -133,35 +132,6 @@ class Agent:
             )
             await self.stub.update_metrics(req)
 
-    async def update_job_status(self, message: WorkerStatusMessage) -> None:
-        """Send message with updated job status."""
-        job_id = message.job_id
-        curr_status = self.job_mgr.get_status(job_id)
-
-        # None means that the job is completed / stopped
-        if curr_status is None:
-            return
-
-        job_status = self._get_latest_job_status(job_id)
-
-        # job status might be none when none of the conditions are met
-        if job_status == JobStatus.UNKNOWN or job_status == curr_status:
-            return
-
-        self.job_mgr.set_status(job_id, job_status)
-
-        job_status_msg = {
-            "agent_id": self.id,
-            "job_id": job_id,
-            "status": job_status.name.lower(),
-        }
-
-        req = pb2.JobStatus(**job_status_msg)
-        await self.stub.job_status(req)
-
-        # do cleanup after all internal logic is completed
-        self._cleanup(job_id, job_status)
-
     async def update_worker_status(self, message: WorkerStatusMessage) -> None:
         """Report worker status to controller."""
         job_id, status, wrk_id = (
@@ -173,27 +143,24 @@ class Agent:
         req = pb2.WorkerStatus(job_id=job_id, status=status, worker_id=wrk_id)
         await self.stub.update_wrk_status(req)
 
-    def _cleanup(self, job_id: str, job_status: JobStatus) -> None:
-        """Remove job and worker related data b job id."""
-        if job_status in [JobStatus.COMPLETED, JobStatus.STOPPED]:
-            self.worker_mgr.cleanup(job_id)
+    def _handle_worker(self, status_msg: WorkerStatusMessage) -> None:
+        """Handle status message received from worker.
+        
+        Whenever DONE, FAILED or TERMINATED is received, worker manager
+        will remove that worker from its state.
+        When no workers are available for the given job id, cleanup is done
+        in job manager as well.
+        """
+        valid = [WorkerStatus.DONE, WorkerStatus.FAILED, WorkerStatus.TERMINATED]
+        status, job_id, wrk_id = status_msg.status, status_msg.job_id, status_msg.id
+
+        if status not in valid:
+            return
+
+        self.worker_mgr.cleanup(wrk_id)
+
+        if not self.worker_mgr.has_workers_for_job(job_id):
             self.job_mgr.cleanup(job_id)
-
-    def _get_latest_job_status(self, job_id: str) -> JobStatus:
-        """Return latest job status string based on workers statuses."""
-        if self._all_wrk_terminated(job_id):
-            return JobStatus.STOPPED
-
-        if self._check_updated_workers(job_id):
-            return JobStatus.UPDATED
-
-        if self._all_wrk_running(job_id):
-            return JobStatus.RUNNING
-
-        if self._is_job_completed(job_id):
-            return JobStatus.COMPLETED
-
-        return JobStatus.UNKNOWN
 
     def _all_wrk_running(self, job_id: str) -> bool:
         """Check if all workers are running."""

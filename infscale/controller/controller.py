@@ -130,15 +130,6 @@ class Controller:
             gpu_stats, vram_stats, cpu_stats, dram_stats
         )
 
-    def handle_job_status(self, request: pb2.JobStatus) -> None:
-        """Handle job status message."""
-        # TODO: remove this when job state transition is fully
-        # refactored to use worker status messages.
-        job_id, status, agent_id = request.job_id, request.status, request.agent_id
-
-        job_ctx = self.job_contexts.get(job_id)
-        job_ctx.handle_job_status(status, agent_id)
-
     async def handle_wrk_status(self, req: pb2.WorkerStatus) -> None:
         """Handle worker status."""
         job_id, status, wrk_id = (
@@ -306,18 +297,6 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
     ) -> None:
         """Handle message with agent resource stats."""
         await self.ctrl.handle_resources(request)
-
-        return empty_pb2.Empty()
-
-    async def job_status(
-        self, request: pb2.JobStatus, unused_context: ServicerContext
-    ) -> None:
-        """Handle update message for job status."""
-        # TODO: remove this when job state transition is fully
-        # refactored to use worker status messages.
-        # Also, remove RPC endpoint
-
-        # self.ctrl.handle_job_status(request)
 
         return empty_pb2.Empty()
 

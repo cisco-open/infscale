@@ -48,17 +48,6 @@ class WorkerStatus(Enum):
     UPDATED = "updated"
 
 
-class JobStatus(Enum):
-    """WorkerStatus enum."""
-
-    RUNNING = "running"
-    UPDATED = "updated"
-    STOPPED = "stopped"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    UNKNOWN = "unknown"
-
-
 MessageContentType = str | WorkerStatus | ServeConfig | PerfMetrics
 
 

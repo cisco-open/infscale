@@ -83,11 +83,6 @@ class ManagementRouteStub(object):
                 request_serializer=management__pb2.AgentID.SerializeToString,
                 response_deserializer=management__pb2.Action.FromString,
                 _registered_method=True)
-        self.job_status = channel.unary_unary(
-                '/management.ManagementRoute/job_status',
-                request_serializer=management__pb2.JobStatus.SerializeToString,
-                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-                _registered_method=True)
         self.update_metrics = channel.unary_unary(
                 '/management.ManagementRoute/update_metrics',
                 request_serializer=management__pb2.PerfMetrics.SerializeToString,
@@ -142,13 +137,6 @@ class ManagementRouteServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def job_status(self, request, context):
-        """agent calls job_status rpc to provide status of a job
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
     def update_metrics(self, request, context):
         """agent calls update_metrics rpc to provide performance metrics of a worker
         """
@@ -188,11 +176,6 @@ def add_ManagementRouteServicer_to_server(servicer, server):
                     servicer.command,
                     request_deserializer=management__pb2.AgentID.FromString,
                     response_serializer=management__pb2.Action.SerializeToString,
-            ),
-            'job_status': grpc.unary_unary_rpc_method_handler(
-                    servicer.job_status,
-                    request_deserializer=management__pb2.JobStatus.FromString,
-                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
             'update_metrics': grpc.unary_unary_rpc_method_handler(
                     servicer.update_metrics,
@@ -364,33 +347,6 @@ class ManagementRoute(object):
             '/management.ManagementRoute/command',
             management__pb2.AgentID.SerializeToString,
             management__pb2.Action.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def job_status(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/management.ManagementRoute/job_status',
-            management__pb2.JobStatus.SerializeToString,
-            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,
