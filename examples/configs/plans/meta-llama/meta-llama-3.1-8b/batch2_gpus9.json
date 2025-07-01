@@ -1,0 +1,122 @@
+{
+  "batch_size": 2,
+  "num_gpus_used": 9,
+  "total_latency": 860.3947014131934,
+  "throughput": 21.529689936552092,
+  "solving_time_for_batch": 2.2552173137664795,
+  "stages": [
+    {
+      "stage_id": 0,
+      "layer_range": [
+        0,
+        4
+      ],
+      "num_replicas": 1,
+      "gpus": [
+        0
+      ],
+      "gpu_allocation": {
+        "0": 1
+      },
+      "throughput": 22.66963762985099,
+      "forward_time_ms": 88.20188413187861,
+      "stage_time_ms": 88.22372946521195,
+      "memory": {
+        "static_memory_gb": 5.65824768,
+        "dynamic_memory_gb": 0.402653184,
+        "total_memory_gb": 6.060900864
+      },
+      "data_sizes": {
+        "input_size_mb": 0,
+        "output_size_mb": 76
+      }
+    },
+    {
+      "stage_id": 1,
+      "layer_range": [
+        5,
+        12
+      ],
+      "num_replicas": 2,
+      "gpus": [
+        1,
+        2
+      ],
+      "gpu_allocation": {
+        "0": 2
+      },
+      "throughput": 22.121025115845338,
+      "forward_time_ms": 175.71928429603577,
+      "stage_time_ms": 180.8234464293691,
+      "memory": {
+        "static_memory_gb": 7.113801728,
+        "dynamic_memory_gb": 0.402653184,
+        "total_memory_gb": 7.516454912
+      },
+      "data_sizes": {
+        "input_size_mb": 76,
+        "output_size_mb": 76
+      }
+    },
+    {
+      "stage_id": 2,
+      "layer_range": [
+        13,
+        23
+      ],
+      "num_replicas": 3,
+      "gpus": [
+        3,
+        4,
+        5
+      ],
+      "gpu_allocation": {
+        "0": 1,
+        "1": 2
+      },
+      "throughput": 21.762966672071236,
+      "forward_time_ms": 241.757248878479,
+      "stage_time_ms": 292.79887021181236,
+      "memory": {
+        "static_memory_gb": 9.781477376,
+        "dynamic_memory_gb": 0.402653184,
+        "total_memory_gb": 10.18413056
+      },
+      "data_sizes": {
+        "input_size_mb": 76,
+        "output_size_mb": 76
+      }
+    },
+    {
+      "stage_id": 3,
+      "layer_range": [
+        24,
+        34
+      ],
+      "num_replicas": 3,
+      "gpus": [
+        6,
+        7,
+        8
+      ],
+      "gpu_allocation": {
+        "1": 2,
+        "2": 1
+      },
+      "throughput": 21.529689936552092,
+      "forward_time_ms": 247.5070339734666,
+      "stage_time_ms": 298.54865530679996,
+      "memory": {
+        "static_memory_gb": 10.104389632,
+        "dynamic_memory_gb": 1.050673152,
+        "total_memory_gb": 11.155062784
+      },
+      "data_sizes": {
+        "input_size_mb": 76,
+        "output_size_mb": 1050
+      }
+    }
+  ],
+  "total_latency_ms": 860.3947014131934,
+  "batch_throughput": 10.764844968276046
+}

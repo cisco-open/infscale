@@ -46,7 +46,7 @@ class PlanCollection:
         """Sort the exec plan list by throughput."""
         self._plans[0]
 
-        self._plans = sorted(self._plans, key=lambda plan: plan.pipeline_throughput)
+        self._plans = sorted(self._plans, key=lambda plan: plan.throughput)
 
     def pick_plans(self, demand: float = 0) -> list[ExecPlan]:
         """
@@ -114,7 +114,7 @@ class Planner:
 
         self._colls[model_name] = PlanCollection()
 
-        model_plan_path = self._path / model_name
+        model_plan_path = self._path / model_name.lower()
         for entry in model_plan_path.iterdir():
             if not entry.is_file():
                 continue

@@ -64,5 +64,5 @@
     }
   ],
   "total_latency_ms": 97.23874105164005,
-  "pipeline_throughput": 68.42501229728165
+  "batch_throughput": 68.42501229728165
 }

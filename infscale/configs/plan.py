@@ -94,7 +94,7 @@ class ExecPlan:
         solving_time_for_batch (float): The solving time per batch in seconds.
         stages (list[Stage]): A list of stages in the pipeline.
         total_latency_ms (float): The total latency in milliseconds.
-        pipeline_throughput (float): The throughput of the pipeline.
+        batch_throughput (float): The throughput of the batch.
     """
 
     batch_size: int
@@ -104,7 +104,7 @@ class ExecPlan:
     solving_time_for_batch: float
     stages: list[Stage]
     total_latency_ms: float
-    pipeline_throughput: float
+    batch_throughput: float
 
     @classmethod
     def from_json(cls, data: dict) -> ExecPlan:
@@ -141,5 +141,5 @@ class ExecPlan:
             solving_time_for_batch=data["solving_time_for_batch"],
             stages=stages,
             total_latency_ms=data["total_latency_ms"],
-            pipeline_throughput=data["pipeline_throughput"],
+            batch_throughput=data["batch_throughput"],
         )

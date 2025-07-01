@@ -1,0 +1,17 @@
+---
+# api_port: 8080
+# ctrl_port: 31310
+autoscale: true
+deploy_policy: static # options: even, packing, random (default), static
+                      # if autoscale is enabled, deploy_policy is static
+
+# a directory path to job deployment templates/plans
+# pick a directory where plan files are located
+job_plans: ~/projects/infscale/examples/configs/plans
+
+reqgen:
+  sort: exponential # default, exponential
+  params:
+    in_memory: true
+    replay: 7 # -1: infinite, 0 < n: replay n times; 0 means play dataset once
+    rate: 1.0 # only for exponential

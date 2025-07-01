@@ -58,6 +58,9 @@ class CfgGen:
 
         self._agent_ctxts = agent_ctxts
 
+        self._is_auto_regressive = False
+        self._determine_auto_regressive()
+
         # key: agent id and value is AgentContext
         # sort agent context by # of unused gpus in a decreasing order
         # and then by agent id in an increasing order to break a tie
@@ -91,6 +94,10 @@ class CfgGen:
 
         # All last stage replicas connections to the server
         self._final_server_connections = []
+
+    def _determine_auto_regressive(self) -> None:
+        model = self._source.model.lower()
+        self._is_auto_regressive = "llama" in model
 
     def generate(self) -> JobConfig:
         """Generate a config."""
@@ -447,6 +454,26 @@ class CfgGen:
                     current_world_id += 1
 
                 flow_graph[wid] = connections
+
+        # Add feedback connections for llama generation
+        if self._is_auto_regressive and len(stages) > 1:
+            first_stage = stages[0]
+            first_stage_id = first_stage.stage_id + self._stage_id_offset
+            for r in range(first_stage.num_replicas):
+                wid = f"{first_stage_id}-{r}"
+                worker_machine = worker_to_machine[wid]
+                agent_id = self._machine_to_agent_id[worker_machine]
+                agent_ctxt = self._agent_ctxts[agent_id]
+                for rr in range(last_stage.num_replicas):
+                    peer = f"{last_stage_id}-{rr}"
+                    conn = {
+                        "name": f"w{current_world_id}",
+                        "peers": FlowList([peer]),
+                        "addr": agent_ctxt.ip,
+                        "backend": "nccl",  # We have nccl connections between all workers
+                    }
+                    flow_graph[wid].append(conn)
+                    current_world_id += 1
 
         return flow_graph, server_connections
 

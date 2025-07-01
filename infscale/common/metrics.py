@@ -62,4 +62,10 @@ class PerfMetrics:
 
     def __str__(self) -> str:
         """Return string representation for the object."""
-        return f"qlevel: {self.qlevel}, delay: {self.delay}, input_rate: {self.input_rate}, output_rate: {self.output_rate}"
+        str_rep = (
+            f"qlevel: {self.qlevel:.6f}, delay: {self.delay:.6f}, "
+            + f"input_rate: {self.input_rate:.6f}, "
+            + f"output_rate: {self.output_rate:.6f}"
+        )
+
+        return str_rep
