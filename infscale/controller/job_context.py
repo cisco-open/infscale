@@ -87,6 +87,7 @@ class JobStateEnum(Enum):
     COMPLETE = "complete"
     FAILED = "failed"
     FAILING = "failing"
+    RECOVERY = "recovery"
 
 
 class BaseJobState:
@@ -154,6 +155,12 @@ class BaseJobState:
         raise InvalidJobStateAction(
             self.job_id, "failing", self.context.state.enum_().value
         )
+        
+    async def cond_recovery(self):
+        """Handle the transition to recovery."""
+        raise InvalidJobStateAction(
+            self.job_id, "recovery", self.context.state.enum_().value
+        )
 
 
 class ReadyState(BaseJobState):
@@ -183,8 +190,7 @@ class RunningState(BaseJobState):
 
     async def stop(self):
         """Transition to STOPPING state."""
-        await self.context.send_command_to_agents(self.context.req)
-        self.context.set_state(JobStateEnum.STOPPING)
+        await self.context._JobContext__stop()
 
     async def update(self):
         """Transition to UPDATING state."""
@@ -214,32 +220,18 @@ class RunningState(BaseJobState):
 
     async def cond_completing(self):
         """Handle the transition to completing."""
-        server_ids = self.context.get_server_ids()
+        await self.context._JobContext__cond_completing()
+            
+    async def cond_recovery(self):
+        """Handle the transition to recovery."""
+        self.context.set_state(JobStateEnum.RECOVERY)
+        
+        # TODO: remove this when the recovery mechanism is implemented
+        # we need this since we simply transition from Running to Recovery
+        # therefore, we need to keep whatever functionality we had for Running
+        # in this case, check if the job is failed or not and stop it if needed.
+        await self.context.state.cond_failing()
 
-        verdict = all(
-            self.context.get_wrk_status(wid) == WorkerStatus.SERVING_DONE
-            for wid in server_ids
-        )
-
-        if not verdict:
-            return
-
-        command = CommandActionModel(
-            action=CommandAction.FINISH_JOB, job_id=self.job_id
-        )
-        await self.context.send_command_to_agents(command)
-        self.context.set_state(JobStateEnum.COMPLETING)
-
-    async def cond_failing(self):
-        """Handle the transition to failing."""
-        job_failed = self.context.job_checker.is_job_failed()
-
-        if job_failed:
-            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
-
-            await self.context.send_command_to_agents(command)
-
-            self.context.set_state(JobStateEnum.FAILING)
 
 
 class StartingState(BaseJobState):
@@ -251,8 +243,7 @@ class StartingState(BaseJobState):
 
     async def stop(self):
         """Transition to STOPPING state."""
-        await self.context.send_command_to_agents(self.context.req)
-        self.context.set_state(JobStateEnum.STOPPING)
+        await self.context._JobContext__stop()
 
     def cond_running(self):
         """Handle the transition to running."""
@@ -333,8 +324,7 @@ class UpdatingState(BaseJobState):
 
     async def stop(self):
         """Transition to STOPPING state."""
-        await self.context.send_command_to_agents(self.context.req)
-        self.context.set_state(JobStateEnum.STOPPING)
+        await self.context._JobContext__stop()
 
     def cond_running(self):
         """Handle the transition to running."""
@@ -350,31 +340,11 @@ class UpdatingState(BaseJobState):
 
     async def cond_completing(self):
         """Handle the transition to completing."""
-        server_ids = self.context.get_server_ids()
-
-        verdict = all(
-            self.context.get_wrk_status(wid) == WorkerStatus.DONE for wid in server_ids
-        )
-
-        if not verdict:
-            return
-
-        command = CommandActionModel(
-            action=CommandAction.FINISH_JOB, job_id=self.job_id
-        )
-        await self.context.send_command_to_agents(command)
-        self.context.set_state(JobStateEnum.COMPLETING)
+        await self.context._JobContext__cond_completing()
 
     async def cond_failing(self):
         """Handle the transition to failing."""
-        job_failed = self.context.job_checker.is_job_failed()
-
-        if job_failed:
-            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
-
-            await self.context.send_command_to_agents(command)
-
-            self.context.set_state(JobStateEnum.FAILING)
+        await self.context._JobContext__cond_failing()
 
 
 class CompleteState(BaseJobState):
@@ -421,6 +391,26 @@ class FailedState(BaseJobState):
             raise e
 
         self.context.set_state(JobStateEnum.STARTING)
+
+
+class RecoveryState(BaseJobState):
+    """RecoveryState class."""
+
+    def enum_(self) -> JobStateEnum:
+        """Return recovery state enum."""
+        return JobStateEnum.RECOVERY
+    
+    async def stop(self):
+        """Transition to STOPPING state."""
+        await self.context._JobContext__stop()
+
+    async def cond_completing(self):
+        """Handle the transition to completing."""
+        await self.context._JobContext__cond_completing()
+        
+    async def cond_failing(self):
+        """Handle the transition to failing."""
+        await self.context._JobContext__cond_failing()
 
 
 class JobContext:
@@ -500,7 +490,7 @@ class JobContext:
 
             case WorkerStatus.FAILED:
                 self._release_gpu_resource_by_worker_id(wid)
-                await self.cond_failing()
+                await self.cond_recovery()
 
             case WorkerStatus.TERMINATED:
                 self._release_gpu_resource_by_worker_id(wid)
@@ -829,6 +819,7 @@ class JobContext:
             JobStateEnum.COMPLETE: CompleteState,
             JobStateEnum.FAILED: FailedState,
             JobStateEnum.FAILING: FailingState,
+            JobStateEnum.RECOVERY: RecoveryState,
         }
         return state_mapping[state_enum]
 
@@ -992,6 +983,54 @@ class JobContext:
     async def cond_failing(self):
         """Handle the transition to failing."""
         await self.state.cond_failing()
+        
+    async def cond_recovery(self):
+        """Handle the transition to recovery."""
+        await self.state.cond_recovery()
+        
+    async def __stop(self):
+        """Transition to STOPPING state."""
+        # DO NOT call this method in job_context instance or any other places.
+        # Call it only in methods of a state instance
+        # (e.g., RunningState, UpdatingState, etc).
+        await self.send_command_to_agents(self.req)
+        self.set_state(JobStateEnum.STOPPING)
+
+    async def __cond_failing(self):
+        """Handle the transition to failing."""
+        # DO NOT call this method in job_context instance or any other places.
+        # Call it only in methods of a state instance
+        # (e.g., RunningState, RecoveryState, etc).
+        
+        job_failed = self.job_checker.is_job_failed()
+
+        if job_failed:
+            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
+
+            await self.send_command_to_agents(command)
+
+            self.set_state(JobStateEnum.FAILING)
+
+    async def __cond_completing(self):
+        # DO NOT call this method in job_context instance or any other places.
+        # Call it only in methods of a state instance
+        # (e.g., RunningState, RecoveryState, etc).
+        """Handle the transition to completing."""
+        server_ids = self.get_server_ids()
+
+        verdict = all(
+            self.get_wrk_status(wid) == WorkerStatus.SERVING_DONE
+            for wid in server_ids
+        )
+
+        if not verdict:
+            return
+
+        command = CommandActionModel(
+            action=CommandAction.FINISH_JOB, job_id=self.job_id
+        )
+        await self.send_command_to_agents(command)
+        self.set_state(JobStateEnum.COMPLETING)
 
     async def __start(self):
         # DO NOT call this method in job_context instance or any other places.
