@@ -16,7 +16,53 @@
 
 """metrics.py."""
 
+import math
+from collections import deque
 from dataclasses import dataclass
+
+
+class RollingStats:
+    """RollingStatus class."""
+
+    def __init__(self, window_size: int = 10) -> None:
+        """Initialize an instance of RollingStats."""
+        self._window = deque(maxlen=window_size)
+        self._window_size = window_size
+        self._sum = 0.0
+        self._sum_sq = 0.0
+
+    def update(self, val: float) -> None:
+        """Update statistics."""
+        if self.is_filled():
+            old = self._window.popleft()
+            self._sum -= old
+            self._sum_sq -= old**2
+        self._window.append(val)
+
+        self._sum += val
+        self._sum_sq += val**2
+
+    def is_filled(self) -> bool:
+        """Return true if window is filled."""
+        return len(self._window) == self._window_size
+
+    def mean(self) -> float:
+        """Return an average."""
+        if not self.is_filled():
+            return 0.0
+
+        return self._sum / self._window_size
+
+    def std(self) -> float:
+        """Return a standard deviation."""
+        if not self.is_filled():
+            return 0.0
+
+        mean_sq = self._sum_sq / self._window_size
+        mean = self._sum / self._window_size
+        std = math.sqrt(mean_sq - mean**2)
+
+        return std
 
 
 @dataclass
@@ -32,9 +78,13 @@ class PerfMetrics:
     # the number of requests served per second
     output_rate: float = 0.0
 
-    # a factor used to evaluate congestion and to compute a desired rate
-    # for relieving the congestion
-    _weight_factor: float = 1.5
+    # a factor used to set qlevel threshold
+    _sensitivity_factor: float = 2
+    _qthresh: float = 10**9
+
+    _qlevel_rs: RollingStats = None
+    _in_rate_rs: RollingStats = None
+    _out_rate_rs: RollingStats = None
 
     def update(
         self, qlevel: float, delay: float, input_rate: float, output_rate: float
@@ -45,20 +95,43 @@ class PerfMetrics:
         self.input_rate = input_rate
         self.output_rate = output_rate
 
-    def is_congested(self) -> bool:
-        """Return true if queue continues to build up while throughput is saturated."""
-        # measure qlevel is larger than output rate * weight factor
-        cond = self.qlevel > self.output_rate * self._weight_factor
+    def update_stats(self) -> None:
+        """Update stats on qlevel, input and output rates with a window of samples.
 
-        return cond
+        This method doesn't need to be called for every worker in a job. Instead,
+        call this method for workers that need to monitor congestion.
+        This method should be only called in conjunction with update() for accurate
+        calculation.
+        """
+        self._in_rate_rs.update(self.input_rate)
+        self._out_rate_rs.update(self.output_rate)
+        self._qlevel_rs.update(self.qlevel)
+
+        if not self._qlevel_rs.is_filled():
+            return
+
+        mean = self._qlevel_rs.mean()
+        std = self._qlevel_rs.std()
+
+        self._qthresh = mean + self._sensitivity_factor * std
+
+    def is_congested(self) -> bool:
+        """Return true if queue continues to build up."""
+        return self.qlevel > self._qthresh
 
     def rate_to_decongest(self) -> float:
         """Return a required rate to relieve congestion.
 
-        The required rate means the additional rate by subtracting the output
-        rate from the weighted input rate.
+        The required rate means the additional rate by subtracting the average
+        output rate from the average input rate.
         """
-        return self.input_rate * self._weight_factor - self.output_rate
+        return max(self._in_rate_rs.mean() - self._out_rate_rs.mean(), 0.0)
+
+    def __post_init__(self) -> None:
+        """Do post init work."""
+        self._qlevel_rs = RollingStats()
+        self._in_rate_rs = RollingStats()
+        self._out_rate_rs = RollingStats()
 
     def __str__(self) -> str:
         """Return string representation for the object."""

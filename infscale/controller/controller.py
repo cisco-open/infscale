@@ -157,6 +157,10 @@ class Controller:
         if not self.autoscaler or not job_ctx.is_server(req.worker_id):
             return
 
+        # If the worker is server, we want to update statistics of metrics.
+        # So, it's necessary to call update_stats().
+        metrics.update_stats()
+
         await self.autoscaler.set_event(req.job_id, req.worker_id)
 
     async def _handle_agent_failure(self, agent_id: str) -> None:
