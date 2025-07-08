@@ -18,7 +18,7 @@
 
 from dataclasses import dataclass
 
-from infscale.configs.job import JobConfig
+from infscale.configs.job import JobConfig, WorldInfo
 from infscale.controller.ctrl_dtype import CommandAction
 from infscale.controller.job_context import JobStateEnum
 
@@ -78,6 +78,12 @@ class JobManager:
                 stop_wrkrs,
             )
             self.jobs[config.job_id] = job_data
+            
+    def _get_recover_worker_ids(self, config: JobConfig) -> set[str]:
+        """Return a set of worker IDs that need to be recovered."""
+        wrk_ids = {worker.id for worker in config.workers if worker.recover}
+        
+        return wrk_ids
 
     def compare_configs(
         self, curr_config: JobConfig, new_config: JobConfig
@@ -86,27 +92,27 @@ class JobManager:
         old_cfg_wrkrs = set(curr_config.flow_graph.keys()) if curr_config else set()
         new_cfg_wrkrs = set(new_config.flow_graph.keys())
 
-        start_wrkrs = new_cfg_wrkrs - old_cfg_wrkrs
+        recover_wrkrs = self._get_recover_worker_ids(new_config)
+
+        start_wrkrs = recover_wrkrs | (new_cfg_wrkrs - old_cfg_wrkrs)
         stop_wrkrs = old_cfg_wrkrs - new_cfg_wrkrs
 
         update_wrkrs = set()
 
         # select workers that will be affected by workers to be started
         for w, world_info_list in new_config.flow_graph.items():
-            for world_info in world_info_list:
-                peers = world_info.peers
-
-                self._pick_workers(update_wrkrs, start_wrkrs, w, peers)
+            for new_world_info in world_info_list:
+                curr_world_info = self._find_matching_world_info(curr_config, w, new_world_info)
+                self._pick_workers(update_wrkrs, start_wrkrs, w, new_world_info, curr_world_info)
 
         if curr_config is None:
             return start_wrkrs, update_wrkrs, stop_wrkrs
 
         # select workers that will be affected by workers to be stopped
         for w, world_info_list in curr_config.flow_graph.items():
-            for world_info in world_info_list:
-                peers = world_info.peers
-
-                self._pick_workers(update_wrkrs, stop_wrkrs, w, peers)
+            for new_world_info in world_info_list:
+                curr_world_info = self._find_matching_world_info(curr_config, w, new_world_info)
+                self._pick_workers(update_wrkrs, stop_wrkrs, w, new_world_info, curr_world_info)
 
         return start_wrkrs, update_wrkrs, stop_wrkrs
 
@@ -115,15 +121,23 @@ class JobManager:
         res_set: set[str],
         needles: set[str],
         name: str,
-        peers: list[str],
+        new_world_info: WorldInfo,
+        curr_world_info: WorldInfo | None,
     ) -> None:
         """Pick workers to update given needles and haystack.
 
         The needles are workers to start or stop and the haystack is
         name and peers.
+        
+        Also includes peers of `name` if its connection details
+        (`addr`, `ctrl_port`, `data_port`) differ from the previous config.
         """
+        if curr_world_info and self._has_connection_changed(curr_world_info, new_world_info):
+            for peer in new_world_info.peers:
+                res_set.add(peer)
+
         if name in needles:  # in case name is in the needles
-            for peer in peers:
+            for peer in new_world_info.peers:
                 if peer in needles:
                     # if peer is also in the needles,
                     # the peer is not the subject of update
@@ -132,7 +146,7 @@ class JobManager:
                 res_set.add(peer)
 
         else:  # in case name is not in the needles
-            for peer in peers:
+            for peer in new_world_info.peers:
                 if peer not in needles:
                     continue
 
@@ -146,6 +160,29 @@ class JobManager:
                 # because name is already affected by one peer
                 # so we come out of the for-loop
                 break
+            
+    def _has_connection_changed(
+        self, old: WorldInfo, new: WorldInfo
+    ) -> bool:
+        """Check if worker connection details are changed."""
+        return (
+            old.addr != new.addr or
+            old.ctrl_port != new.ctrl_port or
+            old.data_port != new.data_port
+        )
+            
+    def _find_matching_world_info(
+        self, curr_config: JobConfig | None, w: str, new_world_info: WorldInfo
+    ) -> WorldInfo | None:
+        """Return current world info or None if there is no current config."""
+        if not curr_config:
+            return None
+
+        for curr_info in curr_config.flow_graph.get(w, []):
+            if curr_info.name == new_world_info.name:
+                return curr_info
+
+        return None
 
     def get_config(self, job_id: str) -> JobConfig | None:
         """Return a job config of given job name."""

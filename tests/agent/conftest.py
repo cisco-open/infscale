@@ -107,7 +107,7 @@ job_config_diffs = [
         [],  # Expected start_ids
         [],  # Expected updated_ids
     ),
-    # # Test case 2: Two workers updated, one started
+    # Test case 2: Two workers updated, one started
     (
         JobConfig(
             job_id="job1",
@@ -313,7 +313,7 @@ job_config_diffs = [
         [],  # Expected start_ids
         ["1-0", "s-0"],  # Expected updated_ids
     ),
-    # # Test case 4: All workers updated
+    # Test case 4: All workers updated
     (
         JobConfig(
             job_id="job1",
@@ -398,5 +398,93 @@ job_config_diffs = [
         ["s-0", "0-0", "1-0"],  # Expected terminate_ids
         ["s-4", "2-0", "4-0"],  # Expected start_ids
         [],  # Expected updated_ids
+    ),
+    # Test case 5: One worker to recover
+    (
+        JobConfig(
+            job_id="job1",
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu"}),
+            ],
+            name="test",
+            model="model",
+            dataset=None,
+            flow_graph={
+                "s-0": [
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
+                ],
+                "0-0": [
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
+                ],
+                "1-0": [
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                        }
+                    )
+                ],
+            },
+        ),
+        JobConfig(
+            job_id="job1",
+            workers=[
+                WorkerData(**{"id": "s-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "0-0", "stage": {}, "device": "cpu"}),
+                WorkerData(**{"id": "1-0", "stage": {}, "device": "cpu", "recover": True}),
+            ],
+            name="test",
+            model="model",
+            dataset=None,
+            flow_graph={
+                "s-0": [
+                    WorldInfo(
+                        **{
+                            "name": "w0",
+                            "peers": ["1-0"],
+                            "backend": "gloo",
+                        }
+                    )
+                ],
+                "0-0": [
+                    WorldInfo(
+                        **{
+                            "name": "w1",
+                            "peers": ["s-0"],
+                            "backend": "gloo",
+                        }
+                    )
+                ],
+                "1-0": [
+                    WorldInfo(
+                        **{
+                            "name": "w2",
+                            "peers": ["0-0"],
+                            "backend": "gloo",
+                            "data_port": 1234,
+                            "ctrl_port": 3333
+                        }
+                    )
+                ],
+            },
+        ),
+        [],  # Expected terminate_ids
+        ["1-0"],  # Expected start_ids
+        ["s-0", "0-0"],  # Expected updated_ids
     ),
 ]

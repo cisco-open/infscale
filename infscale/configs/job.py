@@ -80,6 +80,7 @@ class WorkerData:
     is_server: bool = False
     deploy: bool = False
     device: Optional[str] = ""
+    recover: bool = False
 
 
 @dataclass
