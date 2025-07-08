@@ -6,7 +6,7 @@ nfaults: 1
 # after development is done, they need to be revised accordingly
 # to automate building flow_graph, etc.
 micro_batch_size: 2
-fwd_policy: "static"
+fwd_policy: rr
 job_id: "job5"
 # maximum number of requests in flight at any given point in time
 max_inflight: 4

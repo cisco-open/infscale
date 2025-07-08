@@ -20,6 +20,7 @@ import asyncio
 from abc import abstractmethod
 
 from infscale.execution.world import WorldInfo
+from infscale.fwding.sticky_store import StickyStore
 
 
 class BaseForwarder:
@@ -27,11 +28,41 @@ class BaseForwarder:
 
     def __init__(self):
         """Initialize an instance."""
-        pass
+        self._sticky = False
+        self._sticky_container: dict[int, StickyStore] = dict()
+
+    def set_stickiness(self, sticky: bool):
+        """Set a flag to indicate if routing is sticky."""
+        self._sticky = sticky
+
+    def configure(self, index: int):
+        """Configure forwarder."""
+        if not self._sticky:
+            return
+
+        self._sticky_container[index] = StickyStore()
+
+    def select(
+        self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]], layer_no: int, seqno: int
+    ) -> tuple[WorldInfo, asyncio.Queue]:
+        """Select a tx queue."""
+        if not self._sticky:
+            return self._select(tx_qs)
+
+        # in case that sticky flag is set
+        store = self._sticky_container[layer_no]
+        val = store.select(seqno)
+        if val is None:
+            wi, q = self._select(tx_qs)
+            store.update(seqno, wi, q)
+        else:
+            wi, q = val
+
+        return wi, q
 
     @abstractmethod
-    def select(
+    def _select(
         self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]]
     ) -> tuple[WorldInfo, asyncio.Queue]:
-        """Select a tx queue from a given tx queue list."""
+        """Select a tx queue based on individual forwarder's strategy."""
         pass

@@ -27,7 +27,7 @@ from infscale.configs.job import ServeConfig
 from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo
-from infscale.fwding.factory import get_forwarder
+from infscale.fwding.factory import Forwarder, get_forwarder
 
 
 DEFAULT_QUEUE_SIZE = 100
@@ -63,6 +63,8 @@ class Router:
         _ = asyncio.create_task(self._send_arbiter())
         _ = asyncio.create_task(self._recv_arbiter())
 
+        self._fwder: Forwarder = None
+
     @property
     def rx_q(self) -> asyncio.Queue:
         """Return receiver queue."""
@@ -83,7 +85,16 @@ class Router:
         """(Re)configure router."""
         self.device = device
 
-        self._fwder = get_forwarder(spec.fwd_policy)
+        if self._fwder is None:
+            self._fwder = get_forwarder(spec.fwd_policy)
+
+        # In case of llm, decoding token efficiently needs kv cache.
+        # When request is routed to a receiver (worker) for the first time,
+        # the destination should be remembered (and reused) so that kv cache
+        # can be utilized. Otherwise, the decoding causes error since no
+        # kv cache associated with the corresponding request.
+        sticky = spec.kv_cache_needed()
+        self._fwder.set_stickiness(sticky)
 
         for world_info in worlds_to_add:
             cancellable = asyncio.Event()
@@ -98,6 +109,7 @@ class Router:
 
                 if stage_cfg.start not in self.__tx_qs:
                     self.__tx_qs[stage_cfg.start] = []
+                    self._fwder.configure(stage_cfg.start)
 
                 tpl = (world_info, asyncio.Queue(DEFAULT_QUEUE_SIZE))
                 self.__tx_qs[stage_cfg.start].append(tpl)
@@ -274,7 +286,8 @@ class Router:
                 await asyncio.sleep(DEFAULT_SLEEP_TIME)
 
             tx_qs = self.__tx_qs[next_layer]
-            world_info, tx_q = self._fwder.select(tx_qs)
+
+            world_info, tx_q = self._fwder.select(tx_qs, next_layer, seqno)
 
             await tx_q.put((seqno, tensor, next_layer))
 
