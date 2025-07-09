@@ -27,10 +27,11 @@ from transformers import (AutoModelForCausalLM,
                           AutoModelForImageClassification,
                           AutoModelForPreTraining, AutoTokenizer,
                           PretrainedConfig, PreTrainedTokenizer,
+                          AutoModelForMaskedLM,
                           PreTrainedTokenizerFast)
 
 AutoModelType = (
-    AutoModelForPreTraining | AutoModelForCausalLM | AutoModelForImageClassification
+    AutoModelForPreTraining | AutoModelForCausalLM | AutoModelForImageClassification | AutoModelForMaskedLM
 )
 
 logger = None
@@ -357,7 +358,7 @@ class BertModelMetaData(BaseModelMetaData):
         if self.model:
             return self.model
 
-        self.model = self._init_model(AutoModelForCausalLM)
+        self.model = self._init_model(AutoModelForMaskedLM)
 
         assert self.model, f"Given model {self.name} is not supported yet."
 
@@ -380,11 +381,66 @@ class BertModelMetaData(BaseModelMetaData):
 
     def get_output_parser(self) -> Union[Callable, None]:
         """Return function to parse output."""
-        raise NotImplementedError
+        
+        def inner(outputs, input_ids):
+            # We need to pass input_ids to the output parser to reconstruct the sentence
+            outputs["input_ids"] = input_ids
+            return outputs
+        
+        return inner
 
     def get_predict_fn(self) -> Union[Callable, None]:
         """Return function to predict."""
-        raise NotImplementedError
+        if not self.tokenizer:
+            self.tokenizer = AutoTokenizer.from_pretrained(
+                self.name, config=self.config
+            )
+        
+        def inner(tensors: dict[str, Tensor]) -> list[str]:
+            results = []
+            
+            # Get the logits and input_ids from the tensors
+            logits = tensors["logits"]
+            input_ids = tensors.get("input_ids", None)
+            
+            if input_ids is None:
+                # If input_ids not provided, we can't reconstruct the sentence
+                # Just return the top predictions for each sequence
+                for tensor in logits:
+                    predicted_tokens = []
+                    for position_logits in tensor:
+                        top_token_id = torch.argmax(position_logits).item()
+                        predicted_token = self.tokenizer.decode([top_token_id])
+                        predicted_tokens.append(predicted_token)
+                    results.append(" ".join(predicted_tokens))
+            else:
+                # Process each sequence in the batch
+                for i, (sequence_logits, sequence_input_ids) in enumerate(zip(logits, input_ids)):
+                    # Find mask token positions
+                    mask_token_indices = torch.where(sequence_input_ids == self.tokenizer.mask_token_id)[0]
+                    print(mask_token_indices)
+                    
+                    if len(mask_token_indices) == 0:
+                        # No mask tokens, just decode the original text
+                        decoded_text = self.tokenizer.decode(sequence_input_ids, skip_special_tokens=True)
+                        results.append(decoded_text)
+                    else:
+                        # Create a copy of the input_ids to modify
+                        modified_input_ids = sequence_input_ids.clone()
+                        
+                        # Replace mask token IDs with predicted token IDs
+                        for mask_pos in mask_token_indices:
+                            mask_logits = sequence_logits[mask_pos]
+                            top_token_id = torch.argmax(mask_logits).item()
+                            modified_input_ids[mask_pos] = top_token_id
+                        
+                        # Decode the modified sequence
+                        complete_text = self.tokenizer.decode(modified_input_ids, skip_special_tokens=True)
+                        results.append(complete_text)
+            
+            return results
+        
+        return inner
 
 
 class T5ModelMetaData(BaseModelMetaData):

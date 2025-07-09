@@ -27,6 +27,7 @@ examples/resnet_profiling/*
 
 # profile results
 profile_data/
+_profile_data/
 
 # generated config
 infscale_config/
