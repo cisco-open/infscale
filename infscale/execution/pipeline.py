@@ -115,11 +115,11 @@ class Pipeline:
         await world_info.channel.wait_readiness()
 
     def _reset_multiworld(self, world_info: WorldInfo) -> None:
-        # TODO: implement this
+        self.world_manager.remove_world(world_info.name)
         logger.info(f"remove world {world_info.name} from multiworld")
 
     def _reset_control_channel(self, world_info: WorldInfo) -> None:
-        # TODO: implement this
+        world_info.channel.cleanup()
         logger.info(f"remove world {world_info.name} from control channel")
 
     async def _configure(self) -> None:

@@ -73,6 +73,8 @@ class Channel:
         self.peers: dict[int, tuple[StreamReader, StreamWriter]] = {}
         self.prev_ctrl_msg: ControlMessage = ControlMessage()
 
+        self._server_task: asyncio.Task = None
+
     async def _setup_server(self, setup_done: asyncio.Event) -> None:
         server = await asyncio.start_server(self._handle_client, self.addr, self.port)
         setup_done.set()
@@ -124,12 +126,19 @@ class Channel:
         setup_done = asyncio.Event()
 
         if self.rank == 0:
-            _ = asyncio.create_task(self._setup_server(setup_done))
+            self._server_task = asyncio.create_task(self._setup_server(setup_done))
         else:
             _ = asyncio.create_task(self._setup_client(setup_done))
 
         # wait until setting up either server or client is done
         await setup_done.wait()
+        
+    def cleanup(self) -> None:
+        if self._server_task is not None:
+            self._server_task.cancel()
+
+        for _, writer in self.peers.values():
+            writer.close()
 
     async def send_ctrl_msg(
         self, rank: int, tensors: dict[str, Tensor], seqno: int = 0
