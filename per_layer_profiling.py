@@ -14,10 +14,11 @@ from transformers import (
     AutoTokenizer,
     AutoModelForCausalLM,
     DynamicCache,
+    T5ForConditionalGeneration,
 )
 from accelerate.utils.modeling import set_module_tensor_to_device
 
-from infscale.module.model_metadata import ResnetModelMetaData, Llama3ModelMetaData, BertModelMetaData
+from infscale.module.model_metadata import ResnetModelMetaData, Llama3ModelMetaData, BertModelMetaData, T5ModelMetaData
 from infscale.module.modelir import ModelIR
 
 import argparse
@@ -144,6 +145,14 @@ def create_inputs(model_type, model, device, batch_size=1, seq_length=None):
         attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long).to(device)
         token_type_ids = torch.zeros((batch_size, seq_length), dtype=torch.long).to(device)
         inputs = {'input_ids': input_ids, 'attention_mask': attention_mask, 'token_type_ids': token_type_ids}
+    elif model_type == "t5":
+        tokenizer = AutoTokenizer.from_pretrained(model.config.name_or_path)
+        assert seq_length is not None
+        vocab_size = tokenizer.vocab_size
+        input_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, seq_length)).to(device)
+        attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long).to(device)
+        decoder_input_ids = torch.tensor([[tokenizer.pad_token_id]] * batch_size).to(device)
+        inputs = {'input_ids': input_ids, 'attention_mask': attention_mask, 'decoder_input_ids': decoder_input_ids}
     else:
         print(f"Warning: Unknown model type '{model_type}', defaulting to ResNet-style inputs")
         # Default to ResNet-style inputs if model_type is unknown
@@ -168,7 +177,7 @@ def parse_args():
 
 # ======== Main Function ========
 
-LM_MODELS = ["llama", "bert"]
+LM_MODELS = ["llama", "bert", "t5"]
 
 if __name__ == '__main__':
     # ======== Initialization ========
@@ -222,6 +231,18 @@ if __name__ == '__main__':
         # Create model metadata and IR
         model_metadata = BertModelMetaData(model_name, config)
         model_metadata.trace_inputs = ["input_ids", "token_type_ids", "attention_mask"]
+        model_ir = ModelIR(model_metadata)
+    elif model_type == "t5":
+        model_name = "t5-large"
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        config = T5ForConditionalGeneration.from_pretrained(model_name).config
+        config.use_cache = False
+        full_model = T5ForConditionalGeneration.from_pretrained(model_name)
+
+        # Create model metadata and IR
+        model_metadata = T5ModelMetaData(model_name, config)
+        model_metadata.trace_inputs = ["input_ids", "attention_mask", "decoder_input_ids"]
         model_ir = ModelIR(model_metadata)
     else:
         raise ValueError(f"Model type {model_type} not supported")

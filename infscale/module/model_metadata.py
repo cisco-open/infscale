@@ -483,11 +483,17 @@ class T5ModelMetaData(BaseModelMetaData):
 
     def get_output_parser(self) -> Union[Callable, None]:
         """Return function to parse output."""
-        raise NotImplementedError
+        def inner(outputs):
+            return outputs
+        
+        return inner
 
     def get_predict_fn(self) -> Union[Callable, None]:
         """Return function to predict."""
-        raise NotImplementedError
+        def inner(tensors: dict[str, Tensor]) -> list[str]:
+            return tensors["logits"]
+        
+        return inner
 
 
 class VitModelMetaData(BaseModelMetaData):
