@@ -17,7 +17,7 @@ from transformers import (
 )
 from accelerate.utils.modeling import set_module_tensor_to_device
 
-from infscale.module.model_metadata import ResnetModelMetaData, Llama3ModelMetaData
+from infscale.module.model_metadata import ResnetModelMetaData, Llama3ModelMetaData, BertModelMetaData
 from infscale.module.modelir import ModelIR
 
 import argparse
@@ -135,6 +135,15 @@ def create_inputs(model_type, model, device, batch_size=1, seq_length=None):
         input_shape = (batch_size, 3, 224, 224)
         # input_shape = (batch_size, 3, 32, 32)   # for CIFAR-10
         inputs = {"pixel_values": torch.randn(input_shape).to(device)}
+    elif model_type == "bert":
+        tokenizer = AutoTokenizer.from_pretrained(model.config.name_or_path)
+        assert seq_length is not None
+        assert seq_length <= 512, "BERT only supports sequence lengths up to 512"
+        vocab_size = tokenizer.vocab_size
+        input_ids = torch.randint(low=0, high=vocab_size, size=(batch_size, seq_length)).to(device)
+        attention_mask = torch.ones((batch_size, seq_length), dtype=torch.long).to(device)
+        token_type_ids = torch.zeros((batch_size, seq_length), dtype=torch.long).to(device)
+        inputs = {'input_ids': input_ids, 'attention_mask': attention_mask, 'token_type_ids': token_type_ids}
     else:
         print(f"Warning: Unknown model type '{model_type}', defaulting to ResNet-style inputs")
         # Default to ResNet-style inputs if model_type is unknown
@@ -159,6 +168,8 @@ def parse_args():
 
 # ======== Main Function ========
 
+LM_MODELS = ["llama", "bert"]
+
 if __name__ == '__main__':
     # ======== Initialization ========
     args = parse_args()
@@ -167,7 +178,7 @@ if __name__ == '__main__':
     profile_reptitions = args.profile_reptitions
     model_type = args.model_type
     batch_sizes = args.batch_sizes
-    seq_lengths = args.seq_lengths if args.seq_lengths is not None else [1000]  # Default to 1k if not specified
+    seq_lengths = args.seq_lengths if args.seq_lengths is not None else [512]  # Default to 1k if not specified
     profile_decode = args.profile_decode
     output_suffix = args.output_suffix
 
@@ -199,6 +210,18 @@ if __name__ == '__main__':
         # Create model metadata and IR
         model_metadata = Llama3ModelMetaData(model_name, config)
         model_metadata.trace_inputs = ["input_ids", "attention_mask"]
+        model_ir = ModelIR(model_metadata)
+    elif model_type == "bert":
+        model_name = "bert-large-uncased"
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        config = AutoModelForCausalLM.from_pretrained(model_name).config
+        config.use_cache = False
+        full_model = AutoModelForCausalLM.from_pretrained(model_name)
+
+        # Create model metadata and IR
+        model_metadata = BertModelMetaData(model_name, config)
+        model_metadata.trace_inputs = ["input_ids", "token_type_ids", "attention_mask"]
         model_ir = ModelIR(model_metadata)
     else:
         raise ValueError(f"Model type {model_type} not supported")
@@ -242,9 +265,8 @@ if __name__ == '__main__':
     # Process each batch size and sequence length combination
     for batch_size in batch_sizes:
         for seq_length in seq_lengths:
-            if model_type != "llama" and seq_length is not None:
-                # Skip sequence length variations for non-LLM models
-                continue
+            if model_type not in LM_MODELS and seq_length is not None:
+                raise ValueError("Sequence length is not supported for non-LLM models")
                 
             print(f"\n{'='*50}")
             if seq_length is not None:
@@ -561,7 +583,7 @@ if __name__ == '__main__':
                 profiling_data["layers"].append(layer_data)
                 
             # Add sequence length to profiling data for LLMs
-            if model_type == "llama" and seq_length is not None:
+            if model_type in LM_MODELS and seq_length is not None:
                 profiling_data["sequence_length"] = seq_length
             
             # Save to file
@@ -579,7 +601,7 @@ if __name__ == '__main__':
             os.makedirs(output_dir, exist_ok=True)
             
             # Include sequence length in the filename for LLMs
-            if model_type == "llama" and seq_length is not None:
+            if model_type in LM_MODELS and seq_length is not None:
                 output_file = os.path.join(output_dir, f"batch_size_{batch_size}_seq_length_{seq_length}.json")
             else:
                 output_file = os.path.join(output_dir, f"batch_size_{batch_size}.json")
