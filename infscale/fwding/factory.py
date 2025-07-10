@@ -1,0 +1,44 @@
+# Copyright 2025 Cisco Systems, Inc. and its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+"""factory.py."""
+
+from infscale.fwding.random import RandomForwarder
+from infscale.fwding.rr import RoundRobinForwarder
+from infscale.fwding.shortest import ShortestForwarder
+from infscale.fwding.static import StaticForwarder
+
+
+Forwarder = RandomForwarder | RoundRobinForwarder | ShortestForwarder | StaticForwarder
+
+
+def get_forwarder(policy: str) -> Forwarder:
+    """Return an instance of forwarder."""
+    match policy:
+        case "random":
+            return RandomForwarder()
+
+        case "rr":
+            return RoundRobinForwarder()
+
+        case "shortest":
+            return ShortestForwarder()
+
+        case "static":
+            return StaticForwarder()
+
+        case _:
+            raise NotImplementedError(f"{policy}")

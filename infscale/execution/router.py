@@ -27,7 +27,7 @@ from infscale.configs.job import ServeConfig
 from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo
-from infscale.fwding import random, rr, shortest, static
+from infscale.fwding.factory import get_forwarder
 
 
 DEFAULT_QUEUE_SIZE = 100
@@ -63,23 +63,6 @@ class Router:
         _ = asyncio.create_task(self._send_arbiter())
         _ = asyncio.create_task(self._recv_arbiter())
 
-    def _select_forwarding_policy(self, fwd_policy: str) -> None:
-        match fwd_policy:
-            case "random":
-                self._select = random.select
-
-            case "rr":
-                self._select = rr.select
-
-            case "shortest":
-                self._select = shortest.select
-
-            case "static":
-                self._select = static.select
-
-            case _:
-                raise NotImplementedError(f"{fwd_policy}")
-
     @property
     def rx_q(self) -> asyncio.Queue:
         """Return receiver queue."""
@@ -100,7 +83,7 @@ class Router:
         """(Re)configure router."""
         self.device = device
 
-        self._select_forwarding_policy(spec.fwd_policy)
+        self._fwder = get_forwarder(spec.fwd_policy)
 
         for world_info in worlds_to_add:
             cancellable = asyncio.Event()
@@ -291,8 +274,7 @@ class Router:
                 await asyncio.sleep(DEFAULT_SLEEP_TIME)
 
             tx_qs = self.__tx_qs[next_layer]
-            world_info, tx_q = self._select(tx_qs)
-
+            world_info, tx_q = self._fwder.select(tx_qs)
 
             await tx_q.put((seqno, tensor, next_layer))
 

@@ -1,4 +1,4 @@
-# Copyright 2024 Cisco Systems, Inc. and its affiliates
+# Copyright 2025 Cisco Systems, Inc. and its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,24 +14,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""random.py."""
+"""base.py."""
 
 import asyncio
-import random
+from abc import abstractmethod
 
 from infscale.execution.world import WorldInfo
-from infscale.fwding.base import BaseForwarder
 
 
-class RandomForwarder(BaseForwarder):
-    """Random forwarder class."""
+class BaseForwarder:
+    """Base forwarder class."""
 
     def __init__(self):
         """Initialize an instance."""
-        super().__init__()
+        pass
 
+    @abstractmethod
     def select(
         self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]]
     ) -> tuple[WorldInfo, asyncio.Queue]:
-        """Select tx queue randomly."""
-        return random.choice(tx_qs)
+        """Select a tx queue from a given tx queue list."""
+        pass

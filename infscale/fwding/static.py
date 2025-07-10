@@ -13,11 +13,24 @@
 # limitations under the License.
 #
 # SPDX-License-Identifier: Apache-2.0
+
+"""static.py."""
+
 import asyncio
 
 from infscale.execution.world import WorldInfo
+from infscale.fwding.base import BaseForwarder
 
 
-def select(tx_qs: list[tuple[WorldInfo, asyncio.Queue]]) -> (WorldInfo, asyncio.Queue):
-    """Select the first tx queue in the tx queue list."""
-    return tx_qs[0]
+class StaticForwarder(BaseForwarder):
+    """Static forwarder class."""
+
+    def __init__(self):
+        """Initialize an instance."""
+        super().__init__()
+
+    def select(
+        self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]]
+    ) -> tuple[WorldInfo, asyncio.Queue]:
+        """Select the first tx queue in the tx queue list."""
+        return tx_qs[0]
