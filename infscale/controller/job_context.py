@@ -98,6 +98,10 @@ class BaseJobState:
         self.context = context
         self.job_id = context.job_id
 
+    def on_exit(self) -> None:
+        """Cleanup when the state gets destroyed."""
+        pass
+
     def enum_(self) -> JobStateEnum:
         """Return the state enum."""
         pass
@@ -155,7 +159,7 @@ class BaseJobState:
         raise InvalidJobStateAction(
             self.job_id, "failing", self.context.state.enum_().value
         )
-        
+
     async def cond_recovery(self):
         """Handle the transition to recovery."""
         raise InvalidJobStateAction(
@@ -194,44 +198,16 @@ class RunningState(BaseJobState):
 
     async def update(self):
         """Transition to UPDATING state."""
-        try:
-            self.context.process_cfg()
-        except InvalidConfig as e:
-            logger.warning(f"exception: {e}")
-            return
-
-        tasks = []
-
-        for info in self.context.running_agent_info.values():
-            task = asyncio.create_task(self.context.prepare_config(info))
-            tasks.append(task)
-
-        await asyncio.gather(*tasks)
-
-        # after prepare_config execution is done across all running agents,
-        # we reset flow_graph patch flag so that it can be checked again
-        # when a new config arrives to the job.
-        self.context.reset_flow_graph_patch_flag()
-
-        # update server ids
-        self.context.update_server_ids()
-
+        await self.context._JobContext__update()
         self.context.set_state(JobStateEnum.UPDATING)
 
     async def cond_completing(self):
         """Handle the transition to completing."""
         await self.context._JobContext__cond_completing()
-            
+
     async def cond_recovery(self):
         """Handle the transition to recovery."""
         self.context.set_state(JobStateEnum.RECOVERY)
-        
-        # TODO: remove this when the recovery mechanism is implemented
-        # we need this since we simply transition from Running to Recovery
-        # therefore, we need to keep whatever functionality we had for Running
-        # in this case, check if the job is failed or not and stop it if needed.
-        await self.context.state.cond_failing()
-
 
 
 class StartingState(BaseJobState):
@@ -396,10 +372,137 @@ class FailedState(BaseJobState):
 class RecoveryState(BaseJobState):
     """RecoveryState class."""
 
+    def __init__(self, context: JobContext):
+        """Initialize RecoveryState instance."""
+        super().__init__(context)
+        self.recovery_task = asyncio.create_task(self._start_recovery())
+
+    def on_exit(self) -> None:
+        """Cleanup when the state gets destroyed."""
+        self.recovery_task.cancel()
+
+    async def _start_recovery(self) -> None:
+        """Start recovery tasks for failed workers."""
+        failed_wrk_ids = {
+            k for k, v in self.context.wrk_status.items() if v == WorkerStatus.FAILED
+        }
+
+        while True:
+            wrk_resources_map = self._get_wrk_resources_map(failed_wrk_ids)
+            if len(wrk_resources_map) == len(failed_wrk_ids):
+                break
+
+            await asyncio.sleep(1)
+
+        cfg = self.context.get_updated_config(wrk_resources_map)
+        self.context.req.config = cfg
+
+        await self.context._JobContext__update()
+
+    def cond_updated(self):
+        """Handle the transition to running."""
+        statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
+        if self.context.in_statuses_for_all_workers(statuses):
+            self.context.set_state(JobStateEnum.RUNNING)
+
+    def cond_running(self):
+        """Handle the transition to running."""
+        statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
+        if self.context.in_statuses_for_all_workers(statuses):
+            self.context.set_state(JobStateEnum.RUNNING)
+
+    def _get_wrk_resources_map(self, wrk_ids: set[str]) -> dict[str, str]:
+        """Create map between worker ID and agent resources."""
+        agent_resources = self.context.get_agent_resources_map()
+        wrk_agent_map: dict[str, tuple[str, int]] = {}
+        agent_gpu_map: dict[str, set[int]] = {}
+
+        for wrk_id in wrk_ids:
+            curr_agent = self._get_curr_agent_data(wrk_id)
+            assign_success = self._assign_available_gpu_to_worker(
+                curr_agent.id, agent_resources[curr_agent.id], wrk_id, wrk_agent_map, agent_gpu_map
+            )
+
+            if not assign_success:
+                assign_success = self._search_gpu_on_all_agents(
+                    agent_resources, curr_agent.id, wrk_id, wrk_agent_map, agent_gpu_map
+                )
+
+            if not assign_success:
+                # if no resources, return and let while loop continue
+                return {}
+
+        return wrk_agent_map
+
+    def _get_curr_agent_data(self, wrk_id: str) -> AgentMetaData:
+        """Return current agent that deployed worker ID."""
+        agent_data = next(
+            agent_data
+            for agent_data in self.context.running_agent_info.values()
+            if wrk_id in agent_data.wids_to_deploy
+        )
+
+        return agent_data
+
+    def _add_gpu_to_agent(self, agent_id: str, gpu_id: int, agent_gpu_map: dict[str, set[int]]) -> None:
+        """Add a GPU ID to the list of GPUs associated with the given agent."""
+        if agent_id not in agent_gpu_map:
+            agent_gpu_map[agent_id] = set()
+
+        agent_gpu_map[agent_id].add(gpu_id)
+
+    def _assign_available_gpu_to_worker(
+        self,
+        agent_id: str,
+        resources: AgentResources,
+        wrk_id: str,
+        wrk_agent_map: dict[str, tuple[str, int]],
+        agent_gpu_map: dict[str, set[int]]
+    ) -> bool:
+        """Attempt to assign an available GPU from the given agent to the worker.
+
+        Updates internal mappings if successful.
+
+        Returns:
+            bool: True if a GPU was successfully assigned, False otherwise.
+        """
+        for gpu in resources.gpu_stats:
+            if not gpu.used and gpu.id not in agent_gpu_map.get(agent_id, []):
+                self._add_gpu_to_agent(agent_id, gpu.id, agent_gpu_map)
+                agent_info = self.context.agent_info[agent_id]
+                wrk_agent_map[wrk_id] = (agent_info.ip, gpu.id)
+
+                return True
+
+        return False
+
+    def _search_gpu_on_all_agents(
+        self,
+        agent_resources: dict[str, AgentResources],
+        curr_agent_id: str,
+        wrk_id: str,
+        wrk_agent_map: dict[str, tuple[str, int]],
+        agent_gpu_map: dict[str, set[int]]
+    ) -> bool:
+        """Look for available resources on all agents and attempt to assigned unused GPU.
+        
+        Returns:
+            bool: True if a GPU was successfully assigned, False otherwise.
+        """
+        for agent_id, resources in agent_resources.items():
+            if agent_id == curr_agent_id:
+                continue
+
+            return self._assign_available_gpu_to_worker(
+                agent_id, resources, wrk_id, wrk_agent_map, agent_gpu_map
+            )
+
+        return False
+
     def enum_(self) -> JobStateEnum:
         """Return recovery state enum."""
         return JobStateEnum.RECOVERY
-    
+
     async def stop(self):
         """Transition to STOPPING state."""
         await self.context._JobContext__stop()
@@ -407,7 +510,7 @@ class RecoveryState(BaseJobState):
     async def cond_completing(self):
         """Handle the transition to completing."""
         await self.context._JobContext__cond_completing()
-        
+
     async def cond_failing(self):
         """Handle the transition to failing."""
         await self.context._JobContext__cond_failing()
@@ -459,6 +562,9 @@ class JobContext:
 
     def set_state(self, state_enum: JobStateEnum):
         """Transition the job to a new state."""
+        # do cleanup on current state before transitioning
+        self.state.on_exit()
+
         self.state = self._get_state_class(state_enum)(self)
         logger.info(f"current state for {self.job_id} is {state_enum}")
 
@@ -563,7 +669,7 @@ class JobContext:
 
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
-        agent_resources = self._get_agent_resources_map()
+        agent_resources = self.get_agent_resources_map()
 
         dev_type = self._decide_dev_type(agent_resources, self._new_cfg)
 
@@ -582,6 +688,31 @@ class JobContext:
         self.running_agent_info = running_agent_info
 
         self.job_checker.setup(self._new_cfg)
+
+    def get_updated_config(self, wrk_resource_map: dict[str, str]) -> JobConfig:
+        """Update config with recovered worker and agent data."""
+        cfg = copy.deepcopy(self._cur_cfg)
+
+        for wrk_id, (ip, gpu_id) in wrk_resource_map.items():
+            self._update_flow_graph(cfg, wrk_id, ip)
+            self._update_worker_data(cfg, wrk_id, gpu_id)
+
+        self.reset_flow_graph_patch_flag()
+
+        return cfg
+
+    def _update_flow_graph(self, cfg: JobConfig, wrk_id: str, ip: str) -> None:
+        """Update current config flow graph with agent data for recovery."""
+        wrk_flow_graph = cfg.flow_graph[wrk_id]
+
+        for world_info in wrk_flow_graph:
+            world_info.addr = ip
+
+    def _update_worker_data(self, cfg: JobConfig, wrk_id: str, gpu_id: int) -> None:
+        """Update worker data."""
+        worker = next(worker for worker in cfg.workers if worker.id == wrk_id)
+        worker.device = f"cuda:{gpu_id}"
+        worker.recover = True
 
     def _decide_dev_type(
         self, agent_resources: dict[str, AgentResources], config: JobConfig
@@ -626,7 +757,7 @@ class JobContext:
 
         return len(new_worker_ids)
 
-    def _get_agent_resources_map(self) -> dict[str, AgentResources]:
+    def get_agent_resources_map(self) -> dict[str, AgentResources]:
         """Return map with agent resources based on given agent ids."""
         result = {}
 
@@ -722,6 +853,9 @@ class JobContext:
         # step 1: patch new config with existing world ports and assign ports to new ones
         for wid, world_list in self._new_cfg.flow_graph.items():
             for world in world_list:
+                agent_data = world_agent_map[world.name]
+                port_iter = agent_port_map[agent_data.id]
+                
                 if world.name in curr_worlds:
                     # keep existing ports
                     world.addr = curr_worlds[world.name].addr
@@ -729,12 +863,10 @@ class JobContext:
                     world.ctrl_port = curr_worlds[world.name].ctrl_port
                     world.backend = curr_worlds[world.name].backend
                 else:
-                    agent_data = world_agent_map[world.name]
                     assignment_coll = agent_data.assignment_coll
                     assignment_data = assignment_coll.get_assignment_data(wid)
 
                     addr = self.ctrl.agent_contexts[agent_data.id].ip
-                    port_iter = agent_port_map[agent_data.id]
                     backend = assignment_data.worlds_map[world.name].backend
 
                     # assign new ports to new worlds
@@ -983,11 +1115,38 @@ class JobContext:
     async def cond_failing(self):
         """Handle the transition to failing."""
         await self.state.cond_failing()
-        
+
     async def cond_recovery(self):
         """Handle the transition to recovery."""
         await self.state.cond_recovery()
-        
+
+    async def __update(self):
+        """Transition to UPDATING state."""
+        # DO NOT call this method in job_context instance or any other places.
+        # Call it only in methods of a state instance
+        # (e.g., RunningState, RecoveryState, etc).
+        try:
+            self.process_cfg()
+        except InvalidConfig as e:
+            logger.warning(f"exception: {e}")
+            return
+
+        tasks = []
+
+        for info in self.running_agent_info.values():
+            task = asyncio.create_task(self.prepare_config(info))
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
+
+        # after prepare_config execution is done across all running agents,
+        # we reset flow_graph patch flag so that it can be checked again
+        # when a new config arrives to the job.
+        self.reset_flow_graph_patch_flag()
+
+        # update server ids
+        self.update_server_ids()
+
     async def __stop(self):
         """Transition to STOPPING state."""
         # DO NOT call this method in job_context instance or any other places.
@@ -1001,7 +1160,7 @@ class JobContext:
         # DO NOT call this method in job_context instance or any other places.
         # Call it only in methods of a state instance
         # (e.g., RunningState, RecoveryState, etc).
-        
+
         job_failed = self.job_checker.is_job_failed()
 
         if job_failed:
@@ -1019,8 +1178,7 @@ class JobContext:
         server_ids = self.get_server_ids()
 
         verdict = all(
-            self.get_wrk_status(wid) == WorkerStatus.SERVING_DONE
-            for wid in server_ids
+            self.get_wrk_status(wid) == WorkerStatus.SERVING_DONE for wid in server_ids
         )
 
         if not verdict:
