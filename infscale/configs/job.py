@@ -142,6 +142,10 @@ class ServeConfig:
 
         self.reqgen_config = GenConfig(**self.reqgen_config)
 
+    def kv_cache_needed(self) -> bool:
+        """Return if kv cache is necessary for serving."""
+        return "llama" in self.model.lower()
+
 
 @dataclass
 class JobConfig:
@@ -286,6 +290,10 @@ class JobConfig:
             return ""
 
         return self.flow_graph[server_id][0].addr
+
+    def is_auto_regressive(self) -> bool:
+        """Return if model has auto regressive nature for serving."""
+        return "llama" in self.model.lower()
 
     @staticmethod
     def is_identical(x: JobConfig, y: JobConfig) -> bool:

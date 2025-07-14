@@ -30,6 +30,14 @@ class StaticForwarder(BaseForwarder):
         super().__init__()
 
     def select(
+        self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]], layer_no: int, seqno: int
+    ) -> tuple[WorldInfo, asyncio.Queue]:
+        """Select a tx queue from the tx queue list."""
+        # in case of static forwarder, stickiness doesn't matter since we always
+        # choose the first tx queue; so, we override select method in BaseForwarder.
+        return self._select(tx_qs)
+
+    def _select(
         self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]]
     ) -> tuple[WorldInfo, asyncio.Queue]:
         """Select the first tx queue in the tx queue list."""

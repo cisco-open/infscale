@@ -58,8 +58,7 @@ class CfgGen:
 
         self._agent_ctxts = agent_ctxts
 
-        self._is_auto_regressive = False
-        self._determine_auto_regressive()
+        self._is_auto_regressive = self._source.is_auto_regressive()
 
         # key: agent id and value is AgentContext
         # sort agent context by # of unused gpus in a decreasing order
@@ -94,10 +93,6 @@ class CfgGen:
 
         # All last stage replicas connections to the server
         self._final_server_connections = []
-
-    def _determine_auto_regressive(self) -> None:
-        model = self._source.model.lower()
-        self._is_auto_regressive = "llama" in model
 
     def generate(self) -> JobConfig:
         """Generate a config."""

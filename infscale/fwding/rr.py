@@ -31,7 +31,7 @@ class RoundRobinForwarder(BaseForwarder):
 
         self._curr_q_idx = 0
 
-    def select(
+    def _select(
         self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]]
     ) -> tuple[WorldInfo, asyncio.Queue]:
         """Select tx queue in a round-robin fashion."""

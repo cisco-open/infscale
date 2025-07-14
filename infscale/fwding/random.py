@@ -30,7 +30,7 @@ class RandomForwarder(BaseForwarder):
         """Initialize an instance."""
         super().__init__()
 
-    def select(
+    def _select(
         self, tx_qs: list[tuple[WorldInfo, asyncio.Queue]]
     ) -> tuple[WorldInfo, asyncio.Queue]:
         """Select tx queue randomly."""
