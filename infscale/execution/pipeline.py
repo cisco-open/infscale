@@ -329,6 +329,23 @@ class Pipeline:
                     # TODO: This forcibly terminates the entire process.
                     #       This is not graceful. Revisit this later.
                     os._exit(0)
+                    
+                case MessageType.WORKER_FAILED:
+                    await self._handle_other_worker_failure(msg.content)
+
+    async def _handle_other_worker_failure(self, wrk_id: str) -> None:
+        """Handle other worker failure.
+        
+        This method is being called when other worker fails.
+        Therefore, cleanup is needed in world_infos.
+        """
+        removed_world_infos = {world_info for world_info in self.world_infos.values() if world_info.other_id == wrk_id}
+        for world_info in removed_world_infos:
+            await self.router.cleanup_world(world_info)
+            self._reset_control_channel(world_info)
+            self._reset_multiworld(world_info)
+            
+            del self.world_infos[world_info.name]
 
     async def _handle_config(self, spec: ServeConfig) -> None:
         """Handle a config."""

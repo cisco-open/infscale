@@ -162,6 +162,16 @@ class Agent:
         if not self.worker_mgr.has_workers_for_job(job_id):
             self.job_mgr.cleanup(job_id)
 
+    def _handle_worker_failure(self, job_id: str, wrk_id: str) -> None:
+        """Notify other workers when a worker fails."""
+        workers = self.worker_mgr.get_workers_by_job_id(job_id)
+        
+        for w in workers.values():
+            msg = Message(
+                MessageType.WORKER_FAILED, wrk_id, job_id
+            )
+            self.worker_mgr.send(w, msg)
+
     def _all_wrk_running(self, job_id: str) -> bool:
         """Check if all workers are running."""
         workers = self.worker_mgr.get_workers_by_job_id(job_id)
@@ -296,6 +306,9 @@ class Agent:
                 self.worker_mgr._signal_terminate_wrkrs(
                     action.job_id, msg_type=MessageType.FORCE_TERMINATE
                 )
+
+            case CommandAction.WORKER_FAILED:
+                self._handle_worker_failure(action.job_id, action.manifest.decode("utf-8"))
 
             case CommandAction.SETUP:
                 port_count = int.from_bytes(action.manifest, byteorder="big")
