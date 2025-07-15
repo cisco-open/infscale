@@ -39,6 +39,7 @@ class CommandAction(str, Enum):
     UPDATE = "update"  # CLI - Controller update command
     SETUP = "setup"  # ctrl<->agent setup job, assign port numbers to workers
     FINISH_JOB = "finish_job"  # ctrl<->agent action to notify job's completion
+    WORKER_FAILED = "worker_failed"  # ctrl<->agent action to notify about worker failure
 
 
 class CommandActionModel(BaseModel):
@@ -47,6 +48,7 @@ class CommandActionModel(BaseModel):
     action: CommandAction
     job_id: Optional[str] = None
     config: Optional[JobConfig] = None
+    wrk_id: Optional[str] = None
 
     @model_validator(mode="after")
     def check_config_for_update(self):
@@ -59,6 +61,9 @@ class CommandActionModel(BaseModel):
 
         if self.action == CommandAction.STOP and self.job_id is None:
             raise ValueError("job id is required stopping or updating a job")
+        
+        if self.action == CommandAction.WORKER_FAILED and self.wrk_id is None:
+            raise ValueError("worker id is required when notifying about worker failure")
 
         return self
 

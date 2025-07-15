@@ -243,8 +243,9 @@ class Controller:
         """Send command to agent."""
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
+        wrk_id_bytes = action.wrk_id.encode("utf-8")
 
-        payload = pb2.Action(type=action.action, job_id=job_id)
+        payload = pb2.Action(type=action.action, job_id=job_id, manifest=wrk_id_bytes)
 
         await context.write(payload)
 

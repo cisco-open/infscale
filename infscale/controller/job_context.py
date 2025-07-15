@@ -403,12 +403,14 @@ class RecoveryState(BaseJobState):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
+            self.context._reset_recover_flags()
             self.context.set_state(JobStateEnum.RUNNING)
 
     def cond_running(self):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
+            self.context._reset_recover_flags()
             self.context.set_state(JobStateEnum.RUNNING)
 
     def _get_wrk_resources_map(self, wrk_ids: set[str]) -> dict[str, str]:
@@ -420,7 +422,11 @@ class RecoveryState(BaseJobState):
         for wrk_id in wrk_ids:
             curr_agent = self._get_curr_agent_data(wrk_id)
             assign_success = self._assign_available_gpu_to_worker(
-                curr_agent.id, agent_resources[curr_agent.id], wrk_id, wrk_agent_map, agent_gpu_map
+                curr_agent.id,
+                agent_resources[curr_agent.id],
+                wrk_id,
+                wrk_agent_map,
+                agent_gpu_map,
             )
 
             if not assign_success:
@@ -444,7 +450,9 @@ class RecoveryState(BaseJobState):
 
         return agent_data
 
-    def _add_gpu_to_agent(self, agent_id: str, gpu_id: int, agent_gpu_map: dict[str, set[int]]) -> None:
+    def _add_gpu_to_agent(
+        self, agent_id: str, gpu_id: int, agent_gpu_map: dict[str, set[int]]
+    ) -> None:
         """Add a GPU ID to the list of GPUs associated with the given agent."""
         if agent_id not in agent_gpu_map:
             agent_gpu_map[agent_id] = set()
@@ -457,7 +465,7 @@ class RecoveryState(BaseJobState):
         resources: AgentResources,
         wrk_id: str,
         wrk_agent_map: dict[str, tuple[str, int]],
-        agent_gpu_map: dict[str, set[int]]
+        agent_gpu_map: dict[str, set[int]],
     ) -> bool:
         """Attempt to assign an available GPU from the given agent to the worker.
 
@@ -482,10 +490,10 @@ class RecoveryState(BaseJobState):
         curr_agent_id: str,
         wrk_id: str,
         wrk_agent_map: dict[str, tuple[str, int]],
-        agent_gpu_map: dict[str, set[int]]
+        agent_gpu_map: dict[str, set[int]],
     ) -> bool:
         """Look for available resources on all agents and attempt to assigned unused GPU.
-        
+
         Returns:
             bool: True if a GPU was successfully assigned, False otherwise.
         """
@@ -553,7 +561,16 @@ class JobContext:
     def get_agent_data(self, agent_id: str) -> AgentMetaData:
         """Return agent metadata."""
         return self.agent_info[agent_id]
-
+    
+    def _reset_recover_flags(self) -> None:
+        """Reset recover flags on config."""
+        for worker in self._cur_cfg.workers:
+            worker.recover = False
+            
+        for world_list in self._cur_cfg.flow_graph.values():
+            for world in world_list:
+                world.recover = False
+        
     def set_ports(self, agent_id: str, ports: list[int]) -> None:
         """Set port numbers for workers."""
         agent_data = self.agent_info[agent_id]
@@ -596,6 +613,11 @@ class JobContext:
 
             case WorkerStatus.FAILED:
                 self._release_gpu_resource_by_worker_id(wid)
+                command = CommandActionModel(
+                    action=CommandAction.WORKER_FAILED, job_id=self.job_id, wrk_id=wid
+                )
+
+                await self.send_command_to_agents(command)
                 await self.cond_recovery()
 
             case WorkerStatus.TERMINATED:
@@ -707,6 +729,7 @@ class JobContext:
 
         for world_info in wrk_flow_graph:
             world_info.addr = ip
+            world_info.recover = True
 
     def _update_worker_data(self, cfg: JobConfig, wrk_id: str, gpu_id: int) -> None:
         """Update worker data."""
@@ -774,7 +797,7 @@ class JobContext:
             agent_data = self.agent_info[agent_id]
             cur_coll = agent_data.assignment_coll
 
-            agent_data.num_new_worlds = self._count_new_worlds(cur_coll, new_coll)
+            agent_data.num_new_worlds = self._count_worlds_to_setup(cur_coll, new_coll)
             agent_data.wids_to_deploy = new_coll.worker_ids()
             agent_data.past_assignment_coll = cur_coll
             agent_data.assignment_coll = new_coll
@@ -855,12 +878,20 @@ class JobContext:
             for world in world_list:
                 agent_data = world_agent_map[world.name]
                 port_iter = agent_port_map[agent_data.id]
-                
+
                 if world.name in curr_worlds:
                     # keep existing ports
                     world.addr = curr_worlds[world.name].addr
-                    world.data_port = curr_worlds[world.name].data_port
-                    world.ctrl_port = curr_worlds[world.name].ctrl_port
+                    world.data_port = (
+                        next(port_iter)
+                        if world.recover
+                        else curr_worlds[world.name].data_port
+                    )
+                    world.ctrl_port = (
+                        next(port_iter)
+                        if world.recover
+                        else curr_worlds[world.name].ctrl_port
+                    )
                     world.backend = curr_worlds[world.name].backend
                 else:
                     assignment_coll = agent_data.assignment_coll
@@ -911,14 +942,30 @@ class JobContext:
             None,
         )
 
-    def _count_new_worlds(
+    def _count_worlds_to_setup(
         self, cur_coll: AssignmentCollection, new_coll: AssignmentCollection
     ) -> int:
-        """Return the number of new worlds between and old and new config."""
+        """Return the number of worlds that need to be set up."""
+        recover_worlds = self._get_recover_world_names(cur_coll)
         curr_worlds = self._get_world_names_to_setup(self._cur_cfg, cur_coll)
         new_worlds = self._get_world_names_to_setup(self._new_cfg, new_coll)
 
-        return len(new_worlds - curr_worlds)
+        return len(recover_worlds | (new_worlds - curr_worlds))
+
+    def _get_recover_world_names(
+        self, assignment_coll: AssignmentCollection
+    ) -> set[str]:
+        """Return a set of world names that need to be recovered."""
+        worker_ids_to_deploy = assignment_coll.worker_ids()
+
+        world_names = set()
+
+        for wid, world_list in self.req.config.flow_graph.items():
+            for world in world_list:
+                if wid in worker_ids_to_deploy and world.recover:
+                    world_names.add(world.name)
+
+        return world_names
 
     def _get_world_names_to_setup(
         self, config: JobConfig, assignment_coll: AssignmentCollection
