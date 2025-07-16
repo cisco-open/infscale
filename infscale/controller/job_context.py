@@ -776,7 +776,7 @@ class JobContext:
             agent_data = self.agent_info[agent_id]
             cur_coll = agent_data.assignment_coll
 
-            agent_data.num_new_worlds = self._count_new_worlds(cur_coll, new_coll)
+            agent_data.num_new_worlds = self._count_worlds_to_setup(cur_coll, new_coll)
             agent_data.wids_to_deploy = new_coll.worker_ids()
             agent_data.past_assignment_coll = cur_coll
             agent_data.assignment_coll = new_coll
@@ -861,8 +861,16 @@ class JobContext:
                 if world.name in curr_worlds:
                     # keep existing ports
                     world.addr = curr_worlds[world.name].addr
-                    world.data_port = curr_worlds[world.name].data_port
-                    world.ctrl_port = curr_worlds[world.name].ctrl_port
+                    world.data_port = (
+                        next(port_iter)
+                        if world.recover
+                        else curr_worlds[world.name].data_port
+                    )
+                    world.ctrl_port = (
+                        next(port_iter)
+                        if world.recover
+                        else curr_worlds[world.name].ctrl_port
+                    )
                     world.backend = curr_worlds[world.name].backend
                 else:
                     assignment_coll = agent_data.assignment_coll
@@ -913,14 +921,30 @@ class JobContext:
             None,
         )
 
-    def _count_new_worlds(
+    def _count_worlds_to_setup(
         self, cur_coll: AssignmentCollection, new_coll: AssignmentCollection
     ) -> int:
-        """Return the number of new worlds between and old and new config."""
+        """Return the number of worlds that need to be set up."""
+        recover_worlds = self._get_recover_world_names(cur_coll)
         curr_worlds = self._get_world_names_to_setup(self._cur_cfg, cur_coll)
         new_worlds = self._get_world_names_to_setup(self._new_cfg, new_coll)
 
-        return len(new_worlds - curr_worlds)
+        return len(recover_worlds | (new_worlds - curr_worlds))
+    
+    def _get_recover_world_names(
+        self, assignment_coll: AssignmentCollection
+    ) -> set[str]:
+        """Return a set of world names that need to be recovered."""
+        worker_ids_to_deploy = assignment_coll.worker_ids()
+
+        world_names = set()
+
+        for wid, world_list in self.req.config.flow_graph.items():
+            for world in world_list:
+                if wid in worker_ids_to_deploy and world.recover:
+                    world_names.add(world.name)
+
+        return world_names
 
     def _get_world_names_to_setup(
         self, config: JobConfig, assignment_coll: AssignmentCollection
