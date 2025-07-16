@@ -100,10 +100,10 @@ class Router:
             cancellable = asyncio.Event()
             if world_info.me == 0:  # I am a receiver from other
                 task = asyncio.create_task(self._recv(world_info, cancellable))
-                self._tasks[world_info.name] = (task, cancellable)
+                self._tasks[world_info.multiworld_name] = (task, cancellable)
             else:  # I am a sender to other
                 task = asyncio.create_task(self._send(world_info, cancellable))
-                self._tasks[world_info.name] = (task, cancellable)
+                self._tasks[world_info.multiworld_name] = (task, cancellable)
 
                 stage_cfg = spec.workers_stage_info[world_info.other_id]
 
@@ -126,7 +126,7 @@ class Router:
         receiver = TensorReceiver(
             self.world_manager.communicator,
             world_info.channel,
-            world_info.name,
+            world_info.multiworld_name,
             world_info.other,
             recv_dev,
         )
@@ -140,7 +140,7 @@ class Router:
                 cancellable.clear()
                 self.requests_count += 1
             except Exception as e:
-                logger.warning(f"{world_info.name} error: {e}")
+                logger.warning(f"{world_info.multiworld_name} error: {e}")
                 break
 
             if self._mc.can_collect_in_router():
@@ -171,7 +171,7 @@ class Router:
         # reset tx q related to a given world info
         self._cleanup_tx_q(world_info)
 
-        name = world_info.name
+        name = world_info.multiworld_name
         task, cancellable = self._tasks.pop(name, (None, None))
 
         if not cancel_task or task is None:
@@ -207,7 +207,7 @@ class Router:
         sender = TensorSender(
             self.world_manager.communicator,
             world_info.channel,
-            world_info.name,
+            world_info.multiworld_name,
             world_info.other,
             send_dev,
         )
@@ -228,7 +228,7 @@ class Router:
             except asyncio.TimeoutError:
                 if not sender.is_broken():
                     continue
-                logger.warning(f"{world_info.name} is broken")
+                logger.warning(f"{world_info.multiworld_name} is broken")
                 break
 
             if send_dev != self.device:
@@ -239,7 +239,7 @@ class Router:
                 await sender.send(tensors, seqno)
                 self.requests_count -= 1
             except Exception as e:
-                logger.warning(f"{world_info.name} error: {e}")
+                logger.warning(f"{world_info.multiworld_name} error: {e}")
                 break
 
             if self._mc.can_collect_in_router():

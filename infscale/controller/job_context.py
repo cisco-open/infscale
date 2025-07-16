@@ -707,6 +707,8 @@ class JobContext:
 
         for world_info in wrk_flow_graph:
             world_info.addr = ip
+            world_info.recover = True
+            world_info.recover_count += 1
 
     def _update_worker_data(self, cfg: JobConfig, wrk_id: str, gpu_id: int) -> None:
         """Update worker data."""

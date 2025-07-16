@@ -69,6 +69,8 @@ class WorldInfo:
     ctrl_port: int = 30001
     addr: str = "127.0.0.1"
     backend: Optional[str] = ""
+    recover: bool = False
+    recover_count: int = 0
 
 
 @dataclass

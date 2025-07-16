@@ -81,7 +81,7 @@ class Pipeline:
 
     async def _configure_multiworld(self, world_info: WorldInfo) -> None:
         (name, world_size, addr, port, backend, my_rank) = (
-            world_info.name,
+            world_info.multiworld_name,
             world_info.size,
             world_info.addr,
             world_info.port,
@@ -115,8 +115,8 @@ class Pipeline:
         await world_info.channel.wait_readiness()
 
     def _reset_multiworld(self, world_info: WorldInfo) -> None:
-        self.world_manager.remove_world(world_info.name)
-        logger.info(f"remove world {world_info.name} from multiworld")
+        self.world_manager.remove_world(world_info.multiworld_name)
+        logger.info(f"remove world {world_info.multiworld_name} from multiworld")
 
     def _reset_control_channel(self, world_info: WorldInfo) -> None:
         world_info.channel.cleanup()
@@ -373,12 +373,14 @@ class Pipeline:
                 else:
                     continue
 
-                name, backend, addr, data_port, ctrl_port = (
+                name, backend, addr, data_port, ctrl_port, recover, recover_count = (
                     cfg_world_info.name,
                     cfg_world_info.backend,
                     cfg_world_info.addr,
                     cfg_world_info.data_port,
                     cfg_world_info.ctrl_port,
+                    cfg_world_info.recover,
+                    cfg_world_info.recover_count,
                 )
 
                 world_size = len(cfg_world_info.peers) + 1
@@ -395,6 +397,9 @@ class Pipeline:
                     "me": my_rank,
                     "other_id": other_id,
                     "other": other_rank,
+                    "recover": recover,
+                    "recover_count": recover_count,
+                    "multiworld_name": f"{name}-{recover_count}"
                 }
                 world_info = WorldInfo(**data)
                 world_infos[name] = world_info
