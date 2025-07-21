@@ -701,14 +701,20 @@ class JobContext:
 
         return cfg
 
-    def _update_flow_graph(self, cfg: JobConfig, wrk_id: str, ip: str) -> None:
-        """Update current config flow graph with agent data for recovery."""
-        wrk_flow_graph = cfg.flow_graph[wrk_id]
+    def _update_flow_graph(self, cfg: JobConfig, recover_wid: str, ip: str) -> None:
+        """Update current config's flow graph based on agent info and recovered worker id."""
+        recover_flow_graph = cfg.flow_graph[recover_wid]
 
-        for world_info in wrk_flow_graph:
+        for world_info in recover_flow_graph:
             world_info.addr = ip
             world_info.recover = True
             world_info.recover_count += 1
+            
+        for world_list in cfg.flow_graph.values():
+            for world_info in world_list:
+                if recover_wid in world_info.peers:
+                    world_info.recover = True
+                    world_info.recover_count += 1
 
     def _update_worker_data(self, cfg: JobConfig, wrk_id: str, gpu_id: int) -> None:
         """Update worker data."""
