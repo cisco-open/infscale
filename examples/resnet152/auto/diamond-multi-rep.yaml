@@ -1,0 +1,71 @@
+---
+name: resnet152_example
+model: microsoft/resnet-152
+nfaults: 1
+# the following entries are for local development only
+# after development is done, they need to be revised accordingly
+# to automate building flow_graph, etc.
+micro_batch_size: 8
+# possible options: random, rr (round-robin), shortest, static
+fwd_policy: "rr"
+job_id: "job1"
+# maximum number of requests in flight at any given point in time
+max_inflight: 8
+
+flow_graph:
+  s-0:
+    - name: w0
+      peers: [1-0]
+  0-0:
+    - name: w1
+      peers: [s-0]
+  0-1:
+    - name: w4
+      peers: [s-0]
+  0-2:
+    - name: w5
+      peers: [s-0]
+  0-3:
+    - name: w6
+      peers: [s-0]
+  1-0:
+    - name: w2
+      peers: [0-0]
+    - name: w7
+      peers: [0-2]
+    - name: w8
+      peers: [0-3]  
+    - name: w3
+      peers: [0-1]
+
+dataset: # huggingface dataset
+  path: "cifar10"
+  name: ""
+  split: test
+
+workers:
+  - id: s-0
+    is_server: True
+    stage:
+      start: -1
+      end: -1
+  - id: 0-0
+    stage:
+      start: 0
+      end: 25
+  - id: 0-1
+    stage:
+      start: 0
+      end: 25
+  - id: 0-2
+    stage:
+      start: 0
+      end: 25
+  - id: 0-3
+    stage:
+      start: 0
+      end: 25
+  - id: 1-0
+    stage:
+      start: 26
+      end: 51

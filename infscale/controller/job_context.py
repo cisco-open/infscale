@@ -981,18 +981,19 @@ class JobContext:
         }
         return state_mapping[state_enum]
 
-    def _manage_agent_metadata(self, agent_ids, agent_ips: list[str]) -> None:
+    def _manage_agent_metadata(self) -> None:
         """Manage agent metadata by create/update/delete."""
-        # create or update AgentMetaData
-        for id, ip in zip(agent_ids, agent_ips):
-            if id not in self.agent_info:
-                self.agent_info[id] = AgentMetaData(id=id, ip=ip)
-            else:
-                self.agent_info[id].ip = ip
+        agent_contexts = self.ctrl.agent_contexts
 
-        s = set(agent_ids)
+        # create or update AgentMetaData
+        for id, agent_context in agent_contexts.items():
+            if id not in self.agent_info:
+                self.agent_info[id] = AgentMetaData(id=id, ip=agent_context.ip)
+            else:
+                self.agent_info[id].ip = agent_context.ip
+
         for id in list(self.agent_info.keys()):
-            if id in s:
+            if id in agent_contexts:
                 continue
 
             del self.agent_info[id]
@@ -1151,6 +1152,8 @@ class JobContext:
         # DO NOT call this method in job_context instance or any other places.
         # Call it only in methods of a state instance
         # (e.g., RunningState, RecoveryState, etc).
+        self._manage_agent_metadata()
+
         try:
             self.process_cfg()
         except InvalidConfig as e:
@@ -1220,10 +1223,7 @@ class JobContext:
         # DO NOT call this method in job_context instance or any other places.
         # Call it only in methods of a state instance
         # (e.g., ReadyState, CompleteState, etc).
-        agent_ids = list(self.ctrl.agent_contexts.keys())
-        agent_ips = [ctx.ip for ctx in self.ctrl.agent_contexts.values()]
-
-        self._manage_agent_metadata(agent_ids, agent_ips)
+        self._manage_agent_metadata()
 
         self._check_agent_info()
 
