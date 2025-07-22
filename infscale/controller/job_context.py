@@ -394,7 +394,7 @@ class RecoveryState(BaseJobState):
 
             await asyncio.sleep(1)
 
-        cfg = self.context.get_updated_config(wrk_resources_map)
+        cfg = self.context.get_recovery_updated_config(wrk_resources_map)
         self.context.req.config = cfg
 
         await self.context._JobContext__update()
@@ -689,13 +689,13 @@ class JobContext:
 
         self.job_checker.setup(self._new_cfg)
 
-    def get_updated_config(self, wrk_resource_map: dict[str, str]) -> JobConfig:
+    def get_recovery_updated_config(self, wrk_resource_map: dict[str, str]) -> JobConfig:
         """Update config with recovered worker and agent data."""
         cfg = copy.deepcopy(self._cur_cfg)
 
         for wrk_id, (ip, gpu_id) in wrk_resource_map.items():
-            self._update_flow_graph(cfg, wrk_id, ip)
-            self._update_worker_data(cfg, wrk_id, gpu_id)
+            self._update_recovery_flow_graph(cfg, wrk_id, ip)
+            self._update_recovery_worker_data(cfg, wrk_id, gpu_id)
 
         self.reset_flow_graph_patch_flag()
 
@@ -716,8 +716,8 @@ class JobContext:
                     world_info.recover = True
                     world_info.recover_count += 1
 
-    def _update_worker_data(self, cfg: JobConfig, wrk_id: str, gpu_id: int) -> None:
-        """Update worker data."""
+    def _update_recovery_worker_data(self, cfg: JobConfig, wrk_id: str, gpu_id: int) -> None:
+        """Update worker data for recovery."""
         worker = next(worker for worker in cfg.workers if worker.id == wrk_id)
         worker.device = f"cuda:{gpu_id}"
         worker.recover = True
