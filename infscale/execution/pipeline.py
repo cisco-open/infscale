@@ -122,8 +122,35 @@ class Pipeline:
         world_info.channel.cleanup()
         logger.info(f"remove world {world_info.name} from control channel")
 
+    async def _cleanup_recovered_worlds(self) -> None:
+        """Clean up world infos for recovered worlds."""
+        # if I'm the recovered worker, return
+        if len(self.world_infos) == 0:
+            return
+
+        recover_worlds = [
+            world_info
+            for world_list in self.spec.flow_graph.values()
+            for world_info in world_list
+            if world_info.recover and world_info.name in self.world_infos
+        ]
+
+        # no worlds to recover
+        if len(recover_worlds) == 0:
+            return
+
+        for world_info in recover_worlds:
+            wi = self.world_infos.get(world_info.name, None)
+
+            await self.router.cleanup_world(wi)
+            self._reset_control_channel(wi)
+            self._reset_multiworld(wi)
+
+            del self.world_infos[wi.name]
+
     async def _configure(self) -> None:
         """(Re)configure multiworld, control channel and router."""
+        await self._cleanup_recovered_worlds()
         new_world_infos = self._build_world_infos()
         new = new_world_infos.keys()
         cur = self.world_infos.keys()
