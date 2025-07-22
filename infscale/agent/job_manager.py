@@ -114,6 +114,10 @@ class JobManager:
                 curr_world_info = self._find_matching_world_info(curr_config, w, new_world_info)
                 self._pick_workers(update_wrkrs, stop_wrkrs, w, new_world_info, curr_world_info)
 
+        # due to pervious state, recover workers are included in update workers
+        # therefore, recover workers need to be removed from the updated ones.
+        update_wrkrs -= recover_wrkrs
+
         return start_wrkrs, update_wrkrs, stop_wrkrs
 
     def _pick_workers(
