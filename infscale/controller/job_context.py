@@ -701,7 +701,7 @@ class JobContext:
 
         return cfg
 
-    def _update_flow_graph(self, cfg: JobConfig, recover_wid: str, ip: str) -> None:
+    def _update_recovery_flow_graph(self, cfg: JobConfig, recover_wid: str, ip: str) -> None:
         """Update current config's flow graph based on agent info and recovered worker id."""
         recover_flow_graph = cfg.flow_graph[recover_wid]
 
