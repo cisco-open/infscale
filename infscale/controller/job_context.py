@@ -403,12 +403,14 @@ class RecoveryState(BaseJobState):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
+            self.context.reset_cfg_recover_flags()
             self.context.set_state(JobStateEnum.RUNNING)
 
     def cond_running(self):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
+            self.context.reset_cfg_recover_flags()
             self.context.set_state(JobStateEnum.RUNNING)
 
     def _get_wrk_resources_map(self, wrk_ids: set[str]) -> dict[str, str]:
@@ -655,12 +657,15 @@ class JobContext:
 
     def process_cfg(self) -> None:
         """Process received config from controller and set a deployer of agent ids."""
-        self._new_cfg = self.ctrl.planner.build_config(
-            self.req.config,
-            self.ctrl.agent_contexts,
-            self._desired_rate,
-            self._cur_cfg,
-        )
+        if self.state.enum_() == JobStateEnum.RECOVERY:
+            self._new_cfg = self.req.config
+        else:
+            self._new_cfg = self.ctrl.planner.build_config(
+                self.req.config,
+                self.ctrl.agent_contexts,
+                self._desired_rate,
+                self._cur_cfg,
+            )
 
         if JobConfig.is_identical(self._cur_cfg, self._new_cfg):
             raise InvalidConfig("current and new configs are identical")
@@ -688,6 +693,11 @@ class JobContext:
         self.running_agent_info = running_agent_info
 
         self.job_checker.setup(self._new_cfg)
+        
+    def reset_cfg_recover_flags(self) -> None:
+        """Reset recover flags on config."""
+        self._cur_cfg.reset_recover_flags()
+
 
     def get_recovery_updated_config(self, wrk_resource_map: dict[str, str]) -> JobConfig:
         """Update config with recovered worker and agent data."""

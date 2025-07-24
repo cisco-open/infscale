@@ -178,6 +178,15 @@ class JobConfig:
             worker = w if isinstance(w, WorkerData) else WorkerData(**w)
             self.workers[j] = worker
 
+    def reset_recover_flags(self) -> None:
+        """Reset recover flags on world and worker."""
+        for worker in self.workers:
+            worker.recover = False
+
+        for world_list in self.flow_graph.values():
+            for world in world_list:
+                world.recover = False
+
     def validate(self) -> None:
         """Validate job config."""
         worker_devices = {
