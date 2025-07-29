@@ -36,6 +36,7 @@ from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
 from infscale.request.generator import GeneratorFactory
+from infscale.worker.pipeline_inspector import PipelineInspector
 from infscale.worker.worker_comm import WorkerCommunicator
 
 
@@ -69,6 +70,7 @@ class Pipeline:
         self.cfg_event = asyncio.Event()
         self._micro_batch_size = 1
         self._initialized = False
+        self._inspector = PipelineInspector()
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -345,6 +347,11 @@ class Pipeline:
                 case MessageType.TERMINATE:
                     await self.router.wait_on_term_ready()
                     self._terminate_worker()
+                    
+                case MessageType.CHECK_LOOP:
+                    suspended_worlds = self._inspector.get_suspended_worlds(msg.content)
+                    logger.debug(f'got suspended worlds: {suspended_worlds}')
+                    # TODO: pass the suspended worlds to router to process them
 
                 case MessageType.FINISH_JOB:
                     # TODO: do the clean-up before transitioning to DONE
@@ -367,6 +374,8 @@ class Pipeline:
             self._send_status_message(WorkerStatus.UPDATING)
 
         self._configure_variables(spec)
+        
+        self._inspector.configure(self.spec)
 
         self._initialize_once()
 
