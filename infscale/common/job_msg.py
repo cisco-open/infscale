@@ -33,6 +33,7 @@ class MessageType(Enum):
     CONFIG = "config"
     FINISH_JOB = "finish_job"
     METRICS = "metrics"
+    CHECK_LOOP = "check_loop"
 
 
 class WorkerStatus(Enum):
