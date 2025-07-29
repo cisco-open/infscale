@@ -39,6 +39,7 @@ class CommandAction(str, Enum):
     UPDATE = "update"  # CLI - Controller update command
     SETUP = "setup"  # ctrl<->agent setup job, assign port numbers to workers
     FINISH_JOB = "finish_job"  # ctrl<->agent action to notify job's completion
+    CHECK_LOOP = "check_loop"  # ctrl<->agent action for workers to check their pipeline loops
 
 
 class CommandActionModel(BaseModel):
@@ -47,6 +48,7 @@ class CommandActionModel(BaseModel):
     action: CommandAction
     job_id: Optional[str] = None
     config: Optional[JobConfig] = None
+    failed_wids: Optional[set[str]] = None
 
     @model_validator(mode="after")
     def check_config_for_update(self):

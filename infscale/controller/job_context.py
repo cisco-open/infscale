@@ -596,6 +596,19 @@ class JobContext:
 
             case WorkerStatus.FAILED:
                 self._release_gpu_resource_by_worker_id(wid)
+                failed_wids = {
+                    wid
+                    for wid, status in self.wrk_status.items()
+                    if status == WorkerStatus.FAILED
+                }
+
+                command = CommandActionModel(
+                    action=CommandAction.CHECK_LOOP,
+                    job_id=self.job_id,
+                    failed_wids=failed_wids,
+                )
+                await self.send_command_to_agents(command)
+
                 await self.cond_recovery()
 
             case WorkerStatus.TERMINATED:
