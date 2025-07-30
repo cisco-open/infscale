@@ -237,7 +237,7 @@ class Controller:
 
         await context.write(payload)
 
-    async def _send_command_to_agent(
+    async def send_command_to_agent(
         self, agent_id: str, job_id: str, action: CommandActionModel
     ) -> None:
         """Send command to agent."""
@@ -249,7 +249,8 @@ class Controller:
             "job_id": job_id,
         }
         
-        if action.failed_wids:
+        # this is needed because checking against an empty set will be False
+        if hasattr(action, "failed_wids"):
             kwargs["manifest"] = str(action.failed_wids).encode("utf-8")
 
         payload = pb2.Action(**kwargs)

@@ -124,13 +124,13 @@ class BaseJobState:
             self.job_id, "update", self.context.state.enum_().value
         )
 
-    def cond_running(self):
+    async def cond_running(self):
         """Handle the transition to running."""
         raise InvalidJobStateAction(
             self.job_id, "running", self.context.state.enum_().value
         )
 
-    def cond_updated(self):
+    async def cond_updated(self):
         """Handle the transition to running."""
         raise InvalidJobStateAction(
             self.job_id, "updating", self.context.state.enum_().value
@@ -221,7 +221,7 @@ class StartingState(BaseJobState):
         """Transition to STOPPING state."""
         await self.context._JobContext__stop()
 
-    def cond_running(self):
+    async def cond_running(self):
         """Handle the transition to running."""
         if self.context.in_statuses_for_all_workers({WorkerStatus.RUNNING}):
             self.context.set_state(JobStateEnum.RUNNING)
@@ -302,13 +302,13 @@ class UpdatingState(BaseJobState):
         """Transition to STOPPING state."""
         await self.context._JobContext__stop()
 
-    def cond_running(self):
+    async def cond_running(self):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
             self.context.set_state(JobStateEnum.RUNNING)
 
-    def cond_updated(self):
+    async def cond_updated(self):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
@@ -399,18 +399,20 @@ class RecoveryState(BaseJobState):
 
         await self.context._JobContext__update()
 
-    def cond_updated(self):
+    async def cond_updated(self):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
             self.context.reset_cfg_recover_flags()
+            await self.context.send_check_loop_command()
             self.context.set_state(JobStateEnum.RUNNING)
 
-    def cond_running(self):
+    async def cond_running(self):
         """Handle the transition to running."""
         statuses = {WorkerStatus.RUNNING, WorkerStatus.UPDATED}
         if self.context.in_statuses_for_all_workers(statuses):
             self.context.reset_cfg_recover_flags()
+            await self.context.send_check_loop_command()
             self.context.set_state(JobStateEnum.RUNNING)
 
     def _get_wrk_resources_map(self, wrk_ids: set[str]) -> dict[str, str]:
@@ -581,7 +583,7 @@ class JobContext:
         tasks = []
 
         for agent_id in self.agent_info.keys():
-            task = self.ctrl._send_command_to_agent(agent_id, self.job_id, command)
+            task = self.ctrl.send_command_to_agent(agent_id, self.job_id, command)
             tasks.append(task)
 
         await asyncio.gather(*tasks)
@@ -590,10 +592,10 @@ class JobContext:
         """Handle worker status by calling conditional action."""
         match status:
             case WorkerStatus.RUNNING:
-                self.cond_running()
+                await self.cond_running()
 
             case WorkerStatus.UPDATED:
-                self.cond_updated()
+                await self.cond_updated()
 
             case WorkerStatus.SERVING_DONE:
                 await self.cond_completing()
@@ -604,24 +606,26 @@ class JobContext:
 
             case WorkerStatus.FAILED:
                 self._release_gpu_resource_by_worker_id(wid)
-                failed_wids = {
-                    wid
-                    for wid, status in self.wrk_status.items()
-                    if status == WorkerStatus.FAILED
-                }
-
-                command = CommandActionModel(
-                    action=CommandAction.CHECK_LOOP,
-                    job_id=self.job_id,
-                    failed_wids=failed_wids,
-                )
-                await self.send_command_to_agents(command)
-
+                await self.send_check_loop_command()
                 await self.cond_recovery()
 
             case WorkerStatus.TERMINATED:
                 self._release_gpu_resource_by_worker_id(wid)
                 self.cond_stopped()
+                
+    async def send_check_loop_command(self) -> None:
+        failed_wids = {
+            wid
+            for wid, status in self.wrk_status.items()
+            if status == WorkerStatus.FAILED
+        }
+
+        command = CommandActionModel(
+            action=CommandAction.CHECK_LOOP,
+            job_id=self.job_id,
+            failed_wids=failed_wids,
+        )
+        await self.send_command_to_agents(command)
 
     def get_wrk_status(self, wrk_id: str) -> WorkerStatus:
         """Get worker status."""
@@ -1159,13 +1163,13 @@ class JobContext:
         """Transition to UPDATING state."""
         await self.state.update()
 
-    def cond_running(self):
+    async def cond_running(self):
         """Handle the transition to running."""
-        self.state.cond_running()
+        await self.state.cond_running()
 
-    def cond_updated(self):
+    async def cond_updated(self):
         """Handle the transition to running."""
-        self.state.cond_updated()
+        await self.state.cond_updated()
 
     def cond_stopped(self):
         """Handle the transition to stopped."""
