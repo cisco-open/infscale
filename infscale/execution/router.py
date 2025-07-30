@@ -56,6 +56,7 @@ class Router:
         # maintains the tasks of send / recv for worlds
         self._tasks: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
         self.__tx_qs: dict[int, list[tuple[WorldInfo, asyncio.Queue]]] = {}
+        self.__suspended_tx_qs: dict[int, list[tuple[WorldInfo, asyncio.Queue]]] = {}
         self.__rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)
 
         self.orphan_dq: deque = deque()
@@ -74,6 +75,36 @@ class Router:
     def tx_q(self) -> asyncio.Queue:
         """Return transmit queue."""
         return self._tx_q
+    
+    def handle_suspended_worlds(self, suspended_worlds: list[str]) -> None:
+        """Handle suspended worlds by adding or removing them from the pipeline."""
+        if len(suspended_worlds) == 0:
+            # revert all suspended connections
+            for stage, tuples in self.__suspended_tx_qs.items():
+                self.__tx_qs[stage].extend(tuples)
+
+            # reset suspended dict after the recovery is done
+            self.__suspended_tx_qs.clear()
+            
+            logger.info(f"suspended __tx_qs {self.__suspended_tx_qs}")
+
+            return
+
+        for stage, q_list in list(self.__tx_qs.items()):
+            remaining = []
+            for tpl in q_list:
+                world_info, _ = tpl
+                if world_info.name in suspended_worlds:
+                    if stage not in self.__suspended_tx_qs:
+                         self.__suspended_tx_qs[stage] = []
+
+                    self.__suspended_tx_qs[stage].append(tpl)
+                else:
+                    remaining.append(tpl)
+
+            self.__tx_qs[stage] = remaining
+
+        logger.info(f"suspended __tx_qs {self.__suspended_tx_qs}")
 
     async def configure(
         self,

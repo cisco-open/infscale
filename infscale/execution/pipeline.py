@@ -351,7 +351,7 @@ class Pipeline:
                 case MessageType.CHECK_LOOP:
                     suspended_worlds = self._inspector.get_suspended_worlds(msg.content)
                     logger.debug(f'got suspended worlds: {suspended_worlds}')
-                    # TODO: pass the suspended worlds to router to process them
+                    self.router.handle_suspended_worlds(suspended_worlds)
 
                 case MessageType.FINISH_JOB:
                     # TODO: do the clean-up before transitioning to DONE
