@@ -16,6 +16,7 @@
 
 """agent.py."""
 
+import ast
 import asyncio
 import json
 import os
@@ -316,6 +317,18 @@ class Agent:
                         MessageType.FINISH_JOB, WorkerStatus.DONE, action.job_id
                     )
                     self.worker_mgr.send(w, msg)
+                    
+            case CommandAction.CHECK_LOOP:
+                workers = self.worker_mgr.get_workers_by_job_id(action.job_id)
+                failed_wids_str = action.manifest.decode("utf-8")
+                failed_wids_set = ast.literal_eval(failed_wids_str)
+                
+                for w in workers.values():
+                    msg = Message(
+                        MessageType.CHECK_LOOP, failed_wids_set, action.job_id
+                    )
+                    self.worker_mgr.send(w, msg)
+                    
 
     async def heart_beat(self):
         """Send a heart beat message periodically."""
