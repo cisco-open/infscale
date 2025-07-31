@@ -524,6 +524,16 @@ class RecoveryState(BaseJobState):
     async def cond_failing(self):
         """Handle the transition to failing."""
         await self.context._JobContext__cond_failing()
+        
+    async def cond_recovery(self):
+        """Handle the transition to failed."""
+        # there's no support for subsequent worker failure
+        # while recovering, if there is a new worker failure
+        # we send a stop command to agents to kill all workers
+        # and transition the job to failed
+        # TODO: add support for multiple worker failure
+        await self.context.send_stop_command()
+        self.context.set_state(JobStateEnum.FAILED)
 
 
 class JobContext:
@@ -613,6 +623,12 @@ class JobContext:
                 self._release_gpu_resource_by_worker_id(wid)
                 self.cond_stopped()
                 
+    async def send_stop_command(self) -> None:
+        """Send stop command to agents."""
+        command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
+
+        await self.send_command_to_agents(command)
+                
     async def send_check_loop_command(self) -> None:
         failed_wids = {
             wid
@@ -652,10 +668,7 @@ class JobContext:
         job_failed = self.job_checker.is_job_failed()
 
         if job_failed:
-            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
-
-            await self.send_command_to_agents(command)
-
+            await self.send_stop_command()
             self.set_state(JobStateEnum.FAILED)
 
     def get_wrkr_metrics(self, wrkr_id: str) -> PerfMetrics:
@@ -1237,10 +1250,7 @@ class JobContext:
         job_failed = self.job_checker.is_job_failed()
 
         if job_failed:
-            command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
-
-            await self.send_command_to_agents(command)
-
+            await self.send_stop_command()
             self.set_state(JobStateEnum.FAILING)
 
     async def __cond_completing(self):
