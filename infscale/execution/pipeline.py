@@ -220,6 +220,20 @@ class Pipeline:
         self.n_inflight -= 1
         if self.n_inflight < self.max_inflight:
             self.tx_allow_evt.set()
+            
+    def _reset_inflight_and_tx_event(self) -> None:
+        """Reset inflight and tx event.
+        
+        For recovery to work properly, when a new config is received,
+        we need to reset the n_inflight count and un-bock the send event.
+        This happens due to requests loss during recovery, when the server 
+        continues to send requests to the failed worker / pipeline, before it
+        gets notified about the failure, blocking any further requests sending
+        due to the maximum number of inflight requests.
+        """
+
+        self.n_inflight = 0
+        self.tx_allow_evt.set()
 
     async def _server_send(self, router: Router):
         global start_time
@@ -387,6 +401,8 @@ class Pipeline:
         worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
 
         self._send_status_message(worker_status)
+
+        self._reset_inflight_and_tx_event()
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}
