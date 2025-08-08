@@ -16,17 +16,24 @@
 
 """cfggen.py."""
 
+import json
 from collections import defaultdict
 
 import yaml
 
-from infscale.common.exceptions import InsufficientResources, InvalidConfig
+from infscale.common.exceptions import (
+    DifferentResourceAmount,
+    InsufficientResources,
+    InvalidConfig,
+)
 from infscale.configs.job import JobConfig
 from infscale.configs.plan import ExecPlan
 from infscale.controller.agent_context import AgentContext
 
 
 class FlowList(list):  # noqa: D101
+    """Custom list class for YAML flow style representation."""
+
     pass
 
 
@@ -494,3 +501,384 @@ class CfgGen:
                 workers.append(worker)
 
         return workers
+
+
+class CfgGen2:
+    """CfgGen class."""
+
+    def __init__(
+        self,
+        placement: dict[str, any],
+        agent_ctxts_list: list[AgentContext],
+        source: JobConfig,
+        dispatcher_device_type="cpu",
+        base_cfg: JobConfig = None,
+    ):
+        """Initialize an instance."""
+        self._placement = placement
+        self._source = source
+        self._dispatcher_device_type = dispatcher_device_type
+        self._base_cfg = base_cfg
+
+        self._is_auto_regressive = self._source.is_auto_regressive()
+
+        self._agent_ctxts = {}
+        for ctx in sorted(agent_ctxts_list, key=lambda ctx: ctx.id):
+            self._agent_ctxts[ctx.id] = ctx
+
+        self._dispatcher_worker = {
+            "id": "s-0",
+            "device": "",  # determined later
+            "is_server": True,
+            "stage": {"start": -1, "end": -1},
+        }
+
+        self._machine_to_agent_id: dict[int, str] = dict()
+
+        # Track GPU allocation per node
+        self._node_gpu_tracker = {}
+
+        # variables for processing each deployment
+        self._all_workers = []
+        self._worker_to_machine = {}
+        self._worker_to_gpu = {}
+        self._deployment_workers = {}  # Track workers per deployment
+        self._batch_size = 1
+
+        self._stage_id_offset = 0
+        self._world_id_offset = 0
+
+        self._dispatcher_machine = ""
+        self._dispatcher_addr = ""
+
+    def generate(self) -> JobConfig:
+        """Generate a config.
+
+        Note: Do not modify the order of function calls. Some member
+              variables updated in each function have dependencies
+              in other functions.
+        """
+        self._precheck()
+
+        self._set_offsets()
+
+        self._map_machine_to_agent_id()
+
+        self._assign_workers()
+
+        self._set_dispatcher()
+
+        # Build flow graph
+        flow_graph = self._build_flow_graph()
+
+        # BUild final config
+        config_data = {
+            "name": self._source.name,
+            "model": self._source.model,
+            "nfaults": self._source.nfaults,
+            "micro_batch_size": self._batch_size,
+            "fwd_policy": self._source.fwd_policy,
+            "job_id": self._source.job_id,
+            "max_inflight": self._source.max_inflight,
+            "flow_graph": flow_graph,
+            "dataset": self._source.dataset,
+            "workers": self._all_workers,
+        }
+
+        config = JobConfig(**config_data)
+
+        config = JobConfig.merge(self._base_cfg, config)
+
+        config.validate()
+
+        return config
+
+    def _precheck(self) -> None:
+        deployments = self._placement["deployments"]
+
+        # Validate dispatcher exists
+        if "dispatcher" not in deployments:
+            raise RuntimeError("No dispatcher found in placement!")
+
+    def _set_offsets(self) -> None:
+        if self._base_cfg is None:
+            return
+
+        self._stage_id_offset = self._base_cfg.max_stage_id() + 1
+        self._world_id_offset = self._base_cfg.max_world_id() + 1
+        self._dispatcher_addr = self._base_cfg.server_ip()
+
+    def _map_machine_to_agent_id(self) -> None:
+        nodes = self._placement["nodes"]
+
+        node_ids = []
+        for node_id in nodes.keys():
+            node_ids.append(int(node_id))
+        node_ids = sorted(node_ids)
+
+        if len(node_ids) != len(self._agent_ctxts):
+            err_msg = f"{len(node_ids)} nodes != {len(self._agent_ctxts)} agents"
+            raise DifferentResourceAmount(err_msg)
+
+        for node_id, agent_id in zip(node_ids, self._agent_ctxts.keys()):
+            self._machine_to_agent_id[node_id] = agent_id
+
+    def _assign_workers(self) -> None:
+        deployments = self._placement["deployments"]
+
+        # Get all model deployments (excluding dispatcher)
+        model_deployments = {
+            deploy_id: info
+            for deploy_id, info in deployments.items()
+            if deploy_id != "dispatcher"
+        }
+
+        if not model_deployments:
+            raise RuntimeError("No model deployments found!")
+
+        # Track GPU allocation per node
+        for key in self._placement["nodes"]:
+            self._node_gpu_tracker[int(key)] = 0
+
+        template_solutions = self._placement["template_solutions"]
+        gpus_per_node = self._placement["meta"]["gpus_per_node"]
+
+        # Process deployments in the exact order from JSON file
+        for deploy_id, deploy_info in model_deployments.items():
+            template_size = deploy_info["template_size"]
+            template_path = template_solutions[str(template_size)]
+
+            # Load template info
+            template_info = self._load_template_info(template_path)
+            self._batch_size = template_info["batch_size"]
+
+            # Allocate workers for this deployment
+            workers, w_to_m, w_to_g = self._allocate_workers_for_deployment(
+                deploy_id, deploy_info, template_info, gpus_per_node
+            )
+
+            self._deployment_workers[deploy_id] = workers
+            self._all_workers.extend(workers)
+            self._worker_to_machine.update(w_to_m)
+            self._worker_to_gpu.update(w_to_g)
+
+            # Update stage_id_offset for next deployment
+            max_stage_id = max(int(w["id"].split("-")[0]) for w in workers)
+            self._stage_id_offset = max_stage_id + 1
+
+    def _set_dispatcher(self) -> None:
+        if self._dispatcher_addr:
+            print("Do nothing; dispatcher already configured")
+            return
+
+        deployments = self._placement["deployments"]
+
+        # Extract dispatcher info
+        dispatcher_info = deployments["dispatcher"]
+        self._dispatcher_machine = dispatcher_info["node_segments"][0]["node_id"]
+
+        dispatcher_gpu = (
+            self._node_gpu_tracker[self._dispatcher_machine]
+            if self._dispatcher_device_type == "cuda"
+            else None
+        )
+
+        dispatcher_device = (
+            f"cuda:{dispatcher_gpu}"
+            if self._dispatcher_device_type == "cuda"
+            else "cpu"
+        )
+
+        self._dispatcher_worker["device"] = dispatcher_device
+
+        # Add dispatcher worker
+        self._all_workers.insert(0, self._dispatcher_worker)  # Server first
+
+    def _load_template_info(self, template_path: str) -> dict:
+        """Load template JSON and extract stage information."""
+        with open(template_path) as f:
+            data = json.load(f)
+
+        stages = data.get("stages", data.get("pipeline_stages", []))
+        batch_size = data.get("batch_size", 1)
+
+        return {"stages": stages, "batch_size": batch_size}
+
+    def _allocate_workers_for_deployment(
+        self,
+        deploy_id,
+        deploy_info,
+        template_info,
+        gpus_per_node,
+    ):
+        """
+        Allocate workers for a single deployment based on its node_segments.
+
+        Returns:
+            workers: list of worker dicts
+            worker_to_machine: dict mapping worker_id to node_id
+            worker_to_gpu: dict mapping worker_id to local_gpu_id
+        """
+        node_segments = deploy_info["node_segments"]
+        stages = template_info["stages"]
+
+        # TODO(MLEE): need to identify available GPU IDs via agent contexts
+        #             to make gpu id assignment robust
+        # Create a flat list of GPUs available from node_segments
+        available_gpus = []  # List of (node_id, local_gpu_id) tuples
+        for segment in node_segments:
+            node_id = segment["node_id"]
+            gpus_in_segment = segment["gpus"]
+
+            # Get the starting local GPU ID for this node
+            start_local_gpu = self._node_gpu_tracker[node_id]
+
+            if gpus_in_segment + start_local_gpu > gpus_per_node:
+                err_msg = f"GPUs in segment {gpus_in_segment} > # of available GPUs {gpus_per_node}"
+                raise InsufficientResources(err_msg)
+
+            # Add GPUs from this segment
+            for i in range(gpus_in_segment):
+                local_gpu = start_local_gpu + i
+                available_gpus.append((node_id, local_gpu))
+
+            # Update the tracker
+            self._node_gpu_tracker[node_id] += gpus_in_segment
+
+        # Now allocate workers based on stages and their gpu_allocation
+        workers = []
+        worker_to_machine = {}
+        worker_to_gpu = {}
+        gpu_idx = 0  # Index into available_gpus
+
+        for stage in stages:
+            stage_id = stage["stage_id"] + self._stage_id_offset
+            layer_start, layer_end = stage["layer_range"]
+            num_replicas = stage["num_replicas"]
+            gpu_allocation = stage["gpu_allocation"]
+
+            # Allocate replicas for this stage
+            replica_idx = 0
+            for machine_offset_str, gpu_count in gpu_allocation.items():
+                for _ in range(gpu_count):
+                    if replica_idx < num_replicas and gpu_idx < len(available_gpus):
+                        worker_id = f"{stage_id}-{replica_idx}"
+                        node_id, local_gpu = available_gpus[gpu_idx]
+
+                        workers.append(
+                            {
+                                "id": worker_id,
+                                "device": f"cuda:{local_gpu}",
+                                "stage": {"start": layer_start, "end": layer_end},
+                            }
+                        )
+
+                        worker_to_machine[worker_id] = node_id
+                        worker_to_gpu[worker_id] = local_gpu
+
+                        replica_idx += 1
+                        gpu_idx += 1
+
+        return workers, worker_to_machine, worker_to_gpu
+
+    def _build_flow_graph(self):
+        """Build the flow graph for communication."""
+        flow_graph = {}
+        world_id = self._world_id_offset
+        server_backend = "nccl" if self._dispatcher_device_type == "cuda" else "gloo"
+
+        # Process each deployment separately
+        for deploy_id, deploy_workers in self._deployment_workers.items():
+            # Group workers by stage_id within this deployment
+            stages = {}
+            for worker in deploy_workers:
+                stage_id = int(worker["id"].split("-")[0])
+                if stage_id not in stages:
+                    stages[stage_id] = []
+                stages[stage_id].append(worker)
+
+            stage_ids = sorted(stages.keys())
+
+            # Build connections for this deployment's pipeline
+            for i, stage_id in enumerate(stage_ids):
+                stage_workers = stages[stage_id]
+
+                for worker in stage_workers:
+                    worker_id = worker["id"]
+                    worker_node = self._worker_to_machine[worker_id]
+                    agent_id = self._machine_to_agent_id[worker_node]
+                    ctx = self._agent_ctxts[agent_id]
+                    worker_addr = ctx.ip
+
+                    connections = []
+
+                    # Connection to previous stage or server
+                    if i == 0:  # First stage connects to server
+                        connections.append(
+                            {
+                                "name": f"w{world_id}",
+                                "peers": FlowList(["s-0"]),
+                                "addr": worker_addr,
+                                "backend": server_backend,
+                            }
+                        )
+                        world_id += 1
+                    else:  # Connect to all workers in previous stage
+                        prev_stage_id = stage_ids[i - 1]
+                        prev_workers = stages[prev_stage_id]
+                        for prev_worker in prev_workers:
+                            connections.append(
+                                {
+                                    "name": f"w{world_id}",
+                                    "peers": FlowList([prev_worker["id"]]),
+                                    "addr": worker_addr,
+                                    "backend": "nccl",
+                                }
+                            )
+                            world_id += 1
+
+                    # For LLM(e.g., llama), add feedback connections from last stage to first stage
+                    if self._is_auto_regressive and i == 0 and len(stage_ids) > 1:
+                        last_stage_workers = stages[stage_ids[-1]]
+                        for last_worker in last_stage_workers:
+                            connections.append(
+                                {
+                                    "name": f"w{world_id}",
+                                    "peers": FlowList([last_worker["id"]]),
+                                    "addr": worker_addr,
+                                    "backend": "nccl",
+                                }
+                            )
+                            world_id += 1
+
+                    flow_graph[worker_id] = connections
+
+        # Add server connections - connect to last stage of each deployment
+        server_connections = []
+        for deploy_workers in self._deployment_workers.values():
+            # Find last stage workers in this deployment
+            max_stage_id = max(int(w["id"].split("-")[0]) for w in deploy_workers)
+            last_stage_workers = [
+                w for w in deploy_workers if int(w["id"].split("-")[0]) == max_stage_id
+            ]
+
+            # dispatcher address is not set yet
+            if not self._dispatcher_addr:
+                agent_id = self._machine_to_agent_id[self._dispatcher_machine]
+                ctx = self._agent_ctxts[agent_id]
+                self._dispatcher_addr = ctx.ip
+
+            for worker in last_stage_workers:
+                server_connections.append(
+                    {
+                        "name": f"w{world_id}",
+                        "peers": FlowList([worker["id"]]),
+                        "addr": self._dispatcher_addr,
+                        "backend": server_backend,
+                    }
+                )
+                world_id += 1
+
+        flow_graph["s-0"] = server_connections
+
+        return flow_graph

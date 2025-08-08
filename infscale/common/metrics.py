@@ -94,7 +94,7 @@ class PerfMetrics:
     output_rate: float = 0.0
 
     # a factor used to set qlevel threshold
-    _sensitivity_factor: float = 2
+    _sensitivity_factor: float = 1
     _qthresh: float = 10**9
 
     _qlevel_rs: RollingStats = None
@@ -118,6 +118,12 @@ class PerfMetrics:
         This method should be only called in conjunction with update() for accurate
         calculation.
         """
+        if self.input_rate == 0 and self.output_rate == 0 and self.qlevel == 0:
+            # if all metrics are zero, it means that the system is idle.
+            # in that case, there is no need to update the statistics;
+            # otherwise, it may cause an instantaneous congestion.
+            return
+
         self._in_rate_rs.update(self.input_rate)
         self._out_rate_rs.update(self.output_rate)
         self._qlevel_rs.update(self.qlevel)

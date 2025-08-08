@@ -1,0 +1,55 @@
+2:
+- batch_size: 32
+  template_name: batch32_gpus2.json
+  throughput: 776.1179015296715
+  total_latency: 81.82467385164006
+3:
+- batch_size: 32
+  template_name: batch32_gpus3.json
+  throughput: 1168.7663325481915
+  total_latency: 81.82467385164006
+4:
+- batch_size: 32
+  template_name: batch32_gpus4.json
+  throughput: 1559.8303911205262
+  total_latency: 81.82467385164006
+5:
+- batch_size: 32
+  template_name: batch32_gpus5.json
+  throughput: 1806.224357302517
+  total_latency: 97.23874105164005
+6:
+- batch_size: 32
+  template_name: batch32_gpus6.json
+  throughput: 2189.600393513013
+  total_latency: 97.23874105164005
+7:
+- batch_size: 32
+  template_name: batch32_gpus7.json
+  throughput: 2473.8656483369014
+  total_latency: 86.10635918497339
+8:
+- batch_size: 32
+  template_name: batch32_gpus8.json
+  throughput: 2886.176589726385
+  total_latency: 85.37235598497338
+9:
+- batch_size: 32
+  template_name: batch32_gpus9.json
+  throughput: 3233.4066932233345
+  total_latency: 88.67537038497339
+10:
+- batch_size: 32
+  template_name: batch32_gpus10.json
+  throughput: 3602.296792079864
+  total_latency: 87.81903331830672
+11:
+- batch_size: 32
+  template_name: batch32_gpus11.json
+  throughput: 4002.551991199849
+  total_latency: 87.1339636649734
+12:
+- batch_size: 32
+  template_name: batch32_gpus12.json
+  throughput: 4402.807190319834
+  total_latency: 86.57345213042794

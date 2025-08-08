@@ -19,10 +19,12 @@
 import json
 from pathlib import Path
 
+from infscale.common.exceptions import InsufficientResources
 from infscale.configs.job import JobConfig
 from infscale.configs.plan import ExecPlan
 from infscale.controller.agent_context import AgentContext
-from infscale.controller.cfggen import CfgGen
+from infscale.controller.cfggen import CfgGen, CfgGen2
+from infscale.controller.deployment_placement import Placement
 
 
 class PlanCollection:
@@ -101,12 +103,68 @@ class Planner:
             # if autoscale is not enabled, we use source as is
             return source
 
-        self._load_plans(source.model)
+        solution = self._calculate_placement(source, agent_ctxts, demand)
+        if solution is None:
+            raise InsufficientResources("No placement solution found")
 
-        # configure plan collection to set a subset of execution plans to be considered
-        plan_list = self._colls[source.model].pick_plans(demand)
-        gen = CfgGen(agent_ctxts, source, plan_list, "cuda", base_cfg)
-        return gen.generate()
+        gen2 = CfgGen2(solution[0], solution[1], source, "cuda", base_cfg)
+        cfg = gen2.generate()
+        return cfg
+
+        #####
+        # NOTE: disabled CfgGen for now; once CfgGen2 becomes stable, remove CfgGen
+        #####
+
+        # self._load_plans(source.model)
+
+        # # configure plan collection to set a subset of execution plans to be considered
+        # plan_list = self._colls[source.model].pick_plans(demand)
+        # gen = CfgGen(agent_ctxts, source, plan_list, "cuda", base_cfg)
+        # return gen.generate()
+
+    def _search_feasible_placement(
+        self,
+        demand: float,
+        nfaults: int,
+        placement: Placement,
+        gpu_count: int,
+        ctx_list: list[AgentContext],
+    ) -> tuple[dict, list[AgentContext]] | None:
+        # we'd like to search a feasible solution by increasing the number of nodes
+        for num_nodes in range(1, len(ctx_list) + 1):
+            res = placement.calculate_placement(
+                gpu_count, len(ctx_list[:num_nodes]), nfaults
+            )
+            meta = res["meta"]
+            if meta["total_throughput"] > demand:
+                return (res, ctx_list[:num_nodes])
+
+        return None
+
+    def _calculate_placement(
+        self, source: JobConfig, agent_ctxts: dict[str, AgentContext], demand: float
+    ) -> tuple[dict, list[AgentContext]] | None:
+        gpu_count_and_nodes: dict[int, list[AgentContext]] = {}
+        for ctx in agent_ctxts.values():
+            count = ctx.avail_gpu_count()
+            if count == 0:
+                continue
+
+            if count not in gpu_count_and_nodes:
+                gpu_count_and_nodes[count] = []
+            gpu_count_and_nodes[count].append(ctx)
+
+        solution = None
+        p = Placement(self._path / source.model.lower())
+        for gpu_count in sorted(gpu_count_and_nodes.keys()):
+            ctx_list = gpu_count_and_nodes[gpu_count]
+            solution = self._search_feasible_placement(
+                demand, source.nfaults, p, gpu_count, ctx_list
+            )
+            if solution:
+                break
+
+        return solution
 
     def _load_plans(self, model_name: str) -> None:
         if model_name in self._colls:
@@ -116,7 +174,7 @@ class Planner:
 
         model_plan_path = self._path / model_name.lower()
         for entry in model_plan_path.iterdir():
-            if not entry.is_file():
+            if not entry.is_file() or entry.suffix.lower() != ".json":
                 continue
 
             self._colls[model_name].add(entry.absolute())

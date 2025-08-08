@@ -16,10 +16,8 @@
 
 """deployment_placement.py."""
 
-import argparse
-import json
-import os
 import time
+from pathlib import Path
 
 import yaml
 
@@ -381,157 +379,133 @@ def assign_nodes_with_deployments(solution, gpus_per_node):
     return nodes_dict, deployments
 
 
-# Example usage
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dir", type=str, default="solution/llama")
-    parser.add_argument(
-        "-k",
-        "--fault_tolerance",
-        type=int,
-        default=0,
-        help="Number of node failures (k) to tolerate. 0 = no fault tolerance (default).",
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
-        type=str,
-        default="placement.json",
-        help="Path of the JSON file to write the placement result.",
-    )
-    parser.add_argument(
-        "--dispatcher",
-        action="store_true",
-        help="Reserve 1 GPU on the last node for a dispatcher service.",
-    )
-    parser.add_argument(
-        "--gpu_per_node", type=int, default=4, help="Number of GPUs per node."
-    )
-    parser.add_argument(
-        "--num_nodes", type=int, default=10, help="Total number of nodes."
-    )
-    args = parser.parse_args()
+class Placement:
+    """Placement class."""
 
-    # Load real throughput data
-    with open(os.path.join(args.dir, "solutions_index.yaml"), "r") as file:
-        solutions_data = yaml.safe_load(file)
+    def __init__(self, path: Path) -> None:
+        """Initialize Placement instance."""
+        self._path = path
 
-    gpu_throughputs = {
-        int(k): v[0]["throughput"] for k, v in solutions_data.items() if v
-    }
-    num_templates = max(gpu_throughputs.keys())
-    throughput = [0] * (num_templates + 1)
-    for i, tput in gpu_throughputs.items():
-        throughput[i] = tput
+    def calculate_placement(
+        self,
+        gpus_per_node: int,
+        num_nodes: int,
+        nfaults: int,
+        dispatcher_on_gpu: bool = True,
+    ) -> dict:
+        """Calculate placement."""
+        solutions_index_path = self._path / "solutions_index.yaml"
+        with open(solutions_index_path.absolute(), "r") as f:
+            solutions_data = yaml.safe_load(f)
 
-    gpus_per_node = args.gpu_per_node
-    num_nodes = args.num_nodes
+        gpu_throughputs = {
+            int(k): v[0]["throughput"] for k, v in solutions_data.items() if v
+        }
+        num_templates = max(gpu_throughputs.keys())
+        throughput = [0] * (num_templates + 1)
+        for i, tput in gpu_throughputs.items():
+            throughput[i] = tput
 
-    print("Throughputs (GPUs: throughput):", gpu_throughputs)
+        print("Throughputs (GPUs: throughput):", gpu_throughputs)
 
-    start = time.time()
+        start = time.time()
 
-    if args.fault_tolerance > 0:
-        best_profit, solution = dp_pipeline_packing_fault_tolerant(
-            gpus_per_node,
-            num_nodes,
-            num_templates,
-            throughput,
-            args.fault_tolerance,
-            need_dispatcher=args.dispatcher,
-        )
-    else:
-        best_profit, solution = dp_pipeline_packing(
-            gpus_per_node,
-            num_nodes,
-            num_templates,
-            throughput,
-            need_dispatcher=args.dispatcher,
-        )
+        if nfaults > 0:
+            best_profit, solution = dp_pipeline_packing_fault_tolerant(
+                gpus_per_node,
+                num_nodes,
+                num_templates,
+                throughput,
+                nfaults,
+                need_dispatcher=dispatcher_on_gpu,
+            )
+            print(
+                f"\nBest total throughput ≤{num_nodes} nodes (tolerates up to {nfaults} node failures): "
+            )
+        else:
+            best_profit, solution = dp_pipeline_packing(
+                gpus_per_node,
+                num_nodes,
+                num_templates,
+                throughput,
+                need_dispatcher=dispatcher_on_gpu,
+            )
+            print(f"\nBest total throughput ≤{num_nodes} nodes: {best_profit}")
 
-    end = time.time()
+        end = time.time()
 
-    if args.fault_tolerance > 0:
-        print(
-            f"\nBest total throughput ≤{num_nodes} nodes (tolerates up to {args.fault_tolerance} node failures): "
-            f"{best_profit} (computed in {end-start:.6f}s)"
-        )
-    else:
-        print(
-            f"\nBest total throughput ≤{num_nodes} nodes: {best_profit} (computed in {end-start:.6f}s)"
+        # print(f"Solution: {solution}")
+
+        # Build per-node assignment
+        nodes = assign_nodes(solution, gpus_per_node)
+
+        # Print it
+        for idx, node in enumerate(nodes):
+            items = ", ".join(f"template {tpl} x {cnt}" for tpl, cnt in node.items())
+            print(f"Node {idx}: {items}")
+
+        # Build rich JSON views
+        nodes_dict, deployments_dict = assign_nodes_with_deployments(
+            solution, gpus_per_node
         )
 
-    print(f"Solution: {solution}")
+        # Inject dispatcher fragment if needed
+        if dispatcher_on_gpu:
+            # Identify node with exactly one free GPU
+            disp_node_id = None
+            for nid, frags in nodes_dict.items():
+                used = sum(frag["gpus"] for frag in frags)
+                if used == gpus_per_node - 1:
+                    disp_node_id = nid
+                    break
 
-    # Build per-node assignment
-    nodes = assign_nodes(solution, gpus_per_node)
+            # Fallback: put on the last node
+            if disp_node_id is None:
+                disp_node_id = str(len(nodes_dict) - 1)
 
-    # Print it
-    for idx, node in enumerate(nodes):
-        items = ", ".join(f"template {tpl} x {cnt}" for tpl, cnt in node.items())
-        print(f"Node {idx}: {items}")
+            disp_fragment = {"deploy_id": "dispatcher", "gpus": 1}
+            nodes_dict.setdefault(disp_node_id, []).append(disp_fragment)
+            deployments_dict["dispatcher"] = {
+                "template_size": 1,
+                "node_segments": [{"node_id": int(disp_node_id), "gpus": 1}],
+            }
 
-    # Build rich JSON views
-    nodes_dict, deployments_dict = assign_nodes_with_deployments(
-        solution, gpus_per_node
-    )
-
-    # Inject dispatcher fragment if needed
-    if args.dispatcher:
-        # Identify node with exactly one free GPU
-        disp_node_id = None
-        for nid, frags in nodes_dict.items():
-            used = sum(frag["gpus"] for frag in frags)
-            if used == gpus_per_node - 1:
-                disp_node_id = nid
-                break
-
-        # Fallback: put on the last node
-        if disp_node_id is None:
-            disp_node_id = str(len(nodes_dict) - 1)
-
-        disp_fragment = {"deploy_id": "dispatcher", "gpus": 1}
-        nodes_dict.setdefault(disp_node_id, []).append(disp_fragment)
-        deployments_dict["dispatcher"] = {
-            "template_size": 1,
-            "node_segments": [{"node_id": int(disp_node_id), "gpus": 1}],
+        # gather partition info for templates actually deployed
+        deployed_sizes = {
+            int(s.split("-")[0]) for s in deployments_dict.keys() if s != "dispatcher"
         }
 
-    # gather partition info for templates actually deployed
-    deployed_sizes = {
-        int(s.split("-")[0]) for s in deployments_dict.keys() if s != "dispatcher"
-    }
-    template_solutions = {}
-    for sz in deployed_sizes:
-        entry = (
-            solutions_data.get(sz)
-            if sz in solutions_data
-            else solutions_data.get(str(sz))
-        )
-        if isinstance(entry, list) and entry:
-            tpl_filename = (
-                entry[0].get("template_name") if isinstance(entry[0], dict) else None
+        template_solutions = {}
+        for sz in deployed_sizes:
+            entry = (
+                solutions_data.get(sz)
+                if sz in solutions_data
+                else solutions_data.get(str(sz))
             )
-            if tpl_filename:
-                template_solutions[str(sz)] = os.path.join(args.dir, tpl_filename)
+            if isinstance(entry, list) and entry:
+                tpl_filename = (
+                    entry[0].get("template_name")
+                    if isinstance(entry[0], dict)
+                    else None
+                )
+                if tpl_filename:
+                    tpl_path = self._path / tpl_filename
+                    template_solutions[str(sz)] = str(tpl_path)
 
-    # Now construct JSON blob and write to disk
-    result_json = {
-        "meta": {
-            "gpus_per_node": gpus_per_node,
-            "max_nodes": num_nodes,
-            "fault_tolerance_k": args.fault_tolerance,
-            "total_throughput": best_profit,
-            "runtime_sec": round(end - start, 6),
-        },
-        "deployments": deployments_dict,
-        "nodes": nodes_dict,
-        "template_solutions": template_solutions,
-    }
+        result = {
+            "meta": {
+                "gpus_per_node": gpus_per_node,
+                "max_nodes": num_nodes,
+                "fault_tolerance_k": nfaults,
+                "total_throughput": best_profit,
+                "runtime_sec": round(end - start, 6),
+            },
+            "deployments": deployments_dict,
+            "nodes": nodes_dict,
+            "template_solutions": template_solutions,
+        }
 
-    with open(args.out, "w") as fp:
-        json.dump(result_json, fp, indent=2)
-    print(f"\nPlacement written to {args.out}")
+        if dispatcher_on_gpu:
+            print(f"Dispatcher server placed on node {disp_node_id} (1 GPU reserved).")
 
-    if args.dispatcher:
-        print(f"Dispatcher server placed on node {disp_node_id} (1 GPU reserved).")
+        return result

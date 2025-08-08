@@ -49,3 +49,11 @@ class InsufficientResources(InfScaleException):
     def __init__(self, err_msg: str):
         """Initialize InsufficientResources exception instance."""
         super().__init__(err_msg)
+
+
+class DifferentResourceAmount(InfScaleException):
+    """Exception for different resource amounts."""
+
+    def __init__(self, err_msg: str):
+        """Initialize DifferentResourceAmount exception instance."""
+        super().__init__(err_msg)

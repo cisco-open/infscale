@@ -1,7 +1,7 @@
 ---
 name: resnet152_example
 model: microsoft/resnet-152
-nfaults: 1
+nfaults: 0
 # the following entries are for local development only
 # after development is done, they need to be revised accordingly
 # to automate building flow_graph, etc.
