@@ -363,9 +363,14 @@ class Pipeline:
                     self._terminate_worker()
                     
                 case MessageType.CHECK_LOOP:
-                    suspended_worlds = self._inspector.get_suspended_worlds(msg.content)
-                    logger.debug(f'got suspended worlds: {suspended_worlds}')
+                    failed_wids = msg.content
+                    suspended_worlds = self._inspector.get_suspended_worlds(failed_wids)
                     self.router.handle_suspended_worlds(suspended_worlds)
+                    
+                    # if failed wids is empty, the job is recovered
+                    # and we can reset inflight requests and tx event
+                    if len(failed_wids) == 0:
+                        self._reset_inflight_and_tx_event()
 
                 case MessageType.FINISH_JOB:
                     # TODO: do the clean-up before transitioning to DONE
@@ -401,8 +406,6 @@ class Pipeline:
         worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
 
         self._send_status_message(worker_status)
-
-        self._reset_inflight_and_tx_event()
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}
