@@ -38,6 +38,7 @@ from infscale.module.zoo import Zoo
 from infscale.request.generator import GeneratorFactory
 from infscale.worker.pipeline_inspector import PipelineInspector
 from infscale.worker.worker_comm import WorkerCommunicator
+from infscale.worker.error_handler import get_worker_error_handler
 
 
 logger = None
@@ -71,6 +72,7 @@ class Pipeline:
         self._micro_batch_size = 1
         self._initialized = False
         self._inspector = PipelineInspector()
+        self._error_handler = get_worker_error_handler()
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -103,6 +105,7 @@ class Pipeline:
             )
         except Exception as e:
             logger.error(f"failed to initialize a multiworld {name}: {e}")
+            self._error_handler.put(e)
             return
 
         logger.debug(f"done initializing multiworld {name}")
@@ -255,11 +258,16 @@ class Pipeline:
 
         start_time = time.perf_counter()
         while True:
-            batches = await self.req_generator.get()
+            try:
+                batches = await self.req_generator.get()
 
-            await _inner_send(batches)
-            if self._end_of_send:
-                break
+                await _inner_send(batches)
+                if self._end_of_send:
+                    break
+            except Exception as e:
+                # this is very likely a no-op due to the actions that are happening
+                # either in inner_send or generator get, but we keep it as a safety net
+                self._error_handler.put(e)
 
     async def _server_recv(self, router: Router):
         """Receive inference results from the last stage."""
@@ -320,10 +328,8 @@ class Pipeline:
     async def _run_worker(self):
         while True:
             inputs, seqno = await self.router.recv()
-
             with torch.inference_mode():
                 outputs, next_layer = self.stage.predict(seqno, **inputs)
-
             await self.router.send(seqno, outputs, next_layer)
 
     async def _collect_metrics(self):
@@ -507,7 +513,10 @@ class Pipeline:
         _ = asyncio.create_task(self._handle_message())
         await self.cfg_event.wait()
 
-        if self.spec.is_server:
-            await self._run_server()
-        else:
-            await self._run_worker()
+        try:
+            if self.spec.is_server:
+                await self._run_server()
+            else:
+                await self._run_worker()
+        except Exception as e:
+            self._error_handler.put(e)

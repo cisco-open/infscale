@@ -28,6 +28,7 @@ from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo
 from infscale.fwding.factory import Forwarder, get_forwarder
+from infscale.worker.error_handler import get_worker_error_handler
 
 
 DEFAULT_QUEUE_SIZE = 100
@@ -65,6 +66,8 @@ class Router:
         _ = asyncio.create_task(self._recv_arbiter())
 
         self._fwder: Forwarder = None
+        
+        self._error_handler = get_worker_error_handler()
 
     @property
     def rx_q(self) -> asyncio.Queue:
@@ -261,6 +264,8 @@ class Router:
                     continue
                 logger.warning(f"{world_info.multiworld_name} is broken")
                 break
+            except Exception as e:
+                self._error_handler.put(e)
 
             if send_dev != self.device:
                 for k in tensors.keys():
@@ -301,9 +306,14 @@ class Router:
 
     async def _recv_arbiter(self) -> None:
         while True:
-            tensor, seqno = await self.__rx_q.get()
-            # TODO: introduce a prioritization policy
-            await self._rx_q.put((tensor, seqno))
+            try:
+                tensor, seqno = await self.__rx_q.get()
+                # TODO: introduce a prioritization policy
+                await self._rx_q.put((tensor, seqno))
+            except Exception as e:
+                # this is very likely to be a no-op due to the simple
+                # get and put operations we do on the asyncio queues.
+                self._error_handler.put(e)
 
     async def _send_arbiter(self) -> None:
         while True:
@@ -319,7 +329,10 @@ class Router:
 
             tx_qs = self.__tx_qs[next_layer]
 
-            world_info, tx_q = self._fwder.select(tx_qs, next_layer, seqno)
+            try:
+                world_info, tx_q = self._fwder.select(tx_qs, next_layer, seqno)
+            except Exception as e:
+                self._error_handler.put(e)
 
             await tx_q.put((seqno, tensor, next_layer))
 
