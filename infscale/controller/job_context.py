@@ -262,6 +262,11 @@ class StoppingState(BaseJobState):
         if self.context.in_statuses_for_all_workers({WorkerStatus.TERMINATED}):
             self.context.set_state(JobStateEnum.STOPPED)
 
+    async def cond_recovery(self):
+        """Handle the transition to stopped."""
+        if self.context.in_statuses_for_all_workers({WorkerStatus.FAILED, WorkerStatus.TERMINATED}):
+            self.context.set_state(JobStateEnum.STOPPED)
+
 
 class FailingState(BaseJobState):
     """FailingState class."""
@@ -288,6 +293,11 @@ class CompletingState(BaseJobState):
     def cond_complete(self):
         """Handle the transition to complete."""
         if self.context.in_statuses_for_all_workers({WorkerStatus.DONE}):
+            self.context.set_state(JobStateEnum.COMPLETE)
+            
+    async def cond_recovery(self):
+        """Handle the transition to complete."""
+        if self.context.in_statuses_for_all_workers({WorkerStatus.FAILED, WorkerStatus.DONE}):
             self.context.set_state(JobStateEnum.COMPLETE)
 
 

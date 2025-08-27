@@ -138,6 +138,10 @@ class WorkerManager:
                     self._handle_status(msg, worker.pipe.fileno())
 
                 self._remove_reader(worker)
+            except ConnectionResetError:
+                # When ConnectionResetError is raised, the pipe is already closed due to worker failure
+                # so we only need to ignore this error.
+                pass
 
     def _handle_message(
         self, message: Message, worker: WorkerMetaData, fd: int
