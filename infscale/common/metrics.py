@@ -30,6 +30,7 @@ class RollingStats:
         self._window_size = window_size
         self._sum = 0.0
         self._sum_sq = 0.0
+        self._std = 0.0
 
     def update(self, val: float) -> None:
         """Update statistics."""
@@ -60,9 +61,15 @@ class RollingStats:
 
         mean_sq = self._sum_sq / self._window_size
         mean = self._sum / self._window_size
-        std = math.sqrt(mean_sq - mean**2)
 
-        return std
+        try:
+            self._std = math.sqrt(mean_sq - mean**2)
+        except ValueError:
+            # in some edge cases ValueError: math domain error is raised
+            # if that happens, ignore the error and return previous value.
+            pass
+
+        return self._std
 
 
 @dataclass
