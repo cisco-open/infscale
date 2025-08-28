@@ -84,6 +84,13 @@ class Channel:
 
     async def _handle_client(self, reader: StreamReader, writer: StreamWriter) -> None:
         data = await reader.read(MSG_SIZE)
+        if not data:
+            # reader.read() returned b"" meaning the client closed the connection
+            # before sending any data (EOF). Nothing more to do, just close.
+            await self._close_connection(writer)
+            
+            return
+
         message = data.decode()
         peer_rank = int(message)
 
@@ -110,6 +117,17 @@ class Channel:
         self.peers[0] = (reader, writer)
 
         setup_done.set()
+        
+    async def _close_connection(self, writer: asyncio.StreamWriter) -> None:
+        """Close a connection gracefully."""
+        addr = writer.get_extra_info("peername")
+        logger.debug(f"closing connection from {addr}")
+
+        try:
+            writer.close()
+            await writer.wait_closed()
+        except Exception as e:
+            logger.error(f"error while closing connection from {addr}: {e}")
 
     async def wait_readiness(self):
         """Wait until control channel is fully configured."""
