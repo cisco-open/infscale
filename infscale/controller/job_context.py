@@ -393,6 +393,12 @@ class RecoveryState(BaseJobState):
 
     async def _start_recovery(self) -> None:
         """Start recovery tasks for failed workers."""
+        # in the case of no available agents, transition to failed.
+        if len(self.context.ctrl.agent_contexts) == 0:
+            self.context.set_state(JobStateEnum.FAILED)
+            
+            return
+
         failed_wrk_ids = {
             k for k, v in self.context.wrk_status.items() if v == WorkerStatus.FAILED
         }
@@ -433,17 +439,23 @@ class RecoveryState(BaseJobState):
 
         for wrk_id in wrk_ids:
             curr_agent = self._get_curr_agent_data(wrk_id)
-            assign_success = self._assign_available_gpu_to_worker(
-                curr_agent.id,
-                agent_resources[curr_agent.id],
-                wrk_id,
-                wrk_agent_map,
-                agent_gpu_map,
-            )
+            assign_success = False
+            # current agent id might not be available in the case of
+            # recover due to agent failure
+            curr_agent_id = curr_agent.id if curr_agent else ""
+
+            if curr_agent:
+                assign_success = self._assign_available_gpu_to_worker(
+                    curr_agent_id,
+                    agent_resources[curr_agent_id],
+                    wrk_id,
+                    wrk_agent_map,
+                    agent_gpu_map,
+                )
 
             if not assign_success:
                 assign_success = self._search_gpu_on_all_agents(
-                    agent_resources, curr_agent.id, wrk_id, wrk_agent_map, agent_gpu_map
+                    agent_resources, curr_agent_id, wrk_id, wrk_agent_map, agent_gpu_map
                 )
 
             if not assign_success:
@@ -455,10 +467,10 @@ class RecoveryState(BaseJobState):
     def _get_curr_agent_data(self, wrk_id: str) -> AgentMetaData:
         """Return current agent that deployed worker ID."""
         agent_data = next(
-            agent_data
+            (agent_data
             for agent_data in self.context.running_agent_info.values()
-            if wrk_id in agent_data.wids_to_deploy
-        )
+            if wrk_id in agent_data.wids_to_deploy)
+        , None)
 
         return agent_data
 
@@ -663,7 +675,12 @@ class JobContext:
 
     async def handle_agent_failure(self, agent_id: str) -> None:
         """Handle agent failure."""
+        # do cleanup in all agent related data structures
         agent_data = self.agent_info.pop(agent_id, None)
+        del self.running_agent_info[agent_id]
+        
+        if agent_id in self.past_running_agent_info:
+            del self.past_running_agent_info[agent_id]
 
         if agent_data is None:
             return
@@ -671,15 +688,7 @@ class JobContext:
         for wid in agent_data.wids_to_deploy:
             self.set_wrk_status(wid, WorkerStatus.FAILED)
 
-        await self.handle_potential_job_failure()
-
-    async def handle_potential_job_failure(self) -> None:
-        """Decide job failure and stop all workers."""
-        job_failed = self.job_checker.is_job_failed()
-
-        if job_failed:
-            await self.send_stop_command()
-            self.set_state(JobStateEnum.FAILED)
+        await self.cond_recovery()
 
     def get_wrkr_metrics(self, wrkr_id: str) -> PerfMetrics:
         """Get worker's performance metrics.
@@ -926,8 +935,8 @@ class JobContext:
                 port_iter = agent_port_map[agent_data.id]
 
                 if world.name in curr_worlds:
-                    # keep existing ports
-                    world.addr = curr_worlds[world.name].addr
+                    # assign addr and ports for curr_worlds based on recover flag.
+                    world.addr = world.addr if world.recover else curr_worlds[world.name].addr
                     world.data_port = (
                         next(port_iter)
                         if world.recover
