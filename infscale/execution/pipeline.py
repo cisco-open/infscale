@@ -36,9 +36,9 @@ from infscale.module.dataset import HuggingFaceDataset
 from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
 from infscale.request.generator import GeneratorFactory
+from infscale.worker.fatal import kill_worker
 from infscale.worker.pipeline_inspector import PipelineInspector
 from infscale.worker.worker_comm import WorkerCommunicator
-from infscale.worker.error_handler import get_worker_error_handler
 
 
 logger = None
@@ -72,7 +72,6 @@ class Pipeline:
         self._micro_batch_size = 1
         self._initialized = False
         self._inspector = PipelineInspector()
-        self._error_handler = get_worker_error_handler()
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -105,7 +104,7 @@ class Pipeline:
             )
         except Exception as e:
             logger.error(f"failed to initialize a multiworld {name}: {e}")
-            self._error_handler.put(e)
+            kill_worker(e)
             return
 
         logger.debug(f"done initializing multiworld {name}")
@@ -267,7 +266,7 @@ class Pipeline:
             except Exception as e:
                 # this is very likely a no-op due to the actions that are happening
                 # either in inner_send or generator get, but we keep it as a safety net
-                self._error_handler.put(e)
+                kill_worker(e)
 
     async def _server_recv(self, router: Router):
         """Receive inference results from the last stage."""
@@ -519,4 +518,4 @@ class Pipeline:
             else:
                 await self._run_worker()
         except Exception as e:
-            self._error_handler.put(e)
+            kill_worker(e)

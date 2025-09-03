@@ -26,7 +26,7 @@ import torch
 from torch import Tensor
 
 from infscale import get_logger
-from infscale.worker.error_handler import get_worker_error_handler
+from infscale.worker.fatal import kill_worker
 
 
 logger = None
@@ -75,15 +75,13 @@ class Channel:
         self.prev_ctrl_msg: ControlMessage = ControlMessage()
 
         self._server_task: asyncio.Task = None
-        
-        self._error_handler = get_worker_error_handler()
 
     async def _setup_server(self, setup_done: asyncio.Event) -> None:
         try:
             server = await asyncio.start_server(self._handle_client, self.addr, self.port)
             setup_done.set()
         except Exception as e:
-            self._error_handler.put(e)
+            kill_worker(e)
 
         async with server:
             await server.serve_forever()
@@ -110,7 +108,7 @@ class Channel:
             except Exception as e:
                 if i + 1 == NUM_OF_RETRIES:
                     logger.warning(f"max number ({i+1}) of tries reached")
-                    self._error_handler.put(e)
+                    kill_worker(e)
                     raise e
 
                 logger.debug(f"({i+1}): exception occurred: {e}; retrying...")

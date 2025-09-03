@@ -28,7 +28,7 @@ from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo
 from infscale.fwding.factory import Forwarder, get_forwarder
-from infscale.worker.error_handler import get_worker_error_handler
+from infscale.worker.fatal import kill_worker
 
 
 DEFAULT_QUEUE_SIZE = 100
@@ -66,8 +66,6 @@ class Router:
         _ = asyncio.create_task(self._recv_arbiter())
 
         self._fwder: Forwarder = None
-        
-        self._error_handler = get_worker_error_handler()
 
     @property
     def rx_q(self) -> asyncio.Queue:
@@ -265,7 +263,7 @@ class Router:
                 logger.warning(f"{world_info.multiworld_name} is broken")
                 break
             except Exception as e:
-                self._error_handler.put(e)
+                kill_worker(e)
 
             if send_dev != self.device:
                 for k in tensors.keys():
@@ -313,7 +311,7 @@ class Router:
             except Exception as e:
                 # this is very likely to be a no-op due to the simple
                 # get and put operations we do on the asyncio queues.
-                self._error_handler.put(e)
+                kill_worker(e)
 
     async def _send_arbiter(self) -> None:
         while True:
@@ -332,7 +330,7 @@ class Router:
             try:
                 world_info, tx_q = self._fwder.select(tx_qs, next_layer, seqno)
             except Exception as e:
-                self._error_handler.put(e)
+                kill_worker(e)
 
             await tx_q.put((seqno, tensor, next_layer))
 
