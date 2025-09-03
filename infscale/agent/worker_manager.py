@@ -123,9 +123,9 @@ class WorkerManager:
                 message = worker.pipe.recv()
                 self._handle_message(message, worker, fd)
             except EOFError:
-                # When DONE workers are being killed, EOF error is raised
+                # When DONE or TERMINATED workers are being killed, EOF error is raised
                 # Therefore, we need to skip these workers from marking as failed
-                if worker.status != WorkerStatus.DONE:
+                if worker.status not in [WorkerStatus.DONE, WorkerStatus.TERMINATED]:
                     msg = Message(
                         MessageType.STATUS, WorkerStatus.FAILED, worker.job_id
                     )
@@ -136,6 +136,12 @@ class WorkerManager:
                 # When ConnectionResetError is raised, the pipe is already closed due to worker failure
                 # so we only need to ignore this error.
                 pass
+            
+    def remove_worker(self, wrk_id: str) -> None:
+        """Remove worker related data."""
+        for k, v in list(self._workers.items()):
+            if wrk_id == v.id:
+                del self._workers[k]
 
     def _handle_message(
         self, message: Message, worker: WorkerMetaData, fd: int
@@ -157,9 +163,6 @@ class WorkerManager:
             return
 
         self._update_worker_status(message, fd)
-
-        if message.content in [WorkerStatus.DONE, WorkerStatus.TERMINATED, WorkerStatus.FAILED]:
-            del self._workers[fd]
 
     def _handle_metrics(self, message: Message, fd: int) -> None:
         wrk = self._workers[fd]

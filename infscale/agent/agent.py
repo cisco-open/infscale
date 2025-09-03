@@ -153,10 +153,12 @@ class Agent:
         in job manager as well.
         """
         valid = [WorkerStatus.DONE, WorkerStatus.FAILED, WorkerStatus.TERMINATED]
-        status, job_id = status_msg.status, status_msg.job_id
+        status, job_id, wrk_id = status_msg.status, status_msg.job_id, status_msg.id
 
         if status not in valid:
             return
+
+        self.worker_mgr.remove_worker(wrk_id)
 
         if not self.worker_mgr.has_workers_for_job(job_id):
             self.job_mgr.cleanup(job_id)
