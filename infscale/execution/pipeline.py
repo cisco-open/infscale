@@ -298,7 +298,12 @@ class Pipeline:
 
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
-        self.dataset.configure(
+        # Loading dataset with some settings might take some time and block
+        # the main thread until is done, making coroutines blocked as well,
+        # blocking worker to receive messages and run other async processes.
+        # For this we need to run configure() in a thread so the event loop stays responsive
+        await asyncio.to_thread(
+            self.dataset.configure,
             self._micro_batch_size,
             self.device,
             self.spec.reqgen_config.params.in_memory,
