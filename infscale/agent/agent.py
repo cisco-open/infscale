@@ -131,7 +131,11 @@ class Agent:
                 input_rate=metrics.input_rate,
                 output_rate=metrics.output_rate,
             )
-            await self.stub.update_metrics(req)
+            try:
+                await self.stub.update_metrics(req)
+            except Exception as e:
+                logger.error(f"Failed to update metrics {e}")
+                break
 
     async def update_worker_status(self, message: WorkerStatusMessage) -> None:
         """Report worker status to controller."""
@@ -142,7 +146,10 @@ class Agent:
         )
 
         req = pb2.WorkerStatus(job_id=job_id, status=status, worker_id=wrk_id)
-        await self.stub.update_wrk_status(req)
+        try:
+            await self.stub.update_wrk_status(req)
+        except Exception as e:
+            logger.error(f"Failed to update worker status {e}")
 
     def _handle_worker(self, status_msg: WorkerStatusMessage) -> None:
         """Handle status message received from worker.
@@ -231,11 +238,18 @@ class Agent:
         """Listen for commands from the ManagementRoute."""
         request = pb2.AgentID(id=self.id)
 
-        async for action in self.stub.command(request):
-            if not action:
-                continue
-
-            self._handle_command(action)
+        try:
+            async for action in self.stub.command(request):
+                if not action:
+                    continue
+                self._handle_command(action)
+        except grpc.aio.AioRpcError as e:
+            # this means that controller process was killed
+            if e.code() == grpc.StatusCode.UNAVAILABLE:
+                logger.error("Controller unavailable.")
+            else:
+                # for any other error, we catch and log it.
+                logger.error(f"Stream error: {e}")
 
     def _get_ip_address(self) -> str:
         """Get ip address of agent."""
@@ -307,7 +321,10 @@ class Agent:
                     job_id=action.job_id,
                     agent_id=self.id,
                 )
-                self.stub.job_setup(req)
+                try:
+                    self.stub.job_setup(req)
+                except Exception as e:
+                    logger.error(f"Failed to setup job {e}")
 
             case CommandAction.FINISH_JOB:
                 workers = self.worker_mgr.get_workers_by_job_id(action.job_id)
@@ -334,8 +351,12 @@ class Agent:
         """Send a heart beat message periodically."""
         agent_id = pb2.AgentID(id=self.id)
         while True:
-            self.stub.heartbeat(agent_id)
-            await asyncio.sleep(HEART_BEAT_PERIOD)
+            try:
+                self.stub.heartbeat(agent_id)
+                await asyncio.sleep(HEART_BEAT_PERIOD)
+            except Exception as e:
+                logger.error(f"Failed to send heartbeat message {e}")
+                break
 
     def _start_workers(self, job_id: str) -> None:
         """Start workers."""
@@ -408,8 +429,11 @@ class Agent:
                 cpu_stats=cpu_stats_msg,
                 dram_stats=dram_stats_msg,
             )
-
-            self.stub.update_resources(status_msg)
+            try:
+                self.stub.update_resources(status_msg)
+            except Exception as e:
+                logger.error(f"Failed to update resources {e}")
+                break
 
     def monitor(self):
         """Monitor workers and resources."""

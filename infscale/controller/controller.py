@@ -278,7 +278,10 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         self, req: pb2.JobSetupReq, unused_context: ServicerContext
     ) -> None:
         """Handle job setup from agent."""
-        self.ctrl.handle_job_ports(req)
+        try:
+            self.ctrl.handle_job_ports(req)
+        except AttributeError:
+            logger.error(f"Failed to process ports. Job: {req.job_id} Agent: {req.agent_id}")
 
         return empty_pb2.Empty()
 
@@ -301,7 +304,10 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         self, request: pb2.WorkerStatus, unused_context: ServicerContext
     ) -> None:
         """Handle message with worker status."""
-        await self.ctrl.handle_wrk_status(request)
+        try:
+            await self.ctrl.handle_wrk_status(request)
+        except Exception as e:
+            logger.error(f"Failed to process worker status. Worker: {request.worker_id} Status: {request.status} {e}")
 
         return empty_pb2.Empty()
 
@@ -309,7 +315,10 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         self, request: pb2.ResourceStats, unused_context: ServicerContext
     ) -> None:
         """Handle message with agent resource stats."""
-        await self.ctrl.handle_resources(request)
+        try:
+            await self.ctrl.handle_resources(request)
+        except Exception as e:
+            logger.error(f"Failed to process agent resources. Agent: {request.id} {e}")
 
         return empty_pb2.Empty()
 
@@ -331,6 +340,9 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
 
     async def update_metrics(self, request: pb2.PerfMetrics, unused: ServicerContext):
         """Handle message with job's performance metrics."""
-        await self.ctrl.handle_metrics(request)
+        try:
+            await self.ctrl.handle_metrics(request)
+        except Exception as e:
+            logger.error(f"Failed to process metrics. Worker: {request.worker_id} {e}")
 
         return empty_pb2.Empty()
