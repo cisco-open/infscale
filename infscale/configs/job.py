@@ -163,6 +163,7 @@ class JobConfig:
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
+    recover: bool = True
 
     # this will be set by controller  based on its configuration
     reqgen_config: GenConfig | None = None

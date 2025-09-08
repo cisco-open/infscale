@@ -209,6 +209,10 @@ class RunningState(BaseJobState):
         """Handle the transition to recovery."""
         self.context.set_state(JobStateEnum.RECOVERY)
 
+    async def cond_failing(self):
+        """Handle the transition to failing."""
+        await self.context._JobContext__cond_failing()
+
 
 class StartingState(BaseJobState):
     """StartingState class."""
@@ -639,7 +643,13 @@ class JobContext:
             case WorkerStatus.FAILED:
                 self._release_gpu_resource_by_worker_id(wid)
                 await self.send_check_loop_command()
-                await self.cond_recovery()
+
+                if self._cur_cfg.recover:
+                    await self.cond_recovery()
+
+                    return
+
+                await self.cond_failing()
 
             case WorkerStatus.TERMINATED:
                 self._release_gpu_resource_by_worker_id(wid)
