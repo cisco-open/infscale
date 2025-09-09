@@ -16,7 +16,7 @@
 
 import pytest
 
-from infscale.agent.job_manager import JobManager
+from infscale.configs.job import JobConfig
 from tests.agent.conftest import job_config_diffs
 
 
@@ -31,8 +31,7 @@ def test_compare_configs(
     expected_start_ids,
     expected_updated_ids,
 ):
-    job_mgr = JobManager()
-    results = job_mgr.compare_configs(old_config, new_config)
+    results = JobConfig.categorize_workers(old_config, new_config)
     start_ids, updated_ids, terminate_ids = results
 
     assert set(start_ids) == set(expected_start_ids)

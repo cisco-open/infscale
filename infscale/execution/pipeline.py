@@ -399,8 +399,6 @@ class Pipeline:
             return
 
         is_first_run = not self.world_infos
-        if not is_first_run:
-            self._send_status_message(WorkerStatus.UPDATING)
 
         self._configure_variables(spec)
         
