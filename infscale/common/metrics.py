@@ -20,12 +20,17 @@ import math
 from collections import deque
 from dataclasses import dataclass
 
+from infscale import get_logger
+
 
 class RollingStats:
     """RollingStatus class."""
 
     def __init__(self, window_size: int = 10) -> None:
         """Initialize an instance of RollingStats."""
+        global logger
+        logger = get_logger()
+
         self._window = deque(maxlen=window_size)
         self._window_size = window_size
         self._sum = 0.0
@@ -67,6 +72,9 @@ class RollingStats:
         except ValueError:
             # in some edge cases ValueError: math domain error is raised
             # if that happens, ignore the error and return previous value.
+            log = "Error while calculating standard deviation, "
+            log += f"using previously calculated value {self._std}"
+            logger.warning(log)
             pass
 
         return self._std
