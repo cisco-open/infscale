@@ -24,8 +24,11 @@ from infscale import get_logger
 
 logger = get_logger()
 
-def kill_worker(err: Exception) -> None:
-    """Kill worker process."""
+def kill_worker(err: Exception, condition: bool = True) -> None:
+    """Kill worker process if condition is met."""
+    if not condition:
+        return
+
     tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
     logger.error(f"Error: {err}\n{tb}")
 
