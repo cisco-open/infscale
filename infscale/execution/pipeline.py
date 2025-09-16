@@ -72,6 +72,7 @@ class Pipeline:
         self._micro_batch_size = 1
         self._initialized = False
         self._inspector = PipelineInspector()
+        self._status: WorkerStatus = WorkerStatus.READY
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -104,12 +105,24 @@ class Pipeline:
             )
         except Exception as e:
             logger.error(f"failed to initialize a multiworld {name}: {e}")
-            kill_worker(e)
+            condition = self._status != WorkerStatus.UPDATING
+            kill_worker(e, condition)
+
             return
 
         logger.debug(f"done initializing multiworld {name}")
 
-    def _send_status_message(self, status: WorkerStatus) -> None:
+    def _set_worker_status(self, status: WorkerStatus) -> None:
+        """Set worker status in pipeline and channel."""
+        self._status = status
+
+        for world_info in self.world_infos.values():
+            world_info.channel.set_worker_status(status)
+
+    def _set_n_send_worker_status(self, status: WorkerStatus) -> None:
+        """Set and send worker status."""
+        self._set_worker_status(status)
+
         msg = Message(MessageType.STATUS, status, self.spec.job_id)
         self.wcomm.send(msg)
 
@@ -289,7 +302,7 @@ class Pipeline:
             f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
         )
 
-        self._send_status_message(WorkerStatus.SERVING_DONE)
+        self._set_n_send_worker_status(WorkerStatus.SERVING_DONE)
 
     async def _run_server(self):
         # we disable metrics collection in router in case the worker is server
@@ -400,6 +413,9 @@ class Pipeline:
 
         is_first_run = not self.world_infos
 
+        if not is_first_run:
+            self._set_worker_status(WorkerStatus.UPDATING)
+
         self._configure_variables(spec)
         
         self._inspector.configure(self.spec)
@@ -413,7 +429,7 @@ class Pipeline:
         
         worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
 
-        self._send_status_message(worker_status)
+        self._set_n_send_worker_status(worker_status)
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}

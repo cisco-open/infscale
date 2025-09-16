@@ -26,6 +26,7 @@ import torch
 from torch import Tensor
 
 from infscale import get_logger
+from infscale.common.job_msg import WorkerStatus
 from infscale.worker.fatal import kill_worker
 
 
@@ -70,18 +71,24 @@ class Channel:
         self.world_size = world_size
         self.addr = addr
         self.port = port
+        self._status: WorkerStatus = WorkerStatus.READY
 
         self.peers: dict[int, tuple[StreamReader, StreamWriter]] = {}
         self.prev_ctrl_msg: ControlMessage = ControlMessage()
 
         self._server_task: asyncio.Task = None
 
+    def set_worker_status(self, status: WorkerStatus) -> None:
+        """Set worker status."""
+        self._status = status
+
     async def _setup_server(self, setup_done: asyncio.Event) -> None:
         try:
             server = await asyncio.start_server(self._handle_client, self.addr, self.port)
             setup_done.set()
         except Exception as e:
-            kill_worker(e)
+            condition = self._status != WorkerStatus.UPDATING
+            kill_worker(e, condition)
 
         async with server:
             await server.serve_forever()
@@ -108,7 +115,9 @@ class Channel:
             except Exception as e:
                 if i + 1 == NUM_OF_RETRIES:
                     logger.warning(f"max number ({i+1}) of tries reached")
-                    kill_worker(e)
+                    condition = self._status != WorkerStatus.UPDATING
+                    kill_worker(e, condition)
+
                     raise e
 
                 logger.debug(f"({i+1}): exception occurred: {e}; retrying...")
