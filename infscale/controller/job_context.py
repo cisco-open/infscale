@@ -347,6 +347,11 @@ class UpdatingState(BaseJobState):
         """Handle the transition to failing."""
         await self.context._JobContext__cond_failing()
 
+    async def cond_recovery(self):
+        """Revert back to old config."""
+        self.context._cur_cfg = self.context._new_cfg
+        self.context.set_state(JobStateEnum.RECOVERY)
+
 
 class CompleteState(BaseJobState):
     """CompleteState class."""

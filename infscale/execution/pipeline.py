@@ -410,6 +410,12 @@ class Pipeline:
         """Handle a config."""
         if spec is None:
             return
+        
+        # TODO: implement a way to handle new config while updating.
+        if self._status == WorkerStatus.UPDATING:
+            logger.info("Ignoring new config while updating.")
+
+            return
 
         is_first_run = not self.world_infos
 
