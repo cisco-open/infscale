@@ -148,6 +148,47 @@ class ServeConfig:
         """Return if kv cache is necessary for serving."""
         return "llama" in self.model.lower()
 
+    @staticmethod
+    def get_worlds_to_configure(
+        curr_spec: ServeConfig, new_spec: ServeConfig
+    ) -> set[str]:
+        """Compare two specs and return new and updated worlds."""
+        helper = ServeConfigHelper()
+
+        curr_worlds = helper._get_worlds(curr_spec)
+        new_worlds = helper._get_worlds(new_spec)
+
+        curr_world_names = set(curr_worlds.keys())
+        new_world_names = set(new_worlds.keys())
+
+        deploy_worlds = new_world_names - curr_world_names
+
+        common_keys = curr_world_names & new_world_names
+
+        updated_worlds = {
+            k
+            for k in common_keys
+            if (curr_worlds[k].addr != new_worlds[k].addr
+                or curr_worlds[k].data_port != new_worlds[k].data_port
+                or curr_worlds[k].ctrl_port != new_worlds[k].ctrl_port)
+        }
+
+        return deploy_worlds | updated_worlds
+    
+class ServeConfigHelper:
+    """Class for defining helper methods for serve config."""
+
+    def _get_worlds(self, spec: ServeConfig) -> dict[str, WorldInfo]:
+        """Return world names that relates to worker id."""
+        id = spec.stage.id
+
+        return {
+            world_info.name: world_info
+            for wrk_id, worlds in spec.flow_graph.items()
+            for world_info in worlds
+            if id == wrk_id or id in world_info.peers
+        }
+
 
 @dataclass
 class JobConfig:

@@ -27,6 +27,7 @@ from multiworld.manager import WorldManager
 from infscale import get_logger
 from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.configs.job import ServeConfig
+from infscale.execution.config_runner import ConfigRunner
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.router import Router
@@ -73,6 +74,7 @@ class Pipeline:
         self._initialized = False
         self._inspector = PipelineInspector()
         self._status: WorkerStatus = WorkerStatus.READY
+        self.config_runner = ConfigRunner()
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -168,12 +170,20 @@ class Pipeline:
     async def _configure(self) -> None:
         """(Re)configure multiworld, control channel and router."""
         await self._cleanup_recovered_worlds()
+        
+        is_first_run = not self.world_infos
+
+        if not is_first_run:
+            self._set_worker_status(WorkerStatus.UPDATING)
+
         new_world_infos = self._build_world_infos()
         new = new_world_infos.keys()
         cur = self.world_infos.keys()
 
         worlds_to_add = [new_world_infos[name] for name in new - cur]
         worlds_to_remove = [self.world_infos[name] for name in cur - new]
+
+        self.config_runner.set_worlds_to_configure(new - cur)
 
         # handle new worlds
         tasks = []
@@ -214,6 +224,12 @@ class Pipeline:
             self._reset_multiworld(world_info)
 
             del self.world_infos[world_info.name]
+
+        worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
+
+        self._set_n_send_worker_status(worker_status)
+
+        self.cfg_event.set()
 
     def _initialize_worker(self, modelir: ModelIR):
         self.stage = Stage(
@@ -410,17 +426,8 @@ class Pipeline:
         """Handle a config."""
         if spec is None:
             return
-        
-        # TODO: implement a way to handle new config while updating.
-        if self._status == WorkerStatus.UPDATING:
-            logger.info("Ignoring new config while updating.")
 
-            return
-
-        is_first_run = not self.world_infos
-
-        if not is_first_run:
-            self._set_worker_status(WorkerStatus.UPDATING)
+        self.config_runner.handle_new_spec(spec)
 
         self._configure_variables(spec)
         
@@ -429,13 +436,8 @@ class Pipeline:
         self._initialize_once()
 
         # (re)configure the pipeline
-        await self._configure()
+        await self.config_runner.schedule(self._configure)
 
-        self.cfg_event.set()
-        
-        worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
-
-        self._set_n_send_worker_status(worker_status)
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}
