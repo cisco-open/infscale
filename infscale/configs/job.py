@@ -409,9 +409,113 @@ class JobConfig:
 
         return start_wrkrs, update_wrkrs, stop_wrkrs
 
+    @staticmethod
+    def remove_pipeline(config: JobConfig, workers_to_remove: set[str]) -> JobConfig:
+        """Remove pipelines from config based on workers to remove."""
+        cfg = copy.deepcopy(config)
+        helper = JobConfigHelper()
+
+        # 1: find server id
+        server_id = helper.get_server_id(config)
+
+        # 2: find all workers in the pipeline starting from workers_to_remove
+        to_remove = helper.find_pipeline_nodes(
+            cfg.flow_graph, workers_to_remove, server_id
+        )
+
+        # 3: remove workers from flow_graph
+        for wid in to_remove:
+            cfg.flow_graph.pop(wid, None)
+
+        # 4: remove WorldInfo entries in ALL remaining workers
+        #    if their peers reference any removed worker
+        for wid, worlds in list(cfg.flow_graph.items()):
+            cfg.flow_graph[wid] = [
+                w for w in worlds if all(peer not in to_remove for peer in w.peers)
+            ]
+
+        # 5: remove loop workers from workers list
+        cfg.workers = [w for w in cfg.workers if w.id not in to_remove]
+
+        return cfg
+
 
 class JobConfigHelper:
     """Class for defining helper methods for job config."""
+    def get_server_id(self, config: JobConfig) -> str:
+        return next((w.id for w in config.workers if w.is_server), "")
+    
+    
+    def find_pipeline_nodes(
+        self,
+        flow_graph: dict[str, list[WorldInfo]],
+        workers_to_remove: set[str],
+        server_id: str,
+    ) -> set[str]:
+        """
+        Remove workers that are either:
+        - failed themselves, or
+        - no longer part of a live pipeline (cannot reach server anymore).
+
+        Uses DFS in both forward and reverse directions.
+        """
+
+        # build forward and reverse graphs
+        fwd = {wid: [] for wid in flow_graph}
+        rev = {wid: [] for wid in flow_graph}
+
+        for wid, worlds in flow_graph.items():
+            for w in worlds:
+                for peer in w.peers:
+                    fwd.setdefault(peer, []).append(wid)
+                    rev.setdefault(wid, []).append(peer)
+
+        # remove failed nodes from graph
+        for failed in workers_to_remove:
+            fwd.pop(failed, None)
+            rev.pop(failed, None)
+
+        # DFS1: reachable from server
+        reachable_from_server = set()
+        stack = [server_id]
+
+        while stack:
+            node = stack.pop()
+            if node in reachable_from_server:
+                continue
+            if node in workers_to_remove:
+                continue
+            reachable_from_server.add(node)
+            for nxt in fwd.get(node, []):
+                if nxt not in workers_to_remove:
+                    stack.append(nxt)
+
+        # DFS2: can reach to server
+        can_reach_server = set()
+        stack = [server_id]
+
+        while stack:
+            node = stack.pop()
+            if node in can_reach_server:
+                continue
+            if node in workers_to_remove:
+                continue
+            can_reach_server.add(node)
+            for prev in rev.get(node, []):
+                if prev not in workers_to_remove:
+                    stack.append(prev)
+
+        # surviving nodes: intersection
+        survivors = reachable_from_server & can_reach_server
+
+        # everything else (except server) is removed
+        to_remove = {
+            wid
+            for wid in flow_graph
+            if wid != server_id and wid not in survivors
+        }
+
+        return to_remove
 
     def get_recover_worker_ids(self, config: JobConfig) -> set[str]:
         """Return a set of worker IDs that need to be recovered."""
