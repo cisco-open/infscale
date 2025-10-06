@@ -30,6 +30,9 @@ from infscale.controller.job_context import JobContext, JobStateEnum
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
+MAX_CONGESTION_COUNT = 3
+
+
 logger = None
 
 
@@ -51,6 +54,8 @@ class AutoScaler:
         self._last_run = -1
         # to keep track of whether there is improvement after autoscaling
         self._last_output_rate = -1
+        # number of congestion counts before scaling out
+        self._congestion_count: int = 0
 
     async def run(self) -> None:
         """Run autoscaling functionality."""
@@ -71,6 +76,7 @@ class AutoScaler:
 
             if not metrics.is_congested():
                 # TODO: if not congested, check if scale-in is necessary
+                self._congestion_count = 0
                 continue
 
             if self._last_output_rate >= metrics.output_rate:
@@ -78,7 +84,11 @@ class AutoScaler:
                 # so, don't try to scale out
                 continue
 
-            await self._scale_out(job_ctx, metrics)
+            self._congestion_count += 1
+
+            if self._congestion_count == MAX_CONGESTION_COUNT:
+                await self._scale_out(job_ctx, metrics)
+                self._congestion_count = 0
 
     async def _scale_out(self, ctx: JobContext, metrics: PerfMetrics) -> None:
         rate = metrics.rate_to_decongest()
