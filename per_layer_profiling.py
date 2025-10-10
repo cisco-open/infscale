@@ -124,7 +124,7 @@ def measure_actual_gpu_memory(models):
 # ======== Create inputs for profiling ========
 
 def create_inputs(model_type, model, device, batch_size=1, seq_length=None):
-    if model_type == "llama":
+    if model_type.startswith("llama"):
         tokenizer = AutoTokenizer.from_pretrained(model.config.name_or_path)
         assert seq_length is not None
         vocab_size = tokenizer.vocab_size
@@ -177,7 +177,7 @@ def parse_args():
 
 # ======== Main Function ========
 
-LM_MODELS = ["llama", "bert", "t5"]
+LM_MODELS = ["llama", "llama_70b", "bert", "t5"]
 
 if __name__ == '__main__':
     # ======== Initialization ========
@@ -209,8 +209,13 @@ if __name__ == '__main__':
         
         # Image models don't use sequence length
         seq_lengths = [None]
-    elif model_type == "llama":
-        model_name = "meta-llama/Meta-Llama-3.1-8B"
+    elif model_type.startswith("llama"):
+        if model_type == "llama":
+            model_name = "meta-llama/Meta-Llama-3.1-8B"
+        elif model_type == "llama_70b":
+            model_name = "meta-llama/Meta-Llama-3.1-70B"
+        else:
+            raise ValueError(f"Model type {model_type} not supported")
 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         full_model = AutoModelForCausalLM.from_pretrained(model_name)
