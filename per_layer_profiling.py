@@ -613,9 +613,9 @@ if __name__ == '__main__':
                 profiling_data["sequence_length"] = seq_length
             
             # Save to file
-            if profile_decode and model_type == "llama":
+            if profile_decode and model_type.startswith("llama"):
                 output_dir = f"profile_data/{full_model.__class__.__name__}_decode"
-            elif model_type == "llama":
+            elif model_type.startswith("llama"):
                 output_dir = f"profile_data/{full_model.__class__.__name__}_prefill"
             else:
                 output_dir = f"profile_data/{full_model.__class__.__name__}"
