@@ -594,6 +594,10 @@ class CfgGen2:
         return config
 
     def _precheck(self) -> None:
+        if self._base_cfg is not None:
+            # we already have a base config, so we don't need to check the dispatcher
+            return
+
         deployments = self._placement["deployments"]
 
         # Validate dispatcher exists
