@@ -103,7 +103,12 @@ class Planner:
             # if autoscale is not enabled, we use source as is
             return source
 
-        solution = self._calculate_placement(source, agent_ctxts, demand)
+        if base_cfg is None:
+            # this is the first time we build a config, so we need to place the dispatcher on a GPU
+            solution = self._calculate_placement(source, agent_ctxts, demand, dispatcher_on_gpu=True)
+        else:
+            # we already have a base config, so we don't need to spare a GPU for the dispatcher
+            solution = self._calculate_placement(source, agent_ctxts, demand, dispatcher_on_gpu=False)
         if solution is None:
             raise InsufficientResources("No placement solution found")
 
@@ -129,11 +134,12 @@ class Planner:
         placement: Placement,
         gpu_count: int,
         ctx_list: list[AgentContext],
+        dispatcher_on_gpu: bool = True
     ) -> tuple[dict, list[AgentContext]] | None:
         # we'd like to search a feasible solution by increasing the number of nodes
         for num_nodes in range(1, len(ctx_list) + 1):
             res = placement.calculate_placement(
-                gpu_count, len(ctx_list[:num_nodes]), nfaults
+                gpu_count, len(ctx_list[:num_nodes]), nfaults, dispatcher_on_gpu
             )
             meta = res["meta"]
             if meta["total_throughput"] > demand:
@@ -142,7 +148,11 @@ class Planner:
         return None
 
     def _calculate_placement(
-        self, source: JobConfig, agent_ctxts: dict[str, AgentContext], demand: float
+        self, 
+        source: JobConfig, 
+        agent_ctxts: dict[str, AgentContext], 
+        demand: float, 
+        dispatcher_on_gpu: bool = True
     ) -> tuple[dict, list[AgentContext]] | None:
         gpu_count_and_nodes: dict[int, list[AgentContext]] = {}
         for ctx in agent_ctxts.values():
@@ -159,7 +169,7 @@ class Planner:
         for gpu_count in sorted(gpu_count_and_nodes.keys()):
             ctx_list = gpu_count_and_nodes[gpu_count]
             solution = self._search_feasible_placement(
-                demand, source.nfaults, p, gpu_count, ctx_list
+                demand, source.nfaults, p, gpu_count, ctx_list, dispatcher_on_gpu
             )
             if solution:
                 break
