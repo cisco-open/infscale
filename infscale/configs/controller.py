@@ -17,7 +17,7 @@
 """controller.py."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from infscale.common.constants import (
@@ -105,7 +105,9 @@ class CtrlConfig:
     autoscale: bool = False
     # a directory path to job deployment templates/plans
     job_plans: str = ""
-    reqgen: GenConfig = GenConfig(sort=ReqGenEnum.DEFAULT.value)
+    reqgen: GenConfig = field(
+        default_factory=lambda: GenConfig(sort=ReqGenEnum.DEFAULT.value)
+    )
 
     def __post_init__(self):
         """Populate controller's config with correct data types."""
