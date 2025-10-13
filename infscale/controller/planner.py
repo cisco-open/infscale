@@ -16,6 +16,7 @@
 
 """planner.py."""
 
+from dataclasses import dataclass
 import json
 from pathlib import Path
 
@@ -80,6 +81,14 @@ class PlanCollection:
             yield plan
 
 
+@dataclass
+class PipelineData:
+    """PipelineData class."""
+
+    worker_ids: set[str]
+    total_throughput: float
+
+
 class Planner:
     """Planner class."""
 
@@ -90,6 +99,8 @@ class Planner:
         self._autoscale = autoscale
 
         self._colls: dict[str, PlanCollection] = {}
+        
+        self.pipeline_data: dict[str, list[PipelineData]] = {}
 
     def build_config(
         self,
@@ -115,8 +126,13 @@ class Planner:
         if solution is None:
             raise InsufficientResources("No placement solution found")
 
-        gen2 = CfgGen2(solution[0], solution[1], source, "cuda", base_cfg)
+        placement, agent_ctxts_list, total_throughput = solution
+
+        gen2 = CfgGen2(placement, agent_ctxts_list, source, "cuda", base_cfg)
         cfg = gen2.generate()
+
+        self._set_pipeline_data(cfg, total_throughput)
+
         return cfg
 
         #####
@@ -129,6 +145,19 @@ class Planner:
         # plan_list = self._colls[source.model].pick_plans(demand)
         # gen = CfgGen(agent_ctxts, source, plan_list, "cuda", base_cfg)
         # return gen.generate()
+        
+    def _set_pipeline_data(self, cfg: JobConfig, total_throughput) -> None:
+        """Set pipeline data."""
+        job_id = cfg.job_id
+
+        if job_id not in self.pipeline_data:
+            self.pipeline_data[job_id] = []
+
+        pipeline_identifiers = JobConfig.get_pipeline_identifiers(cfg)
+        prev_identifiers = {wid for data in self.pipeline_data[job_id] for wid in data.worker_ids}
+        new_identifiers = pipeline_identifiers - prev_identifiers
+
+        self.pipeline_data[job_id].append(PipelineData(new_identifiers, total_throughput))
 
     def _search_feasible_placement(
         self,
@@ -138,7 +167,7 @@ class Planner:
         gpu_count: int,
         ctx_list: list[AgentContext],
         dispatcher_on_gpu: bool = True,
-    ) -> tuple[dict, list[AgentContext]] | None:
+    ) -> tuple[dict, list[AgentContext], float] | None:
         # we'd like to search a feasible solution by increasing the number of nodes
         for num_nodes in range(1, len(ctx_list) + 1):
             res = placement.calculate_placement(
@@ -146,7 +175,7 @@ class Planner:
             )
             meta = res["meta"]
             if meta["total_throughput"] > demand:
-                return (res, ctx_list[:num_nodes])
+                return (res, ctx_list[:num_nodes], meta["total_throughput"])
 
         return None
 
@@ -156,7 +185,7 @@ class Planner:
         agent_ctxts: dict[str, AgentContext],
         demand: float,
         dispatcher_on_gpu: bool = True,
-    ) -> tuple[dict, list[AgentContext]] | None:
+    ) -> tuple[dict, list[AgentContext], float] | None:
         gpu_count_and_nodes: dict[int, list[AgentContext]] = {}
         for ctx in agent_ctxts.values():
             count = ctx.avail_gpu_count()

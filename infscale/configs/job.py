@@ -328,7 +328,7 @@ class JobConfig:
 
         return max_id
 
-    def _server_id(self) -> str | None:
+    def server_id(self) -> str | None:
         """Return server id."""
         for worker in self.workers:
             if worker.is_server:
@@ -338,7 +338,7 @@ class JobConfig:
 
     def server_ip(self) -> str:
         """Return IP address of server."""
-        server_id = self._server_id()
+        server_id = self.server_id()
         if server_id is None:
             return ""
 
@@ -395,6 +395,20 @@ class JobConfig:
     def world_name(world_id: int) -> str:
         """Return world name given a world id."""
         return f"w{world_id}"
+    
+    @staticmethod
+    def get_pipeline_identifiers(new_cfg: JobConfig) -> set[str]:
+        """Get pipeline identifiers based on server id."""
+        server_id = new_cfg.server_id()
+
+        wrk_ids = set()
+
+        for wid, worlds_list in new_cfg.flow_graph.items():
+            for world_info in worlds_list:
+                if server_id in world_info.peers:
+                    wrk_ids.add(wid)
+
+        return wrk_ids
 
     @staticmethod
     def merge(base: JobConfig, extra: JobConfig) -> JobConfig:
