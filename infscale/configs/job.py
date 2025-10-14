@@ -118,6 +118,8 @@ class ServeConfig:
 
     is_server: bool = False
 
+    force_terminate: bool = False
+
     def __post_init__(self):
         """Convert stage dict into stage object."""
         # TODO - remove isinstance check when the config file is being sent through the api call
@@ -205,6 +207,7 @@ class JobConfig:
     fwd_policy: str = "random"
     max_inflight: int = 1
     recover: bool = True
+    force_terminate: bool = False
 
     # this will be set by controller  based on its configuration
     reqgen_config: GenConfig | None = None
@@ -298,6 +301,7 @@ class JobConfig:
                 "max_inflight": self.max_inflight,
                 "is_server": item.is_server,
                 "reqgen_config": self.reqgen_config,
+                "force_terminate": self.force_terminate,
             }
             serve_configs.append(ServeConfig(**config))
 
@@ -449,6 +453,14 @@ class JobConfig:
         update_wrkrs -= recover_wrkrs
 
         return start_wrkrs, update_wrkrs, stop_wrkrs
+    
+    @staticmethod
+    def get_workers_diff(a: JobConfig, b: JobConfig) -> set[str]:
+        """Return a set of worker ids diffs based on old and new cfg."""
+        old_workers = {worker.id for worker in a.workers}
+        new_workers = {worker.id for worker in b.workers}
+        
+        return old_workers - new_workers
 
     @staticmethod
     def remove_pipeline(config: JobConfig, workers_to_remove: set[str]) -> JobConfig:

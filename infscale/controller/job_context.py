@@ -48,6 +48,8 @@ from infscale.controller.job_checker import JobChecker
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
+MAX_RECOVER_RETRIES = 8 # max retries with exponential backoff.
+
 
 logger = None
 
@@ -410,6 +412,31 @@ class RecoveryState(BaseJobState):
     def on_exit(self) -> None:
         """Cleanup when the state gets destroyed."""
         self.recovery_task.cancel()
+        
+    async def _assign_resources_for_recovery(self, failed_wrk_ids: set[str]) -> dict[str, str]:
+        """Assign resources to workers for recovery."""
+        max_retries = MAX_RECOVER_RETRIES
+        delay = 1
+        retries = 0
+        wrk_resources_map = {}
+
+        while True:
+            wrk_resources_map = self._get_wrk_resources_map(failed_wrk_ids)
+
+            if len(wrk_resources_map) == len(failed_wrk_ids):
+                break  # success, all workers recovered
+
+            retries += 1
+
+            if retries >= max_retries:
+                break
+
+            await asyncio.sleep(delay)
+
+            # re-calculate delay with exponential backoff
+            delay = delay * 2
+            
+        return wrk_resources_map
 
     async def _start_recovery(self) -> None:
         """Start recovery tasks for failed workers."""
@@ -423,16 +450,42 @@ class RecoveryState(BaseJobState):
             k for k, v in self.context.wrk_status.items() if v == WorkerStatus.FAILED
         }
 
-        while True:
-            wrk_resources_map = self._get_wrk_resources_map(failed_wrk_ids)
-            if len(wrk_resources_map) == len(failed_wrk_ids):
-                break
+        wrk_resources_map = await self._assign_resources_for_recovery(failed_wrk_ids)
 
-            await asyncio.sleep(1)
+        if len(wrk_resources_map) == 0:
+            await self._remove_pipeline_n_update(failed_wrk_ids, self.context._cur_cfg)
+
+            return
 
         cfg = self.context.get_recovery_updated_config(wrk_resources_map)
         self.context.req.config = cfg
+        await self.context._JobContext__update()
 
+    async def _remove_pipeline_n_update(
+        self, failed_wrk_ids: set[str], cfg: JobConfig
+    ) -> None:
+        """Remove pipeline and update job."""
+        updated_cfg = JobConfig.remove_pipeline(cfg, failed_wrk_ids)
+
+        worker_diff = JobConfig.get_workers_diff(cfg, updated_cfg)
+
+        # since we remove a pipeline,
+        # we need to cleanup worker status data structure
+        self.context.remove_wrk_status(worker_diff)
+
+        # checker setup with updated config
+        self.context.job_checker.setup(updated_cfg)
+
+        job_failed = self.context.job_checker.is_job_failed()
+
+        if job_failed:
+            await self.context.send_stop_command()
+            self.context.set_state(JobStateEnum.FAILING)
+
+            return
+
+        updated_cfg.force_terminate = True
+        self.context.req.config = updated_cfg
         await self.context._JobContext__update()
 
     async def cond_updated(self):
@@ -569,6 +622,13 @@ class RecoveryState(BaseJobState):
         """Handle the transition to failing."""
         await self.context._JobContext__cond_failing()
         
+    def cond_stopped(self):
+        """Handle the transition to stopped."""
+        # in the case config gets updated by removing pipeline
+        # some workers will be stopped and controller will receive
+        # terminated status from these workers.
+        pass
+        
     async def cond_recovery(self):
         """Handle the transition to failed."""
         # there's no support for subsequent worker failure
@@ -699,7 +759,13 @@ class JobContext:
 
     def set_wrk_status(self, wrk_id: str, status: WorkerStatus) -> None:
         """Set worker status."""
-        self.wrk_status[wrk_id] = status
+        if wrk_id in self.wrk_status:
+            self.wrk_status[wrk_id] = status
+
+    def remove_wrk_status(self, worker_ids: set[str]) -> None:
+        """Remove worker status."""
+        for wid in worker_ids:
+            del self.wrk_status[wid]
 
     async def handle_agent_failure(self, agent_id: str) -> None:
         """Handle agent failure."""

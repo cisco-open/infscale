@@ -305,7 +305,7 @@ class Agent:
 
                 self._update_workers(config.job_id)
 
-                self._terminate_workers(config.job_id)
+                self._terminate_workers(config)
 
             case CommandAction.STOP:
                 self.worker_mgr._signal_terminate_wrkrs(
@@ -407,9 +407,12 @@ class Agent:
             msg = Message(MessageType.CONFIG, config, config.job_id)
             self.worker_mgr.send(w, msg)
 
-    def _terminate_workers(self, job_id: str) -> None:
+    def _terminate_workers(self, config: JobConfig) -> None:
+        job_id, force_terminate = config.job_id, config.force_terminate
         stop_wrkrs = self.job_mgr.get_workers(job_id, CommandAction.STOP)
-        self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs)
+
+        msg_type = MessageType.FORCE_TERMINATE if force_terminate else MessageType.TERMINATE
+        self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs, msg_type)
 
     async def report(self):
         """Report resource stats to controller."""
