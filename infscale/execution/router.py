@@ -233,6 +233,14 @@ class Router:
 
                 del v[i]
                 return
+            
+        for _, v in self.__suspended_tx_qs.items():
+            for i, (wi, q) in enumerate(v):
+                if wi != world_info:
+                    continue
+
+                del v[i]
+                return
 
     async def _send(self, world_info: WorldInfo, cancellable: asyncio.Event) -> None:
         send_dev = torch.device("cpu") if world_info.backend == "gloo" else self.device
