@@ -171,6 +171,7 @@ def parse_args():
     parser.add_argument("--seq_lengths", type=int, nargs="+", help="List of sequence lengths to profile (only applicable for LLMs)")
     parser.add_argument("--profile_decode", action="store_true", help="Profile the decoding phase instead of prefilling")
     parser.add_argument("--output_suffix", type=str, help="Optional text to append to the output folder name")
+    parser.add_argument("--trimmed_model_dir", type=str, default=None, help="Path to trimmed LLaMA model directory; if set, load model from here")
     
     args = parser.parse_args()
     return args
@@ -190,6 +191,7 @@ if __name__ == '__main__':
     seq_lengths = args.seq_lengths if args.seq_lengths is not None else [512]  # Default to 1k if not specified
     profile_decode = args.profile_decode
     output_suffix = args.output_suffix
+    trimmed_original_layers = None
 
     # Use the GPU for inference
     gpu_device = "cuda"
@@ -210,16 +212,32 @@ if __name__ == '__main__':
         # Image models don't use sequence length
         seq_lengths = [None]
     elif model_type.startswith("llama"):
-        if model_type == "llama":
-            model_name = "meta-llama/Meta-Llama-3.1-8B"
-        elif model_type == "llama_70b":
-            model_name = "meta-llama/Meta-Llama-3.1-70B"
+        if args.trimmed_model_dir is not None:
+            model_name = args.trimmed_model_dir
         else:
-            raise ValueError(f"Model type {model_type} not supported")
+            if model_type == "llama":
+                model_name = "meta-llama/Meta-Llama-3.1-8B"
+            elif model_type == "llama_70b":
+                model_name = "meta-llama/Meta-Llama-3.1-70B"
+            else:
+                raise ValueError(f"Model type {model_type} not supported")
 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         full_model = AutoModelForCausalLM.from_pretrained(model_name)
         config = full_model.config
+
+        # If using a trimmed model directory, try reading metadata to restore original layer count
+        if args.trimmed_model_dir is not None:
+            meta_path = os.path.join(model_name, "trim_metadata.json")
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, 'r') as f:
+                        meta = json.load(f)
+                    if "original_num_hidden_layers" in meta:
+                        trimmed_original_layers = int(meta["original_num_hidden_layers"])
+                        print_color(f"Detected trimmed model. original_num_hidden_layers={trimmed_original_layers}", color='green')
+                except Exception as e:
+                    print_color(f"Failed to read trim metadata: {e}", color='red')
 
         # Create model metadata and IR
         model_metadata = Llama3ModelMetaData(model_name, config)
@@ -582,16 +600,15 @@ if __name__ == '__main__':
                 "layers": []
             }
             
+            computed_layers = []
             for i in range(len(layers)):
                 # Calculate dynamic memory statistics
                 if len(dynamic_memory_usage[i]) > 4:
                     dynamic_mems = np.sort(dynamic_memory_usage[i])[2:-2]
                 else:
                     dynamic_mems = dynamic_memory_usage[i]
-                
                 # Use processed timing results
                 latencies = timing_results[i]
-                
                 layer_data = {
                     "layer_num": i,
                     "layer_name": layer_modules[i].__class__.__name__,
@@ -602,11 +619,47 @@ if __name__ == '__main__':
                     "input_size_bytes": int(input_sizes[i]),
                     "output_size_bytes": int(output_sizes[i])
                 }
-
                 if model_type == "llama":
                     layer_data["kv_cache_usage_bytes"] = int(kv_cache_usage[i])
+                computed_layers.append(layer_data)
 
-                profiling_data["layers"].append(layer_data)
+            # If profiling decode on a trimmed LLaMA model, duplicate decoder block and keep aux layers (norm, lm_head)
+            if (
+                model_type.startswith("llama")
+                and trimmed_original_layers is not None
+            ):
+                # In a LLaMA architecture, decoder blocks are first in order, followed by model.norm and lm_head.
+                num_trimmed_blocks = 1
+
+                # Base per-layer stats come from the first decoder block of the trimmed model.
+                # Keep layer 0 as-is (embedding), duplicate decoder block for layers 1..trimmed_original_layers
+                # computed_layers[0] may correspond to embedding stage; decoder block starts at index 1.
+                base_idx = 1
+                base_block = computed_layers[base_idx]
+
+                # Preserve layer 0
+                layer0 = computed_layers[0].copy()
+                layer0["layer_num"] = 0
+
+                # Duplicate decoder blocks to restore original count, numbered 1..trimmed_original_layers
+                duplicated_blocks = []
+                for j in range(1, trimmed_original_layers + 1):
+                    dup = base_block.copy()
+                    dup["layer_num"] = j
+                    duplicated_blocks.append(dup)
+
+                # Append auxiliary layers (e.g., norm, lm_head) with re-indexed layer_num after decoder blocks
+                aux_start = base_idx + num_trimmed_blocks
+                aux_layers = computed_layers[aux_start:]
+                reindexed_aux = []
+                for idx, aux in enumerate(aux_layers):
+                    aux_copy = aux.copy()
+                    aux_copy["layer_num"] = trimmed_original_layers + 1 + idx
+                    reindexed_aux.append(aux_copy)
+
+                profiling_data["layers"] = [layer0] + duplicated_blocks + reindexed_aux
+            else:
+                profiling_data["layers"] = computed_layers
                 
             # Add sequence length to profiling data for LLMs
             if model_type in LM_MODELS and seq_length is not None:

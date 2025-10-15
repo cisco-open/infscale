@@ -16,4 +16,7 @@ infscale.egg-info
 yapf*.py
 
 # profile data & scripts
-profile_data
+profile_data*
+
+# trimmed model
+trimmed_model
