@@ -20,7 +20,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from infscale.common.exceptions import InsufficientResources
+from infscale.common.exceptions import InsufficientResources, InsufficientThroughput
 from infscale.configs.job import JobConfig
 from infscale.configs.plan import ExecPlan
 from infscale.controller.agent_context import AgentContext
@@ -89,6 +89,14 @@ class PipelineData:
     total_throughput: float
 
 
+@dataclass
+class DemandData:
+    """DemandData class."""
+
+    rate: float = 0.0
+    scale_out: bool = True
+
+
 class Planner:
     """Planner class."""
 
@@ -106,7 +114,7 @@ class Planner:
         self,
         source: JobConfig,
         agent_ctxts: dict[str, AgentContext],
-        demand: float = 0,
+        demand_data: DemandData,
         base_cfg: JobConfig = None,
     ) -> JobConfig:
         """Build a config based on source config."""
@@ -114,13 +122,27 @@ class Planner:
             # if autoscale is not enabled, we use source as is
             return source
 
+        rate, scale_out = demand_data.rate, demand_data.scale_out
+
+        if scale_out:
+            return self._get_scaled_out_cfg(source, agent_ctxts, rate, base_cfg)
+
+        return self._get_scaled_in_cfg(base_cfg, rate)
+
+    def _get_scaled_out_cfg(
+        self,
+        source: JobConfig,
+        agent_ctxts: dict[str, AgentContext],
+        rate: float,
+        base_cfg: JobConfig = None,
+    ) -> JobConfig:
         # if base_cfg is none, this is the first time we build a config,
         # so we need to place the dispatcher on a GPU
         # otherwise, we already have a base config, so we don't need to
         # spare a GPU for the dispatcher
         dispatcher_on_gpu = base_cfg is None
         solution = self._calculate_placement(
-            source, agent_ctxts, demand, dispatcher_on_gpu=dispatcher_on_gpu
+            source, agent_ctxts, rate, dispatcher_on_gpu=dispatcher_on_gpu
         )
 
         if solution is None:
@@ -145,6 +167,29 @@ class Planner:
         # plan_list = self._colls[source.model].pick_plans(demand)
         # gen = CfgGen(agent_ctxts, source, plan_list, "cuda", base_cfg)
         # return gen.generate()
+
+    def _get_scaled_in_cfg(self, cfg: JobConfig, rate: float) -> JobConfig:
+        # compute remaining capacity if we remove the last pipeline
+        total_thrpt = sum(
+            data.total_throughput for data in self.pipeline_data[cfg.job_id]
+        )
+        last_pipeline_thrpt = self.pipeline_data[cfg.job_id][-1].total_throughput
+
+        remaining_throughput = total_thrpt - last_pipeline_thrpt
+
+        # check if remaining capacity still comfortably exceeds current arrival rate
+        # margin ensures we don't scale in too early due to random dips
+        can_handle_load = remaining_throughput > rate
+
+        # return source config
+        if not can_handle_load:
+            raise InsufficientThroughput("Not enough remaining throughput for scale in")
+
+        data = self.pipeline_data[cfg.job_id].pop()
+
+        cfg = JobConfig.remove_pipeline(cfg, data.worker_ids)
+
+        return cfg
 
     def _set_pipeline_data(self, cfg: JobConfig, total_throughput) -> None:
         """Set pipeline data."""

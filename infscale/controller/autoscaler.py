@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 from infscale import get_logger
 from infscale.common.metrics import PerfMetrics
 from infscale.controller.job_context import JobContext, JobStateEnum
+from infscale.controller.planner import DemandData
 
 
 if TYPE_CHECKING:
@@ -75,8 +76,11 @@ class AutoScaler:
                 continue
 
             if not metrics.is_congested():
-                # TODO: if not congested, check if scale-in is necessary
                 self._congestion_count = 0
+
+                if metrics.is_underutilized():
+                    await self._scale_in(job_ctx, metrics)
+
                 continue
 
             if self._last_output_rate >= metrics.output_rate:
@@ -92,7 +96,8 @@ class AutoScaler:
 
     async def _scale_out(self, ctx: JobContext, metrics: PerfMetrics) -> None:
         rate = metrics.rate_to_decongest()
-        ctx.set_desired_rate(rate)
+        demand_data = DemandData(rate)
+        ctx.set_demand_data(demand_data)
 
         logger.debug(f"congested, desired rate = {rate}")
 
@@ -106,6 +111,24 @@ class AutoScaler:
         self._last_run = time.perf_counter()
         self._last_output_rate = metrics.output_rate
         logger.debug("finished scaling-out")
+
+    async def _scale_in(self, ctx: JobContext, metrics: PerfMetrics) -> None:
+        rate = metrics.rate_to_scale_in()
+        demand_data = DemandData(rate, False)
+        ctx.set_demand_data(demand_data)
+
+        logger.debug(f"underutilized, desired rate = {rate}")
+
+        try:
+            await ctx.update()
+        except Exception as e:
+            logger.warning(f"exception: {e}")
+            self._last_run = time.perf_counter()
+            return
+
+        self._last_run = time.perf_counter()
+
+        logger.info("finished scaling-in")
 
     async def set_event(self, job_id: str, wrkr_id: str) -> None:
         """Set an autoscaling event for a given job and worker."""

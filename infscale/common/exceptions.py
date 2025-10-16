@@ -51,6 +51,14 @@ class InsufficientResources(InfScaleException):
         super().__init__(err_msg)
 
 
+class InsufficientThroughput(InfScaleException):
+    """Exception for insufficient throughput."""
+
+    def __init__(self, err_msg: str):
+        """Initialize InsufficientThroughput exception instance."""
+        super().__init__(err_msg)
+
+
 class DifferentResourceAmount(InfScaleException):
     """Exception for different resource amounts."""
 

@@ -43,6 +43,7 @@ from infscale.controller.agent_context import (
 from infscale.controller.ctrl_dtype import CommandAction, CommandActionModel
 from infscale.controller.deployment.assignment import AssignmentCollection
 from infscale.controller.job_checker import JobChecker
+from infscale.controller.planner import DemandData
 
 
 if TYPE_CHECKING:
@@ -674,14 +675,14 @@ class JobContext:
         self.past_running_agent_info: dict[str, AgentMetaData] = {}
         self.job_checker = JobChecker(self.wrk_status)
 
-        self._desired_rate = 0.0
+        self._demand_data: DemandData = DemandData()
 
         global logger
         logger = get_logger()
 
-    def set_desired_rate(self, rate: float) -> None:
-        """Set diresed output rate for a job."""
-        self._desired_rate = rate
+    def set_demand_data(self, demand_data: DemandData) -> None:
+        """Set demand data for a job."""
+        self._demand_data = demand_data
 
     def get_agent_data(self, agent_id: str) -> AgentMetaData:
         """Return agent metadata."""
@@ -821,7 +822,7 @@ class JobContext:
             self._new_cfg = self.ctrl.planner.build_config(
                 self.req.config,
                 self.ctrl.agent_contexts,
-                self._desired_rate,
+                self._demand_data,
                 self._cur_cfg,
             )
 

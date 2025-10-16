@@ -97,6 +97,13 @@ class PerfMetrics:
     _sensitivity_factor: float = 1
     _qthresh: float = 10**9
 
+    # defines how much the queue must decrease (as a ratio of its average)
+    # For example:
+    #   q_drop_factor = 0.8 -> current queue < 80% of recent avg -> queue is dropping (~20% drop)
+    #   lower values = more aggressive scale-in detection (more sensitive to noise)
+    #   higher values = more conservative (requires stronger drop signal)
+    _q_drop_factor: float = 0.8
+
     _qlevel_rs: RollingStats = None
     _in_rate_rs: RollingStats = None
     _out_rate_rs: RollingStats = None
@@ -139,6 +146,37 @@ class PerfMetrics:
     def is_congested(self) -> bool:
         """Return true if queue continues to build up."""
         return self.qlevel > self._qthresh
+
+    def is_underutilized(self) -> bool:
+        """Returns true if queue has a decreasing trend."""
+
+        # need enough samples to make a stable judgment
+        if not self._qlevel_rs.is_filled():
+            return False
+
+        # rolling average of current queue length
+        avg_q = self._qlevel_rs.mean()
+
+        # detect if queue is trending downward
+        # a decreasing qlevel indicates demand is below processing capacity
+        return self.qlevel < avg_q * self._q_drop_factor
+
+    def rate_to_scale_in(self, margin: float = 0.2) -> float:
+        """Return a safe arrival rate threshold to trigger scale-in.
+
+        This represents the effective arrival rate (including a safety margin)
+        below which the system is considered underutilized and can safely
+        reduce resources.
+
+        Args:
+        margin (float): A fractional buffer (e.g., 0.2 for 20%) added to the
+            average input rate to absorb short-term fluctuations and avoid
+            premature scaling in.
+
+        Returns:
+            float: The adjusted input rate threshold for scale-in decisions.
+        """
+        return self._in_rate_rs.mean() * (1 + margin)
 
     def rate_to_decongest(self) -> float:
         """Return a required rate to relieve congestion.
