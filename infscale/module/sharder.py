@@ -134,7 +134,7 @@ def shard_model(
         List[torch.fx.GraphModule]: The list of sharded :class:`torch.fx.GraphModule`s.
     """
     module_list: List[torch.fx.GraphModule] = []
-    
+
     global logger
     logger = get_logger()
 

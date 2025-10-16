@@ -17,6 +17,7 @@
 """job_checker.py."""
 
 from collections import defaultdict
+
 from infscale import get_logger
 from infscale.common.job_msg import WorkerStatus
 from infscale.configs.job import JobConfig

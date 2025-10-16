@@ -170,13 +170,16 @@ class ServeConfig:
         updated_worlds = {
             k
             for k in common_keys
-            if (curr_worlds[k].addr != new_worlds[k].addr
+            if (
+                curr_worlds[k].addr != new_worlds[k].addr
                 or curr_worlds[k].data_port != new_worlds[k].data_port
-                or curr_worlds[k].ctrl_port != new_worlds[k].ctrl_port)
+                or curr_worlds[k].ctrl_port != new_worlds[k].ctrl_port
+            )
         }
 
         return deploy_worlds | updated_worlds
-    
+
+
 class ServeConfigHelper:
     """Class for defining helper methods for serve config."""
 
@@ -399,7 +402,7 @@ class JobConfig:
     def world_name(world_id: int) -> str:
         """Return world name given a world id."""
         return f"w{world_id}"
-    
+
     @staticmethod
     def get_pipeline_identifiers(new_cfg: JobConfig) -> set[str]:
         """Get pipeline identifiers based on server id."""
@@ -450,8 +453,12 @@ class JobConfig:
         # select workers that will be affected by workers to be started
         for w, world_info_list in new_config.flow_graph.items():
             for new_world_info in world_info_list:
-                curr_world_info = helper.find_matching_world_info(curr_config, w, new_world_info)
-                helper.pick_workers(update_wrkrs, start_wrkrs, w, new_world_info, curr_world_info)
+                curr_world_info = helper.find_matching_world_info(
+                    curr_config, w, new_world_info
+                )
+                helper.pick_workers(
+                    update_wrkrs, start_wrkrs, w, new_world_info, curr_world_info
+                )
 
         if curr_config is None:
             return start_wrkrs, update_wrkrs, stop_wrkrs
@@ -459,21 +466,25 @@ class JobConfig:
         # select workers that will be affected by workers to be stopped
         for w, world_info_list in curr_config.flow_graph.items():
             for new_world_info in world_info_list:
-                curr_world_info = helper.find_matching_world_info(curr_config, w, new_world_info)
-                helper.pick_workers(update_wrkrs, stop_wrkrs, w, new_world_info, curr_world_info)
+                curr_world_info = helper.find_matching_world_info(
+                    curr_config, w, new_world_info
+                )
+                helper.pick_workers(
+                    update_wrkrs, stop_wrkrs, w, new_world_info, curr_world_info
+                )
 
         # due to pervious state, recover workers are included in update workers
         # therefore, recover workers need to be removed from the updated ones.
         update_wrkrs -= recover_wrkrs
 
         return start_wrkrs, update_wrkrs, stop_wrkrs
-    
+
     @staticmethod
     def get_workers_diff(a: JobConfig, b: JobConfig) -> set[str]:
         """Return a set of worker ids diffs based on old and new cfg."""
         old_workers = {worker.id for worker in a.workers}
         new_workers = {worker.id for worker in b.workers}
-        
+
         return old_workers - new_workers
 
     @staticmethod
@@ -509,10 +520,10 @@ class JobConfig:
 
 class JobConfigHelper:
     """Class for defining helper methods for job config."""
+
     def get_server_id(self, config: JobConfig) -> str:
         return next((w.id for w in config.workers if w.is_server), "")
-    
-    
+
     def find_pipeline_nodes(
         self,
         flow_graph: dict[str, list[WorldInfo]],
@@ -577,9 +588,7 @@ class JobConfigHelper:
 
         # everything else (except server) is removed
         to_remove = {
-            wid
-            for wid in flow_graph
-            if wid != server_id and wid not in survivors
+            wid for wid in flow_graph if wid != server_id and wid not in survivors
         }
 
         return to_remove
@@ -600,11 +609,13 @@ class JobConfigHelper:
 
         The needles are workers to start or stop and the haystack is
         name and peers.
-        
+
         Also includes peers of `name` if its connection details
         (`addr`, `ctrl_port`, `data_port`) differ from the previous config.
         """
-        if curr_world_info and self.has_connection_changed(curr_world_info, new_world_info):
+        if curr_world_info and self.has_connection_changed(
+            curr_world_info, new_world_info
+        ):
             for peer in new_world_info.peers:
                 res_set.add(peer)
 
@@ -634,15 +645,15 @@ class JobConfigHelper:
                 # because name is already affected by one peer
                 # so we come out of the for-loop
                 break
-                
+
     def has_connection_changed(self, old: WorldInfo, new: WorldInfo) -> bool:
         """Check if worker connection details are changed."""
         return (
-            old.addr != new.addr or
-            old.ctrl_port != new.ctrl_port or
-            old.data_port != new.data_port
+            old.addr != new.addr
+            or old.ctrl_port != new.ctrl_port
+            or old.data_port != new.data_port
         )
-            
+
     def find_matching_world_info(
         self, curr_config: JobConfig | None, w: str, new_world_info: WorldInfo
     ) -> WorldInfo | None:

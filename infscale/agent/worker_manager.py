@@ -75,7 +75,7 @@ class WorkerManager:
         self._workers[worker.pipe.fileno()] = worker
 
         return worker
-                
+
     def has_workers_for_job(self, job_id: str) -> bool:
         """Return True if there are any workers assigned to the given job ID."""
         return any(worker.job_id == job_id for worker in self._workers.values())
@@ -136,7 +136,7 @@ class WorkerManager:
                 # When ConnectionResetError is raised, the pipe is already closed due to worker failure
                 # so we only need to ignore this error.
                 pass
-            
+
     def remove_worker(self, wrk_id: str) -> None:
         """Remove worker related data."""
         for k, v in list(self._workers.items()):

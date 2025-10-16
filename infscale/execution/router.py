@@ -76,7 +76,7 @@ class Router:
     def tx_q(self) -> asyncio.Queue:
         """Return transmit queue."""
         return self._tx_q
-    
+
     def handle_suspended_worlds(self, suspended_worlds: list[str]) -> None:
         """Handle suspended worlds by adding or removing them from the pipeline."""
         if len(suspended_worlds) == 0:
@@ -86,7 +86,7 @@ class Router:
 
             # reset suspended dict after the recovery is done
             self.__suspended_tx_qs.clear()
-            
+
             logger.info(f"suspended __tx_qs {self.__suspended_tx_qs}")
 
             return
@@ -97,7 +97,7 @@ class Router:
                 world_info, _ = tpl
                 if world_info.name in suspended_worlds:
                     if stage not in self.__suspended_tx_qs:
-                         self.__suspended_tx_qs[stage] = []
+                        self.__suspended_tx_qs[stage] = []
 
                     self.__suspended_tx_qs[stage].append(tpl)
                 else:
@@ -233,7 +233,7 @@ class Router:
 
                 del v[i]
                 return
-            
+
         for _, v in self.__suspended_tx_qs.items():
             for i, (wi, q) in enumerate(v):
                 if wi != world_info:

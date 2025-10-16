@@ -48,7 +48,7 @@ from infscale.controller.job_checker import JobChecker
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
-MAX_RECOVER_RETRIES = 8 # max retries with exponential backoff.
+MAX_RECOVER_RETRIES = 8  # max retries with exponential backoff.
 
 
 logger = None
@@ -210,12 +210,12 @@ class RunningState(BaseJobState):
     async def cond_recovery(self):
         """Handle the transition to recovery."""
         self.context.set_state(JobStateEnum.RECOVERY)
-        
+
     def cond_stopped(self):
         """Handle the transition to stopped."""
         # in the case of update from diamond to linear, we need to terminate
         # one worker. Since the job will go back to running state, terminated worker
-        # will send it's status to the running state. For that reason, we only need 
+        # will send it's status to the running state. For that reason, we only need
         # to implement a placeholder method.
         pass
 
@@ -279,7 +279,9 @@ class StoppingState(BaseJobState):
 
     async def cond_recovery(self):
         """Handle the transition to stopped."""
-        if self.context.in_statuses_for_all_workers({WorkerStatus.FAILED, WorkerStatus.TERMINATED}):
+        if self.context.in_statuses_for_all_workers(
+            {WorkerStatus.FAILED, WorkerStatus.TERMINATED}
+        ):
             self.context.set_state(JobStateEnum.STOPPED)
 
 
@@ -309,10 +311,12 @@ class CompletingState(BaseJobState):
         """Handle the transition to complete."""
         if self.context.in_statuses_for_all_workers({WorkerStatus.DONE}):
             self.context.set_state(JobStateEnum.COMPLETE)
-            
+
     async def cond_recovery(self):
         """Handle the transition to complete."""
-        if self.context.in_statuses_for_all_workers({WorkerStatus.FAILED, WorkerStatus.DONE}):
+        if self.context.in_statuses_for_all_workers(
+            {WorkerStatus.FAILED, WorkerStatus.DONE}
+        ):
             self.context.set_state(JobStateEnum.COMPLETE)
 
 
@@ -412,8 +416,10 @@ class RecoveryState(BaseJobState):
     def on_exit(self) -> None:
         """Cleanup when the state gets destroyed."""
         self.recovery_task.cancel()
-        
-    async def _assign_resources_for_recovery(self, failed_wrk_ids: set[str]) -> dict[str, str]:
+
+    async def _assign_resources_for_recovery(
+        self, failed_wrk_ids: set[str]
+    ) -> dict[str, str]:
         """Assign resources to workers for recovery."""
         max_retries = MAX_RECOVER_RETRIES
         delay = 1
@@ -435,7 +441,7 @@ class RecoveryState(BaseJobState):
 
             # re-calculate delay with exponential backoff
             delay = delay * 2
-            
+
         return wrk_resources_map
 
     async def _start_recovery(self) -> None:
@@ -443,7 +449,7 @@ class RecoveryState(BaseJobState):
         # in the case of no available agents, transition to failed.
         if len(self.context.ctrl.agent_contexts) == 0:
             self.context.set_state(JobStateEnum.FAILED)
-            
+
             return
 
         failed_wrk_ids = {
@@ -542,10 +548,13 @@ class RecoveryState(BaseJobState):
     def _get_curr_agent_data(self, wrk_id: str) -> AgentMetaData:
         """Return current agent that deployed worker ID."""
         agent_data = next(
-            (agent_data
-            for agent_data in self.context.running_agent_info.values()
-            if wrk_id in agent_data.wids_to_deploy)
-        , None)
+            (
+                agent_data
+                for agent_data in self.context.running_agent_info.values()
+                if wrk_id in agent_data.wids_to_deploy
+            ),
+            None,
+        )
 
         return agent_data
 
@@ -621,14 +630,14 @@ class RecoveryState(BaseJobState):
     async def cond_failing(self):
         """Handle the transition to failing."""
         await self.context._JobContext__cond_failing()
-        
+
     def cond_stopped(self):
         """Handle the transition to stopped."""
         # in the case config gets updated by removing pipeline
         # some workers will be stopped and controller will receive
         # terminated status from these workers.
         pass
-        
+
     async def cond_recovery(self):
         """Handle the transition to failed."""
         # there's no support for subsequent worker failure
@@ -732,13 +741,13 @@ class JobContext:
             case WorkerStatus.TERMINATED:
                 self._release_gpu_resource_by_worker_id(wid)
                 self.cond_stopped()
-                
+
     async def send_stop_command(self) -> None:
         """Send stop command to agents."""
         command = CommandActionModel(action=CommandAction.STOP, job_id=self.job_id)
 
         await self.send_command_to_agents(command)
-                
+
     async def send_check_loop_command(self) -> None:
         failed_wids = {
             wid
@@ -772,7 +781,7 @@ class JobContext:
         # do cleanup in all agent related data structures
         agent_data = self.agent_info.pop(agent_id, None)
         del self.running_agent_info[agent_id]
-        
+
         if agent_id in self.past_running_agent_info:
             del self.past_running_agent_info[agent_id]
 
@@ -973,11 +982,13 @@ class JobContext:
 
         agent_data.ready_to_config = False
 
-        # in the case of update, we need to mark workers as updating from 
+        # in the case of update, we need to mark workers as updating from
         # controller, to avoid status updates timing issues, making job state
         # transition act weird. We need to compare configs after all the details
         # in the config are updated.
-        _, updated_workers, _ = JobConfig.categorize_workers(self._cur_cfg, self._new_cfg)
+        _, updated_workers, _ = JobConfig.categorize_workers(
+            self._cur_cfg, self._new_cfg
+        )
 
         for wid in updated_workers:
             self.set_wrk_status(wid, WorkerStatus.UPDATING)
@@ -1039,7 +1050,9 @@ class JobContext:
 
                 if world.name in curr_worlds:
                     # assign addr and ports for curr_worlds based on recover flag.
-                    world.addr = world.addr if world.recover else curr_worlds[world.name].addr
+                    world.addr = (
+                        world.addr if world.recover else curr_worlds[world.name].addr
+                    )
                     world.data_port = (
                         next(port_iter)
                         if world.recover

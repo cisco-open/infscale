@@ -75,9 +75,7 @@ class PipelineInspector:
 
                 # check if there's any path back to my id.
                 visited = set()
-                if not self._is_loop(
-                    self.fwd_graph, wid, my_id, failed_wids, visited
-                ):
+                if not self._is_loop(self.fwd_graph, wid, my_id, failed_wids, visited):
                     suspended_worlds.add(world_info.name)
 
         return suspended_worlds

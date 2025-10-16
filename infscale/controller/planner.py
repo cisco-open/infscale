@@ -16,8 +16,8 @@
 
 """planner.py."""
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from infscale.common.exceptions import InsufficientResources
@@ -99,7 +99,7 @@ class Planner:
         self._autoscale = autoscale
 
         self._colls: dict[str, PlanCollection] = {}
-        
+
         self.pipeline_data: dict[str, list[PipelineData]] = {}
 
     def build_config(
@@ -145,7 +145,7 @@ class Planner:
         # plan_list = self._colls[source.model].pick_plans(demand)
         # gen = CfgGen(agent_ctxts, source, plan_list, "cuda", base_cfg)
         # return gen.generate()
-        
+
     def _set_pipeline_data(self, cfg: JobConfig, total_throughput) -> None:
         """Set pipeline data."""
         job_id = cfg.job_id
@@ -154,10 +154,14 @@ class Planner:
             self.pipeline_data[job_id] = []
 
         pipeline_identifiers = JobConfig.get_pipeline_identifiers(cfg)
-        prev_identifiers = {wid for data in self.pipeline_data[job_id] for wid in data.worker_ids}
+        prev_identifiers = {
+            wid for data in self.pipeline_data[job_id] for wid in data.worker_ids
+        }
         new_identifiers = pipeline_identifiers - prev_identifiers
 
-        self.pipeline_data[job_id].append(PipelineData(new_identifiers, total_throughput))
+        self.pipeline_data[job_id].append(
+            PipelineData(new_identifiers, total_throughput)
+        )
 
     def _search_feasible_placement(
         self,

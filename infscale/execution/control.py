@@ -84,7 +84,9 @@ class Channel:
 
     async def _setup_server(self, setup_done: asyncio.Event) -> None:
         try:
-            server = await asyncio.start_server(self._handle_client, self.addr, self.port)
+            server = await asyncio.start_server(
+                self._handle_client, self.addr, self.port
+            )
             setup_done.set()
         except Exception as e:
             condition = self._status != WorkerStatus.UPDATING
@@ -99,7 +101,7 @@ class Channel:
             # reader.read() returned b"" meaning the client closed the connection
             # before sending any data (EOF). Nothing more to do, just close.
             await self._close_connection(writer)
-            
+
             return
 
         message = data.decode()
@@ -131,7 +133,7 @@ class Channel:
         self.peers[0] = (reader, writer)
 
         setup_done.set()
-        
+
     async def _close_connection(self, writer: asyncio.StreamWriter) -> None:
         """Close a connection gracefully."""
         addr = writer.get_extra_info("peername")
@@ -164,7 +166,7 @@ class Channel:
 
         # wait until setting up either server or client is done
         await setup_done.wait()
-        
+
     def cleanup(self) -> None:
         if self._server_task is not None:
             self._server_task.cancel()

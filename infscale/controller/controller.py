@@ -243,12 +243,12 @@ class Controller:
         """Send command to agent."""
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
-        
+
         kwargs = {
             "type": action.action,
             "job_id": job_id,
         }
-        
+
         # this is needed because checking against an empty set will be False
         if hasattr(action, "failed_wids"):
             kwargs["manifest"] = str(action.failed_wids).encode("utf-8")
@@ -281,7 +281,9 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         try:
             self.ctrl.handle_job_ports(req)
         except AttributeError:
-            logger.error(f"Failed to process ports. Job: {req.job_id} Agent: {req.agent_id}")
+            logger.error(
+                f"Failed to process ports. Job: {req.job_id} Agent: {req.agent_id}"
+            )
 
         return empty_pb2.Empty()
 
@@ -307,7 +309,9 @@ class ControllerServicer(pb2_grpc.ManagementRouteServicer):
         try:
             await self.ctrl.handle_wrk_status(request)
         except Exception as e:
-            logger.error(f"Failed to process worker status. Worker: {request.worker_id} Status: {request.status} {e}")
+            logger.error(
+                f"Failed to process worker status. Worker: {request.worker_id} Status: {request.status} {e}"
+            )
 
         return empty_pb2.Empty()
 

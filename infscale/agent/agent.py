@@ -153,7 +153,7 @@ class Agent:
 
     def _handle_worker(self, status_msg: WorkerStatusMessage) -> None:
         """Handle status message received from worker.
-        
+
         Whenever DONE, FAILED or TERMINATED is received, worker manager
         will remove that worker from its state.
         When no workers are available for the given job id, cleanup is done
@@ -334,18 +334,17 @@ class Agent:
                         MessageType.FINISH_JOB, WorkerStatus.DONE, action.job_id
                     )
                     self.worker_mgr.send(w, msg)
-                    
+
             case CommandAction.CHECK_LOOP:
                 workers = self.worker_mgr.get_workers_by_job_id(action.job_id)
                 failed_wids_str = action.manifest.decode("utf-8")
                 failed_wids_set = ast.literal_eval(failed_wids_str)
-                
+
                 for w in workers.values():
                     msg = Message(
                         MessageType.CHECK_LOOP, failed_wids_set, action.job_id
                     )
                     self.worker_mgr.send(w, msg)
-                    
 
     async def heart_beat(self):
         """Send a heart beat message periodically."""
@@ -411,7 +410,9 @@ class Agent:
         job_id, force_terminate = config.job_id, config.force_terminate
         stop_wrkrs = self.job_mgr.get_workers(job_id, CommandAction.STOP)
 
-        msg_type = MessageType.FORCE_TERMINATE if force_terminate else MessageType.TERMINATE
+        msg_type = (
+            MessageType.FORCE_TERMINATE if force_terminate else MessageType.TERMINATE
+        )
         self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs, msg_type)
 
     async def report(self):

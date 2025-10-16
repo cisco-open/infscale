@@ -39,7 +39,9 @@ class CommandAction(str, Enum):
     UPDATE = "update"  # CLI - Controller update command
     SETUP = "setup"  # ctrl<->agent setup job, assign port numbers to workers
     FINISH_JOB = "finish_job"  # ctrl<->agent action to notify job's completion
-    CHECK_LOOP = "check_loop"  # ctrl<->agent action for workers to check their pipeline loops
+    CHECK_LOOP = (
+        "check_loop"  # ctrl<->agent action for workers to check their pipeline loops
+    )
 
 
 class CommandActionModel(BaseModel):

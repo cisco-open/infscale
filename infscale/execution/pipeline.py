@@ -170,7 +170,7 @@ class Pipeline:
     async def _configure(self) -> None:
         """(Re)configure multiworld, control channel and router."""
         await self._cleanup_recovered_worlds()
-        
+
         is_first_run = not self.world_infos
 
         if not is_first_run:
@@ -251,13 +251,13 @@ class Pipeline:
         self.n_inflight -= 1
         if self.n_inflight < self.max_inflight:
             self.tx_allow_evt.set()
-            
+
     def _reset_inflight_and_tx_event(self) -> None:
         """Reset inflight and tx event.
-        
+
         For recovery to work properly, when a new config is received,
         we need to reset the n_inflight count and un-bock the send event.
-        This happens due to requests loss during recovery, when the server 
+        This happens due to requests loss during recovery, when the server
         continues to send requests to the failed worker / pipeline, before it
         gets notified about the failure, blocking any further requests sending
         due to the maximum number of inflight requests.
@@ -400,12 +400,12 @@ class Pipeline:
                 case MessageType.TERMINATE:
                     await self.router.wait_on_term_ready()
                     self._terminate_worker()
-                    
+
                 case MessageType.CHECK_LOOP:
                     failed_wids = msg.content
                     suspended_worlds = self._inspector.get_suspended_worlds(failed_wids)
                     self.router.handle_suspended_worlds(suspended_worlds)
-                    
+
                     # if failed wids is empty, the job is recovered
                     # and we can reset inflight requests and tx event
                     if len(failed_wids) == 0:
@@ -430,14 +430,13 @@ class Pipeline:
         self.config_runner.handle_new_spec(spec)
 
         self._configure_variables(spec)
-        
+
         self._inspector.configure(self.spec)
 
         self._initialize_once()
 
         # (re)configure the pipeline
         await self.config_runner.schedule(self._configure)
-
 
     def _build_world_infos(self) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}
@@ -486,7 +485,7 @@ class Pipeline:
                     "other": other_rank,
                     "recover": recover,
                     "recover_count": recover_count,
-                    "multiworld_name": f"{name}-{recover_count}"
+                    "multiworld_name": f"{name}-{recover_count}",
                 }
                 world_info = WorldInfo(**data)
                 world_infos[name] = world_info

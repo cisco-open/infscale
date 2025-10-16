@@ -24,36 +24,35 @@ from infscale.configs.job import ServeConfig
 
 class ConfigRunner:
     """ConfigRunner class."""
+
     def __init__(self):
         """Initialize config runner instance."""
         self._loop = asyncio.get_event_loop()
         self._task: asyncio.Task | None = None
         self._event = asyncio.Event()
         self._spec: ServeConfig = None
-        self._event.set() # initially no configure running
+        self._event.set()  # initially no configure running
         self._curr_worlds_to_configure: set[str] = set()
         self._cancel_cur_cfg = False
-        
+
     def handle_new_spec(self, spec: ServeConfig) -> None:
         """Handle new spec."""
         self._cancel_cur_cfg = self._should_cancel_current(spec)
         self._spec = spec
-        
+
     def _should_cancel_current(self, spec: ServeConfig) -> bool:
         """Decide if current configuration should be cancelled."""
         if self._spec is None:
             return False
 
-        new_worlds_to_configure = ServeConfig.get_worlds_to_configure(
-            self._spec, spec
-        )
+        new_worlds_to_configure = ServeConfig.get_worlds_to_configure(self._spec, spec)
 
         # cancel if the new config affects worlds currently being configured
         # TODO: if there's a overlap between new worlds and curr worlds we cancel
         # current configuration. This needs to be fixed, to cancel only the worlds that
         # are affected (eg new_worlds & curr_worlds)
         return not new_worlds_to_configure.isdisjoint(self._curr_worlds_to_configure)
-        
+
     def set_worlds_to_configure(self, world_names: set[str]) -> None:
         """Set the world names currently being configured."""
         self._curr_worlds_to_configure = world_names
