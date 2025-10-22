@@ -43,6 +43,14 @@ class InvalidConfig(InfScaleException):
         super().__init__(err_msg)
 
 
+class InvalidGenConfig(InfScaleException):
+    """Exception for invalid generator configuration."""
+
+    def __init__(self, err_msg: str):
+        """Initialize InvalidGenConfig exception instance."""
+        super().__init__(err_msg)
+
+
 class InsufficientResources(InfScaleException):
     """Exception for insufficient agent resources."""
 

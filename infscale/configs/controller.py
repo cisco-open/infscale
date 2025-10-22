@@ -20,10 +20,8 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 
-from infscale.common.constants import (
-    APISERVER_PORT,
-    CONTROLLER_PORT,
-)
+from infscale.common.constants import APISERVER_PORT, CONTROLLER_PORT
+from infscale.common.exceptions import InvalidGenConfig
 
 
 class DeploymentPolicyEnum(Enum):
@@ -47,6 +45,7 @@ class ReqGenEnum(str, Enum):
 
     DEFAULT = "default"
     EXP = "exponential"
+    MULTIRATE_EXP = "multirate_exponential"
 
 
 @dataclass
@@ -67,7 +66,20 @@ class ExponentialParams(DefaultParams):
     rate: float = 1.0  # rate is per-second
 
 
-GenParams = DefaultParams | ExponentialParams
+@dataclass
+class RateScheduleItem:
+    replay_index: int
+    rate: float
+
+
+@dataclass
+class MultiRateExponentialParams(ExponentialParams):
+    """Multi-rate exponential generator parameters."""
+
+    schedule: list[RateScheduleItem] = field(default_factory=list)
+
+
+GenParams = DefaultParams | ExponentialParams | MultiRateExponentialParams
 
 
 @dataclass
@@ -93,6 +105,32 @@ class GenConfig:
 
             case ReqGenEnum.EXP:
                 self.params = ExponentialParams(**self.params)
+
+            case ReqGenEnum.MULTIRATE_EXP:
+                self.params = MultiRateExponentialParams(**self.params)
+
+                if self.params.replay is None:
+                    raise InvalidGenConfig(f"Replay param is required.")
+
+                if len(self.params.schedule) > 0:
+                    self.params.schedule = [
+                        RateScheduleItem(**item) if isinstance(item, dict) else item
+                        for item in self.params.schedule
+                    ]
+                    replay_indexes = [
+                        item.replay_index for item in self.params.schedule
+                    ]
+                    min_key = min(replay_indexes)
+                    max_key = max(replay_indexes)
+
+                    if min_key <= 0:
+                        raise InvalidGenConfig(
+                            f"invalid schedule: iteration {min_key} must be positive"
+                        )
+                    if max_key > self.params.replay:
+                        msg = "invalid schedule:"
+                        msg += f" iteration {max_key} exceeds replay limit {self.params.replay}"
+                        raise InvalidGenConfig(msg)
 
 
 @dataclass

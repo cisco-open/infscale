@@ -17,14 +17,19 @@
 """generator.py."""
 
 import asyncio
+import os
 from abc import ABC, abstractmethod
 
 import numpy as np
 from torch import Tensor
 
-from infscale.configs.controller import GenParams, ReqGenEnum
+from infscale import get_logger
+from infscale.configs.controller import GenParams, RateScheduleItem, ReqGenEnum
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.module.dataset import HuggingFaceDataset
+
+
+logger = None
 
 
 class Generator(ABC):
@@ -43,6 +48,9 @@ class Generator(ABC):
         self._batch_size = batch_size
         self._mc = mc
         self._seqno = 0
+
+        global logger
+        logger = get_logger(f"{os.getpid()}")
 
     @abstractmethod
     async def get(self) -> list[Tensor | None]:
@@ -100,8 +108,11 @@ class ExponentialGenerator(Generator):
             self._mc.update(self._seqno)
             self._seqno += 1
 
-            iat = np.random.exponential(scale=1 / self._batch_rate)
+            iat = self._compute_iat()
             await asyncio.sleep(iat)
+
+    def _compute_iat(self):
+        return np.random.exponential(scale=1 / self._batch_rate)
 
     async def get(self) -> list[Tensor | None]:
         """Return one batch of requests.
@@ -122,6 +133,74 @@ class ExponentialGenerator(Generator):
         return batches
 
 
+class MultiRateExponentialGenerator(ExponentialGenerator):
+    """Exponential generator with replay-dependent rate schedule."""
+
+    def initialize(
+        self,
+        dataset,
+        params,
+        batch_size,
+        mc,
+    ) -> None:
+        assert params is not None
+        # intentionally bypassing super().initialize
+        # for properly setting up queue and event and to avoid duplicating
+        # asyncio task creation for _generate method
+        Generator.initialize(self, dataset, params, batch_size, mc)
+
+        self.range_list = self._prepare_schedule(
+            self._params.rate, self._params.schedule, self._params.replay
+        )
+
+        self._range_index = 0
+        rate = self.range_list[0][2]
+        self._batch_rate = rate / self._batch_size
+
+        self._queue = asyncio.Queue()
+        self._gen_evt = asyncio.Event()
+        _ = asyncio.create_task(self._generate())
+
+        msg = f"generator initialized with rate={rate}"
+        msg += f" replay rate update schedule={self._params.schedule}"
+        logger.info(msg)
+
+    def _prepare_schedule(
+        self, base_rate: float, schedule: list[RateScheduleItem], max_replay: int
+    ) -> list[tuple[int, int, float]]:
+        """Convert replay-based schedule into continuous replay ranges."""
+        schedule_sorted = sorted(schedule, key=lambda s: s.replay_index)
+
+        rate_schedule_ranges = []
+        prev_replay = 0
+        prev_rate = base_rate
+
+        for item in schedule_sorted:
+            # range [prev_replay, item.replay_index - 1] uses prev_rate
+            rate_schedule_ranges.append((prev_replay, item.replay_index - 1, prev_rate))
+            prev_replay = item.replay_index
+            prev_rate = item.rate
+
+        # last range goes until max_replay
+        rate_schedule_ranges.append((prev_replay, max_replay, prev_rate))
+        return rate_schedule_ranges
+
+    def _compute_iat(self):
+        current_replay = self._params.replay - self._dataset._replay
+        range_info = self.range_list[self._range_index]
+
+        if not range_info[0] <= current_replay <= range_info[1]:
+            self._range_index += 1
+
+            range_info = self.range_list[self._range_index]
+            rate = range_info[2]
+            self._batch_rate = rate / self._batch_size
+
+            logger.info(f"sending rate updated to {rate}")
+
+        return np.random.exponential(scale=1 / self._batch_rate)
+
+
 class GeneratorFactory:
     """Request generator factory class."""
 
@@ -131,6 +210,7 @@ class GeneratorFactory:
         generators = {
             ReqGenEnum.DEFAULT: DefaultGenerator(),
             ReqGenEnum.EXP: ExponentialGenerator(),
+            ReqGenEnum.MULTIRATE_EXP: MultiRateExponentialGenerator(),
         }
 
         return generators[sort]
