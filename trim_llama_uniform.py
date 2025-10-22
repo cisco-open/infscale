@@ -71,7 +71,7 @@ def print_layers_overview(model, kept_layer_index: int) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Trim a LLaMA model to a single uniform decoder layer.")
-    parser.add_argument("--model_type", type=str, default="llama", choices=["llama"], help="Model family to trim (default: llama)")
+    parser.add_argument("--model_type", type=str, default="llama", choices=["llama", "llama_70b"], help="Model family to trim (default: llama)")
     parser.add_argument("--output_dir", type=str, default="trimmed_model", help="Directory to save the trimmed model")
     parser.add_argument("--kept_layer_index", type=int, default=0, help="Which decoder block index to keep (default: 0)")
 
@@ -82,6 +82,8 @@ def main():
     # Resolve base model from model_type if not provided
     if args.model_type == "llama":
         base_model = "meta-llama/Meta-Llama-3.1-8B"
+    elif args.model_type == "llama_70b":
+        base_model = "meta-llama/Meta-Llama-3.1-70B"
     else:
         raise ValueError(f"Unsupported model_type: {args.model_type}")
 

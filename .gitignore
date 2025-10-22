@@ -19,4 +19,8 @@ yapf*.py
 profile_data*
 
 # trimmed model
-trimmed_model
+trimmed_model*
+
+# generated config
+exp_config*
+infscale_config*
