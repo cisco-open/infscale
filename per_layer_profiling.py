@@ -179,6 +179,7 @@ def parse_args():
 # ======== Main Function ========
 
 LM_MODELS = ["llama", "llama_70b", "bert", "t5"]
+MODEL_WITH_KV_CACHE = ["llama", "llama_70b"]
 
 if __name__ == '__main__':
     # ======== Initialization ========
@@ -377,7 +378,7 @@ if __name__ == '__main__':
             output_sizes = [0] * len(layers)
             print(f"\nRunning {profile_reptitions} repetitions for memory profiling...")
 
-            if profile_decode and model_type == "llama":
+            if profile_decode and model_type in MODEL_WITH_KV_CACHE:
                 # ======== Generate first token to get KV cache for decode profiling ========
                 print("\nGenerating first token to create KV cache for decode profiling...")
 
@@ -482,7 +483,7 @@ if __name__ == '__main__':
             # Create inputs again
             clear_device_cache(garbage_collection=True)
 
-            if profile_decode and model_type == "llama":
+            if profile_decode and model_type in MODEL_WITH_KV_CACHE:
                 # ======== Generate first token to get KV cache for decode profiling ========
                 print("\nGenerating first token to create KV cache for decode profiling...")
 
@@ -586,9 +587,9 @@ if __name__ == '__main__':
             
             # ======== Data Persistence ========
             print("\nSaving profiling data to file...")
-            if profile_decode and model_type == "llama":
+            if profile_decode and model_type in MODEL_WITH_KV_CACHE:
                 profile_type = "decode"
-            elif model_type == "llama":
+            elif model_type in MODEL_WITH_KV_CACHE:
                 profile_type = "prefill"
             else:
                 profile_type = "n/a"
