@@ -459,14 +459,14 @@ class Pipeline:
                 else:
                     continue
 
-                name, backend, addr, data_port, ctrl_port, recover, recover_count = (
+                name, backend, addr, data_port, ctrl_port, recover, duplicate_count = (
                     cfg_world_info.name,
                     cfg_world_info.backend,
                     cfg_world_info.addr,
                     cfg_world_info.data_port,
                     cfg_world_info.ctrl_port,
                     cfg_world_info.recover,
-                    cfg_world_info.recover_count,
+                    cfg_world_info.duplicate_count,
                 )
 
                 world_size = len(cfg_world_info.peers) + 1
@@ -484,8 +484,8 @@ class Pipeline:
                     "other_id": other_id,
                     "other": other_rank,
                     "recover": recover,
-                    "recover_count": recover_count,
-                    "multiworld_name": f"{name}-{recover_count}",
+                    "duplicate_count": duplicate_count,
+                    "multiworld_name": f"{name}-{duplicate_count}",
                 }
                 world_info = WorldInfo(**data)
                 world_infos[name] = world_info

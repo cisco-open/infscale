@@ -880,13 +880,13 @@ class JobContext:
         for world_info in recover_flow_graph:
             world_info.addr = ip
             world_info.recover = True
-            world_info.recover_count += 1
+            world_info.duplicate_count += 1
 
         for world_list in cfg.flow_graph.values():
             for world_info in world_list:
                 if recover_wid in world_info.peers:
                     world_info.recover = True
-                    world_info.recover_count += 1
+                    world_info.duplicate_count += 1
 
     def _update_recovery_worker_data(
         self, cfg: JobConfig, wrk_id: str, gpu_id: int
