@@ -474,11 +474,7 @@ class RecoveryState(BaseJobState):
         """Remove pipeline and update job."""
         updated_cfg = JobConfig.remove_pipeline(cfg, failed_wrk_ids)
 
-        worker_diff = JobConfig.get_workers_diff(cfg, updated_cfg)
-
-        # since we remove a pipeline,
-        # we need to cleanup worker status data structure
-        self.context.remove_wrk_status(worker_diff)
+        self.context._reconcile_wrk_status(cfg, updated_cfg)
 
         # checker setup with updated config
         self.context.job_checker.setup(updated_cfg)
@@ -808,8 +804,12 @@ class JobContext:
         """Set worker's performance metrics."""
         self.wrkr_metrics[wrkr_id] = metrics
 
-    def _init_wrk_status(self) -> None:
-        """Create worker status dict with default status."""
+    def _reconcile_wrk_status(self, cur_cfg: JobConfig, new_cfg: JobConfig) -> None:
+        """Reconcile worker status dict by adding or removing entries."""
+        if cur_cfg:
+            worker_diff = JobConfig.get_workers_diff(cur_cfg, new_cfg)
+            self.remove_wrk_status(worker_diff)
+
         for w in self._new_cfg.workers:
             if w.id not in self.wrk_status:
                 self.wrk_status[w.id] = WorkerStatus.READY
@@ -829,7 +829,7 @@ class JobContext:
         if JobConfig.is_identical(self._cur_cfg, self._new_cfg):
             raise InvalidConfig("current and new configs are identical")
 
-        self._init_wrk_status()
+        self._reconcile_wrk_status(self._cur_cfg, self._new_cfg)
 
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
