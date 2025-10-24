@@ -61,7 +61,7 @@ class Generator(ABC):
 class DefaultGenerator(Generator):
     """DefaultGenerator class."""
 
-    async def get(self) -> list[Tensor | None]:
+    async def get(self) -> list[tuple[Tensor, bool]]:
         """Return one batch of requests as a list.
 
         initialize() method must be called once before calling this method.
@@ -99,10 +99,10 @@ class ExponentialGenerator(Generator):
         await self._gen_evt.wait()
 
         while True:
-            batch = self._dataset.next_batch()
-            await self._queue.put(batch)
+            batch, is_last = self._dataset.next_batch()
+            await self._queue.put((batch, is_last))
 
-            if batch is None:
+            if is_last:
                 break
 
             self._mc.update(self._seqno)
@@ -114,7 +114,7 @@ class ExponentialGenerator(Generator):
     def _compute_iat(self):
         return np.random.exponential(scale=1 / self._batch_rate)
 
-    async def get(self) -> list[Tensor | None]:
+    async def get(self) -> list[tuple[Tensor, bool]]:
         """Return one batch of requests.
 
         initialize() method must be called once before calling this method.
@@ -124,8 +124,8 @@ class ExponentialGenerator(Generator):
         batches = []
         while True:
             # this guarantees at least one batch of requests is returned
-            batch = await self._queue.get()
-            batches.append(batch)
+            batch, is_last = await self._queue.get()
+            batches.append((batch, is_last))
 
             if self._queue.empty():
                 break

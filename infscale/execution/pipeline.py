@@ -273,10 +273,9 @@ class Pipeline:
         self._end_of_send = False
 
         async def _inner_send(batches: list[torch.Tensor | None]) -> None:
-            for batch in batches:
-                if batch is None:
+            for batch, is_last in batches:
+                if is_last:
                     self._end_of_send = True
-                    break
 
                 await self._wait_tx_permission()
 

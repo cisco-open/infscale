@@ -106,6 +106,7 @@ class HuggingFaceDataset:
         mmd.trace_inputs = trace_inputs
 
         self.model_group = mmd.model_group
+        self._batch_list: list[Tensor | None] = []
 
     def configure(
         self, micro_batch_size: int, device: torch.device, in_memory: bool, replay: int
@@ -132,6 +133,8 @@ class HuggingFaceDataset:
 
         if not self._in_memory:
             self._send_batch_to_device = _inner_send_b2d
+            batch = next(self.data_iter)
+            self._batch_list.append(batch)
             return
 
         # do nothing in case of in-memory loading
@@ -144,11 +147,12 @@ class HuggingFaceDataset:
             self.batches.append(batch)
 
         self.data_iter = iter(self.batches)
+        batch = next(self.data_iter)
+        self._batch_list.append(batch)
 
     def _handle_dataset_playback(self) -> Tensor | None:
         if self._replay == 0:
             return None
-
         # this ensures self._replay decreases to zero or
         # stays as -1 (infinite)
         self._replay = max(self._replay - 1, -1)
@@ -160,20 +164,22 @@ class HuggingFaceDataset:
 
         return next(self.data_iter)
 
-    def next_batch(self) -> Tensor | None:
-        """Return next data tensor.
-
-        Once all the data is consumed, it returns None.
-        """
+    def next_batch(self) -> tuple[Tensor, bool]:
+        """Return next data tensor and bool if last bach."""
         try:
             batch = next(self.data_iter)
+            self._batch_list.append(batch)
         except StopIteration:
             batch = self._handle_dataset_playback()
+            self._batch_list.append(batch)
 
+        batch = self._batch_list.pop(0)
         # noop for in-memory case; otherwise, load batch to a correct device
         self._send_batch_to_device(batch)
 
-        return batch
+        is_last = self._batch_list[0] is None
+
+        return batch, is_last
 
     @staticmethod
     def create_image_dataset(
