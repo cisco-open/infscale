@@ -42,5 +42,5 @@ class WorldInfo:
     other: int  # other peer's rank
 
     recover: bool
-    recover_count: int
+    duplicate_count: int
     multiworld_name: str
