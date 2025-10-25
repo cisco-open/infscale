@@ -620,7 +620,7 @@ if __name__ == '__main__':
                     "input_size_bytes": int(input_sizes[i]),
                     "output_size_bytes": int(output_sizes[i])
                 }
-                if model_type == "llama":
+                if model_type in MODEL_WITH_KV_CACHE:
                     layer_data["kv_cache_usage_bytes"] = int(kv_cache_usage[i])
                 computed_layers.append(layer_data)
 
