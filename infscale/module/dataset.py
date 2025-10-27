@@ -106,7 +106,7 @@ class HuggingFaceDataset:
         mmd.trace_inputs = trace_inputs
 
         self.model_group = mmd.model_group
-        self._batch_list: list[Tensor | None] = []
+        self._curr_batch: Tensor = None
 
     def configure(
         self, micro_batch_size: int, device: torch.device, in_memory: bool, replay: int
@@ -133,8 +133,9 @@ class HuggingFaceDataset:
 
         if not self._in_memory:
             self._send_batch_to_device = _inner_send_b2d
-            batch = next(self.data_iter)
-            self._batch_list.append(batch)
+            # set the first batch to _curr_batch so that the end of replay can
+            # be checked at the same time when the last batch is returned
+            self._curr_batch = next(self.data_iter)
             return
 
         # do nothing in case of in-memory loading
@@ -147,8 +148,10 @@ class HuggingFaceDataset:
             self.batches.append(batch)
 
         self.data_iter = iter(self.batches)
-        batch = next(self.data_iter)
-        self._batch_list.append(batch)
+
+        # set the first batch to _curr_batch so that the end of replay can
+        # be checked at the same time when the last batch is returned
+        self._curr_batch = next(self.data_iter)
 
     def _handle_dataset_playback(self) -> Tensor | None:
         if self._replay == 0:
@@ -166,20 +169,20 @@ class HuggingFaceDataset:
 
     def next_batch(self) -> tuple[Tensor, bool]:
         """Return next data tensor and bool if last bach."""
-        try:
-            batch = next(self.data_iter)
-            self._batch_list.append(batch)
-        except StopIteration:
-            batch = self._handle_dataset_playback()
-            self._batch_list.append(batch)
-
-        batch = self._batch_list.pop(0)
+        # take a batch to return
+        curr_batch = self._curr_batch
         # noop for in-memory case; otherwise, load batch to a correct device
-        self._send_batch_to_device(batch)
+        self._send_batch_to_device(curr_batch)
 
-        is_last = self._batch_list[0] is None
+        # load a new batch to _curr_batch
+        try:
+            self._curr_batch = next(self.data_iter)
+        except StopIteration:
+            self._curr_batch = self._handle_dataset_playback()
 
-        return batch, is_last
+        is_last = self._curr_batch is None
+
+        return curr_batch, is_last
 
     @staticmethod
     def create_image_dataset(
