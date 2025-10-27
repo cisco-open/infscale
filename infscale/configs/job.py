@@ -70,7 +70,7 @@ class WorldInfo:
     addr: str = "127.0.0.1"
     backend: Optional[str] = ""
     recover: bool = False
-    duplicate_count: int = 0
+    conflict_count: int = 0
 
 
 @dataclass

@@ -663,6 +663,7 @@ class JobContext:
         self._cur_cfg: JobConfig | None = None
         self._new_cfg: JobConfig | None = None
         self._flow_graph_patched = False
+        self._worlds_conflict_count: dict[str, int] = {}
 
         # event to update the config after all agents added ports and ip address
         self.agents_setup_event = asyncio.Event()
@@ -831,6 +832,8 @@ class JobContext:
 
         self._reconcile_wrk_status(self._cur_cfg, self._new_cfg)
 
+        self._update_worlds_conflict_count(self._cur_cfg, self._new_cfg)
+
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
         agent_resources = self.get_agent_resources_map()
@@ -852,6 +855,33 @@ class JobContext:
         self.running_agent_info = running_agent_info
 
         self.job_checker.setup(self._new_cfg)
+
+    def _update_worlds_conflict_count(
+        self, cur_cfg: JobConfig, new_cfg: JobConfig
+    ) -> None:
+        """Update world infos duplicate count."""
+        if cur_cfg:
+            new_workers = JobConfig.get_workers_diff(new_cfg, cur_cfg)
+        else:
+            new_workers = {worker.id for worker in new_cfg.workers}
+
+        for wid, world_list in new_cfg.flow_graph.items():
+            for world_info in world_list:
+                is_peer = any(wrk_id in world_info.peers for wrk_id in new_workers)
+
+                if wid in new_workers or is_peer:
+                    name = world_info.name
+                    self._set_world_conflict_count(name)
+                    world_info.conflict_count = self._worlds_conflict_count[name]
+
+    def _set_world_conflict_count(self, world_name: str) -> None:
+        """Set worlds conflict count."""
+        if world_name in self._worlds_conflict_count:
+            self._worlds_conflict_count[world_name] += 1
+
+            return
+
+        self._worlds_conflict_count[world_name] = 0
 
     def reset_cfg_recover_flags(self) -> None:
         """Reset recover flags on config."""
@@ -878,15 +908,19 @@ class JobContext:
         recover_flow_graph = cfg.flow_graph[recover_wid]
 
         for world_info in recover_flow_graph:
+            name = world_info.name
+            self._set_world_conflict_count(name)
             world_info.addr = ip
             world_info.recover = True
-            world_info.duplicate_count += 1
+            world_info.conflict_count = self._worlds_conflict_count[name]
 
         for world_list in cfg.flow_graph.values():
             for world_info in world_list:
                 if recover_wid in world_info.peers:
+                    name = world_info.name
+                    self._set_world_conflict_count(name)
                     world_info.recover = True
-                    world_info.duplicate_count += 1
+                    world_info.conflict_count = self._worlds_conflict_count[name]
 
     def _update_recovery_worker_data(
         self, cfg: JobConfig, wrk_id: str, gpu_id: int
@@ -1233,6 +1267,7 @@ class JobContext:
         self._cur_cfg = None
         self._new_cfg = None
         self._flow_graph_patched = False
+        self._worlds_conflict_count = {}
 
     def _release_gpu_resources(self, agent_data: AgentMetaData) -> None:
         resources = self.ctrl.agent_contexts[agent_data.id].resources
