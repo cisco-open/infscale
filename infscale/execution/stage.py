@@ -229,16 +229,7 @@ class Stage(nn.Module):
         # a better way to handle this
         outputs.pop("past_key_values", None)
 
-        if self.is_last:
-            # if tokens are in the outputs, token generation is done.
-            # so, we can go back to the serving server
-            # otherwise, outputs need to be fed into layer 0
-            # due to auto-regressive nature of LLM's token generation
-            next_layer = -1 if "tokens" in outputs else 0
-        else:
-            # if it's not the last layer or stage, we have to send outputs to
-            # worker (or staage) that has the next layer
-            next_layer = self.end + 1
+        next_layer = -1 if self.is_last else self.end + 1
 
         return outputs, next_layer
 

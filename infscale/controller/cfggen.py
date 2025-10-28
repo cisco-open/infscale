@@ -841,19 +841,24 @@ class CfgGen2:
                             )
                             world_id += 1
 
-                    # For LLM(e.g., llama), add feedback connections from last stage to first stage
-                    if self._is_auto_regressive and i == 0 and len(stage_ids) > 1:
-                        last_stage_workers = stages[stage_ids[-1]]
-                        for last_worker in last_stage_workers:
-                            connections.append(
-                                {
-                                    "name": f"w{world_id}",
-                                    "peers": FlowList([last_worker["id"]]),
-                                    "addr": worker_addr,
-                                    "backend": "nccl",
-                                }
-                            )
-                            world_id += 1
+                    # WE DON'T NEED A FEEDBACK CONNECTION ANY MORE SINCE THE
+                    # DISPATCHER HANDLES THAT.
+                    # WE KEEP THE COMMENTED-OUT CODE JUST IN CASE WE HAVE TO
+                    # REVERT IT IN THE FUTURE
+                    #
+                    # # For LLM(e.g., llama), add feedback connections from last stage to first stage
+                    # if self._is_auto_regressive and i == 0 and len(stage_ids) > 1:
+                    #     last_stage_workers = stages[stage_ids[-1]]
+                    #     for last_worker in last_stage_workers:
+                    #         connections.append(
+                    #             {
+                    #                 "name": f"w{world_id}",
+                    #                 "peers": FlowList([last_worker["id"]]),
+                    #                 "addr": worker_addr,
+                    #                 "backend": "nccl",
+                    #             }
+                    #         )
+                    #         world_id += 1
 
                     flow_graph[worker_id] = connections
 

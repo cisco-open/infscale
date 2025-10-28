@@ -24,10 +24,6 @@ flow_graph:
       peers: [s-0]
       addr: 10.20.1.50
       backend: gloo
-    - name: w2
-      peers: [2-0]
-      addr: 10.20.1.50
-      backend: gloo
   1-0:
     - name: w3
       peers: [0-0]

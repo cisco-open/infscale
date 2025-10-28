@@ -66,6 +66,7 @@ class Router:
         _ = asyncio.create_task(self._recv_arbiter())
 
         self._fwder: Forwarder = None
+        self._is_server = False
 
     @property
     def rx_q(self) -> asyncio.Queue:
@@ -115,6 +116,7 @@ class Router:
         worlds_to_remove: list[WorldInfo] = [],
     ) -> None:
         """(Re)configure router."""
+        self._is_server = spec.is_server
         self.device = device
 
         if self._fwder is None:
@@ -314,8 +316,26 @@ class Router:
         while True:
             try:
                 tensor, seqno = await self.__rx_q.get()
-                # TODO: introduce a prioritization policy
-                await self._rx_q.put((tensor, seqno))
+
+                if (
+                    self._is_server
+                    and self._fwder.is_sticky()
+                    and "tokens" not in tensor
+                ):
+                    # if router is configured for server (i.e., dispatcher),
+                    # we need to check the following:
+                    #
+                    # if the model is llm (i.e., is_sticky()), we need to check
+                    # if decoding is done (if "tokens" are in tensor or not):
+                    # if not, we have to return the tensor to the stage with
+                    # layer 0 to continue decoding
+                    # For that, we put the tensor back to _tx_q so that
+                    # send_arbiter() takes care of sending the tensor to
+                    # a correct stage (i.e., worker) whose start layer is 0.
+                    await self._tx_q.put((seqno, tensor, 0))
+                else:
+                    # TODO: introduce a prioritization policy
+                    await self._rx_q.put((tensor, seqno))
             except Exception as e:
                 # this is very likely to be a no-op due to the simple
                 # get and put operations we do on the asyncio queues.

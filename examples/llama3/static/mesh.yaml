@@ -14,26 +14,60 @@ max_inflight: 4
 # Note: IP addresses should be agents'
 flow_graph:
   s-0:
-    - name: w0
+    - name: w4
       peers: [2-0]
       addr: 10.20.1.72
       backend: nccl
+    - name: w9
+      peers: [5-0]
+      addr: 10.20.1.72
+      backend: nccl
   0-0:
-    - name: w1
+    - name: w0
       peers: [s-0]
       addr: 10.20.1.72
       backend: nccl
   1-0:
-    - name: w3
+    - name: w1
       peers: [0-0]
       addr: 10.20.1.72
       backend: nccl
+    - name: w10
+      peers: [3-0]
+      addr: 10.20.1.72
+      backend: nccl
   2-0:
-    - name: w4
+    - name: w2
       peers: [1-0]
       addr: 10.20.1.72
       backend: nccl
-
+    - name: w11
+      peers: [4-0]
+      addr: 10.20.1.72
+      backend: nccl
+  3-0:
+    - name: w5
+      peers: [s-0]
+      addr: 10.20.1.50
+      backend: nccl
+  4-0:
+    - name: w6
+      peers: [3-0]
+      addr: 10.20.1.50
+      backend: nccl
+    - name: w12
+      peers: [0-0]
+      addr: 10.20.1.50
+      backend: nccl
+  5-0:
+    - name: w7
+      peers: [4-0]
+      addr: 10.20.1.50
+      backend: nccl
+    - name: w13
+      peers: [1-0]
+      addr: 10.20.1.50
+      backend: nccl
 dataset: # huggingface dataset
   path: fka/awesome-chatgpt-prompts
   name: ""
@@ -50,14 +84,29 @@ workers:
     device: cuda:1
     stage:
       start: 0
-      end: 7
+      end: 10
   - id: 1-0
     device: cuda:2
     stage:
-      start: 8
-      end: 20
+      start: 11
+      end: 23
   - id: 2-0
     device: cuda:3
     stage:
-      start: 21
+      start: 24
+      end: 34
+  - id: 3-0
+    device: cuda:1
+    stage:
+      start: 0
+      end: 10
+  - id: 4-0
+    device: cuda:2
+    stage:
+      start: 11
+      end: 23
+  - id: 5-0
+    device: cuda:3
+    stage:
+      start: 24
       end: 34

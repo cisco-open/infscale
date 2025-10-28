@@ -35,6 +35,10 @@ class BaseForwarder:
         """Set a flag to indicate if routing is sticky."""
         self._sticky = sticky
 
+    def is_sticky(self) -> bool:
+        """Return a sticky boolean value."""
+        return self._sticky
+
     def configure(self, index: int):
         """Configure forwarder."""
         if not self._sticky:

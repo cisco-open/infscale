@@ -18,8 +18,6 @@ flow_graph:
   0-0:
     - name: w1
       peers: [s-0]
-    - name: w2
-      peers: [2-0]
   1-0:
     - name: w3
       peers: [0-0]
