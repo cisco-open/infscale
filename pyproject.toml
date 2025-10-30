@@ -37,10 +37,15 @@ dev = [
     "bumpver",
     "grpcio-tools",
     "isort",
+    "matplotlib>=3.7",
+    "networkx>=3.2",
     "pip-tools",
     "pytest",
     "python-lsp-server",
 ]
+
+[tool.setuptools.packages.find]
+exclude = ["tests*", "examples*", "integration-tests*", "tools*"]
 
 # [tool.setuptools]
 # packages = ["infscale"]
