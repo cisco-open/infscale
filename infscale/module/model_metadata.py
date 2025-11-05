@@ -198,27 +198,63 @@ class Llama3ModelMetaData(BaseModelMetaData):
             seqno: int, outputs: dict[str, Tensor], attention_mask: Tensor
         ) -> dict[str, Tensor]:
             next_token_logits = outputs["logits"][:, -1, :]
+            batch_size = next_token_logits.size(0)
             device = next_token_logits.device
 
+            state = self.generated_tokens.get(seqno)
+            if state is None:
+                state = {
+                    "tokens": [[] for _ in range(batch_size)],
+                    "finished": [False] * batch_size,
+                }
+                self.generated_tokens[seqno] = state
+
+            gen_tokens = state["tokens"]
+            finished = state["finished"]
+
+            if len(gen_tokens) != batch_size:
+                raise ValueError(
+                    "Mismatched batch size between cached tokens and new logits"
+                )
+
             if self.do_sample:
-                # Apply temperature
-                next_token_logits = next_token_logits / self.temperature
+                if self.temperature > 0.0:
+                    # Apply temperature
+                    next_token_logits = next_token_logits / self.temperature
+                else:
+                    self.do_sample = False
+                    logger.debug(f"temperature is 0.0, switching to greedy decoding")
 
-                # Apply top_p (nucleus) sampling
-                sorted_logits, sorted_indices = torch.sort(
-                    next_token_logits, descending=True
-                )
-                cumulative_probs = torch.cumsum(
-                    torch.nn.functional.softmax(sorted_logits, dim=-1), dim=-1
-                )
+            eos_token_id = self.eos_token_id
 
-                sorted_indices_to_remove = cumulative_probs > self.top_p
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
-                    ..., :-1
-                ].clone()
-                sorted_indices_to_remove[..., 0] = 0
-                indices_to_remove = sorted_indices[sorted_indices_to_remove]
-                next_token_logits[:, indices_to_remove] = float("-inf")
+            for idx, is_finished in enumerate(finished):
+                if is_finished:
+                    next_token_logits[idx] = float("-inf")
+                    next_token_logits[idx, eos_token_id] = 0.0
+
+            if self.do_sample:
+                if 0.0 < self.top_p < 1.0:
+                    sorted_logits, sorted_indices = torch.sort(
+                        next_token_logits, descending=True
+                    )
+                    cumulative_probs = torch.cumsum(
+                        torch.nn.functional.softmax(sorted_logits, dim=-1), dim=-1
+                    )
+                    sorted_indices_to_remove = cumulative_probs > self.top_p
+                    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
+                        ..., :-1
+                    ].clone()
+                    sorted_indices_to_remove[..., 0] = False
+
+                    for batch_idx in range(batch_size):
+                        if finished[batch_idx]:
+                            continue
+                        indices_to_remove = sorted_indices[batch_idx][
+                            sorted_indices_to_remove[batch_idx]
+                        ]
+                        next_token_logits[batch_idx, indices_to_remove] = float(
+                            "-inf"
+                        )
 
                 # Sample from the filtered distribution
                 next_token_probs = torch.nn.functional.softmax(
@@ -229,20 +265,31 @@ class Llama3ModelMetaData(BaseModelMetaData):
                 # Greedy decoding
                 next_token = torch.argmax(next_token_logits, dim=-1, keepdim=True)
 
-            if seqno not in self.generated_tokens:
-                self.generated_tokens[seqno] = [[] for _ in range(len(next_token))]
-            gen_tokens = self.generated_tokens[seqno]
+            for i in range(batch_size):
+                if finished[i]:
+                    next_token[i, 0] = eos_token_id
+                    continue
 
-            for i, token in enumerate(next_token):
-                gen_tokens[i].append(token.item())
+                token_id = next_token[i, 0].item()
+                gen_tokens[i].append(token_id)
 
-            # Check for EOS token or if max number of tokens are generated
-            if (
-                self.max_new_tokens == len(gen_tokens[0])
-                or next_token[0].item() == self.eos_token_id
-            ):
-                gen_tokens = gen_tokens if len(gen_tokens) > 1 else gen_tokens[0]
-                tensor = torch.tensor(gen_tokens, dtype=torch.int64, device=device)
+                if token_id == eos_token_id or len(gen_tokens[i]) >= self.max_new_tokens:
+                    finished[i] = True
+                    if token_id != eos_token_id:
+                        next_token[i, 0] = eos_token_id
+
+            if all(finished):
+                max_length = max(len(tokens) for tokens in gen_tokens)
+                padded_tokens = []
+                for tokens in gen_tokens:
+                    if len(tokens) < max_length:
+                        tokens = tokens + [eos_token_id] * (max_length - len(tokens))
+                    padded_tokens.append(tokens)
+
+                tensor = torch.tensor(padded_tokens, dtype=torch.int64, device=device)
+                if tensor.size(0) == 1:
+                    tensor = tensor[0]
+
                 del self.generated_tokens[seqno]
 
                 return {"tokens": tensor}
