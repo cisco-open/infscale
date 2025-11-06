@@ -30,88 +30,111 @@ class ConfigManager:
     def __init__(self):
         """Initialize config manager instance."""
         self._loop = asyncio.get_event_loop()
-        self._task: asyncio.Task | None = None
-        self._event = asyncio.Event()
-        self._spec: ServeConfig = None
-        self._event.set()
-        self._curr_worlds_to_configure: set[str] = set()
-        self._cancel_cur_cfg = False
-        self._world_infos: dict[str, WorldInfo] = {}
+        # semaphore event for back-to-back configs
+        self._config_event = asyncio.Event()
+        self._config_event.set()
+        self._world_tasks: dict[str, asyncio.Task] = {}
+        self._curr_spec: ServeConfig = None
+        self._curr_world_infos: dict[str, WorldInfo] = {}
+        self._new_world_infos: dict[str, WorldInfo] = {}
+        self.worlds_to_cancel = set()
 
-    def handle_new_spec(self, spec: ServeConfig) -> None:
+    async def handle_new_spec(self, spec: ServeConfig) -> None:
         """Handle new spec."""
-        self._cancel_cur_cfg = self._should_cancel_current(spec)
-        self._spec = spec
+        new_worlds_to_configure = ServeConfig.get_worlds_to_configure(
+            self._curr_spec, spec
+        )
 
-    def _should_cancel_current(self, spec: ServeConfig) -> bool:
-        """Decide if current configuration should be cancelled."""
-        if self._spec is None:
-            return False
+        # on the first run, both new and cur will be empty sets
+        new = self._new_world_infos.keys()
+        cur = self._curr_world_infos.keys()
+        curr_worlds_to_configure = new - cur
 
-        new_worlds_to_configure = ServeConfig.get_worlds_to_configure(self._spec, spec)
+        self.worlds_to_cancel = new_worlds_to_configure & curr_worlds_to_configure
 
-        # cancel if the new config affects worlds currently being configured
-        # TODO: if there's a overlap between new worlds and curr worlds we cancel
-        # current configuration. This needs to be fixed, to cancel only the worlds that
-        # are affected (eg new_worlds & curr_worlds)
-        return not new_worlds_to_configure.isdisjoint(self._curr_worlds_to_configure)
+        if len(self.worlds_to_cancel):
+            await self._cancel_world_configuration(self.worlds_to_cancel)
 
-    def set_worlds_to_configure(self, world_names: set[str]) -> None:
-        """Set the world names currently being configured."""
-        self._curr_worlds_to_configure = world_names
+        # wait for current configuration to finish
+        await self._config_event.wait()
 
-    def set_world_infos(self, worlds: list[WorldInfo]) -> None:
-        """Set new world infos."""
-        for world_info in worlds:
-            self._world_infos[world_info.name] = world_info
+        # executed after each configuration
+        self._new_world_infos = self._build_world_infos(spec)
+        self._curr_spec = spec
+        self.worlds_to_cancel = set()
 
-    def get_world_infos(self) -> dict[str, WorldInfo]:
-        "Get world infos."
-        return self._world_infos
+        # block handling new spec after doing cleanup for the current one
+        self._config_event.clear()
+
+    def unblock_next_config(self) -> None:
+        """Set task event and unblock next config process."""
+        self._config_event.set()
+
+    def update_world_infos(self, worlds_names: set[str]) -> None:
+        """Update world infos."""
+        for world_name in worlds_names:
+            world_info = self._new_world_infos[world_name]
+            self._curr_world_infos[world_info.name] = world_info
+
+    def get_curr_world_infos(self) -> dict[str, WorldInfo]:
+        "Get current world infos."
+        return self._curr_world_infos
 
     def is_first_run(self) -> bool:
         "Return boolean if is first run or not."
-        return not self._world_infos
+        return not self._curr_world_infos
 
     def remove_world_info(self, world_name: str) -> None:
         """Remove world info by name."""
-        del self._world_infos[world_name]
+        del self._curr_world_infos[world_name]
 
-    def get_worlds_to_add_and_remove(self) -> tuple[list[WorldInfo], list[WorldInfo]]:
+    def get_worlds_to_add_and_remove(self) -> tuple[set[str], set[str]]:
         """Return a list of world infos to add and to remove."""
-        new_world_infos = self._build_world_infos()
+        new = self._new_world_infos.keys()
+        cur = self._curr_world_infos.keys()
 
-        new = new_world_infos.keys()
-        cur = self._world_infos.keys()
-
-        worlds_to_add = [new_world_infos[name] for name in new - cur]
-        worlds_to_remove = [self._world_infos[name] for name in cur - new]
+        worlds_to_add = new - cur
+        worlds_to_remove = cur - new
 
         return worlds_to_add, worlds_to_remove
 
-    async def schedule(self, coro_factory: Callable[[], Awaitable[None]]):
-        """Cancel any in-progress configure and schedule a new one."""
-        # wait for current to finish if we do not want to cancel
-        if not self._cancel_cur_cfg:
-            await self._event.wait()
+    def get_new_world_info(self, world_name: str) -> dict[str, WorldInfo]:
+        """Return new world info based on world name."""
+        return self._new_world_infos[world_name]
 
-        # cancel current if running
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+    def get_worlds_to_add(self, world_names: set[str]) -> list[WorldInfo]:
+        """Return a list of world infos to add."""
+        return [self._new_world_infos[world_name] for world_name in world_names]
 
-        # block again for new run
-        self._event.clear()
-        self._task = self._loop.create_task(self._run(coro_factory))
+    def get_worlds_to_remove(self, world_names: set[str]) -> list[WorldInfo]:
+        """Return a list of world infos to remove."""
+        return [self._curr_world_infos[world_name] for world_name in world_names]
 
-    def _build_world_infos(self) -> dict[str, WorldInfo]:
+    async def _cancel_world_configuration(self, world_names: set[str]):
+        """Cancel only worlds that are impacted by new spec."""
+        coroutines = [self._cancel_world(w) for w in world_names]
+        await asyncio.gather(*coroutines, return_exceptions=True)
+
+    def schedule_world_cfg(
+        self, world_info: WorldInfo, coro_factory: Callable[[], Awaitable[None]]
+    ):
+        """Schedule configuration for a single world."""
+        task = self._loop.create_task(self._run_world(world_info, coro_factory))
+        self._world_tasks[world_info.name] = task
+        return task
+
+    async def _cancel_world(self, world_name: str):
+        """Cancel an in-progress world config task."""
+        task = self._world_tasks.pop(world_name, None)
+        if task and not task.done():
+            task.cancel()
+            raise asyncio.CancelledError
+
+    def _build_world_infos(self, spec: ServeConfig) -> dict[str, WorldInfo]:
         world_infos: dict[str, WorldInfo] = {}
 
-        my_id = self._spec.stage.id
-        for k, v in self._spec.flow_graph.items():
+        my_id = spec.stage.id
+        for k, v in spec.flow_graph.items():
             for cfg_world_info in v:
                 # NOTE: no. of peers is always 1 for now
                 assert len(cfg_world_info.peers) == 1
@@ -161,13 +184,13 @@ class ConfigManager:
 
         return world_infos
 
-    async def _run(self, coro_factory: Callable[[], Awaitable[None]]):
-        """Run coroutine factory."""
+    async def _run_world(
+        self, world_info: WorldInfo, coro_factory: Callable[[], Awaitable[None]]
+    ):
+        """Run and cleanup world configuration."""
         try:
-            await coro_factory()
+            await coro_factory(world_info)
         except asyncio.CancelledError:
-            pass
+            raise
         finally:
-            # reset class attributes and events
-            self._event.set()
-            self._curr_worlds_to_configure = set()
+            self._world_tasks.pop(world_info.name, None)

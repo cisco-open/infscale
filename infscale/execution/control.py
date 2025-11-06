@@ -162,10 +162,24 @@ class Channel:
         if self.rank == 0:
             self._server_task = asyncio.create_task(self._setup_server(setup_done))
         else:
-            _ = asyncio.create_task(self._setup_client(setup_done))
+            client_task = asyncio.create_task(self._setup_client(setup_done))
 
         # wait until setting up either server or client is done
-        await setup_done.wait()
+        try:
+            await setup_done.wait()
+        except asyncio.CancelledError:
+            # since both _setup_server and _setup_client are spawned as separate tasks
+            # and the setup itself is a task, we need to handle parent task cancellation
+            # on the awaited line, since cancellation only propagates through awaited calls
+            # here, await setup_done.wait() is the propagation point from parent task to child tasks
+            # so we need to cancel child tasks whenever CancelledError is received
+            if self._server_task and not self._server_task.done():
+                self._server_task.cancel()
+
+            if client_task and not client_task.done():
+                client_task.cancel()
+
+            raise
 
     def cleanup(self) -> None:
         if self._server_task is not None:

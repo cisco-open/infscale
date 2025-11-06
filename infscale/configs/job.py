@@ -157,11 +157,16 @@ class ServeConfig:
         """Compare two specs and return new and updated worlds."""
         helper = ServeConfigHelper()
 
-        curr_worlds = helper._get_worlds(curr_spec)
         new_worlds = helper._get_worlds(new_spec)
-
-        curr_world_names = set(curr_worlds.keys())
         new_world_names = set(new_worlds.keys())
+
+        # if current spec is not available,
+        # return worlds from the new spec.
+        if curr_spec is None:
+            return new_world_names
+
+        curr_worlds = helper._get_worlds(curr_spec)
+        curr_world_names = set(curr_worlds.keys())
 
         deploy_worlds = new_world_names - curr_world_names
 
