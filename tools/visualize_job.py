@@ -1,3 +1,22 @@
+# Copyright 2025 Cisco Systems, Inc. and its affiliates
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+"""visualize_tool.py."""
+
+
 import argparse
 import os
 
@@ -8,11 +27,13 @@ import yaml
 from infscale.configs.job import JobConfig
 
 
-def load_job_config(path: str) -> JobConfig:
+def get_job_data(path: str) -> tuple[JobConfig, str]:
+    """Load job data composed by JobConfig and yaml file name."""
     with open(path) as f:
         data = yaml.safe_load(f)
+        file_name = os.path.splitext(os.path.basename(path))[0]
 
-    return JobConfig(**data)
+    return JobConfig(**data), file_name
 
 
 def build_graph(job: JobConfig) -> tuple[nx.DiGraph, dict[str, int]]:
@@ -42,7 +63,7 @@ def build_graph(job: JobConfig) -> tuple[nx.DiGraph, dict[str, int]]:
 def draw_graph(
     graph: nx.DiGraph,
     worker_stage: dict[str, int],
-    job_id: str,
+    file_name: str,
     output_path: str = "",
 ) -> None:
     """Draw graph where worker_stage maps node -> stage (start)."""
@@ -151,32 +172,37 @@ def draw_graph(
     ax.set_axis_off()
     plt.tight_layout()
     if output_path:
-        os.makedirs(output_path, exist_ok=True)
-        output_file = os.path.join(output_path, f"{job_id}.png")
+        # save PNG in the same folder as this script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        output_file = os.path.join(script_dir, f"{file_name}.png")
         plt.savefig(output_file, dpi=300, bbox_inches="tight")
         print(f"Graph saved at: {output_file}")
-    else:
-        print("Graph opened in a new window.")
-        plt.show()
+
+    print("Graph opened in a new window.")
+    plt.show()
 
 
 def main():
     parser = argparse.ArgumentParser(description="Visualize JobConfig flow graph")
     parser.add_argument("config_path", help="Path to job YAML config")
     parser.add_argument(
-        "-o", "--output", help="Directory to save output image (optional)", default=None
+        "-s",
+        "--save",
+        action="store_true",
+        help="Save the graph as a PNG file in the same directory as the script instead of displaying it",
     )
     args = parser.parse_args()
 
     try:
-        config = load_job_config(args.config_path)
+        config, file_name = get_job_data(args.config_path)
     except FileNotFoundError as e:
         print(f"Error while loading file: {e}")
         return
 
     graph, worker_stage = build_graph(config)
+    output_path = os.path.dirname(os.path.abspath(__file__)) if args.save else None
     try:
-        draw_graph(graph, worker_stage, config.job_id, args.output)
+        draw_graph(graph, worker_stage, file_name, output_path)
     except nx.exception.NetworkXError as e:
         print(f"Error while drawing graph: {e}")
     except KeyboardInterrupt:
