@@ -27,7 +27,7 @@ from multiworld.manager import WorldManager
 from infscale import get_logger
 from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.configs.job import ServeConfig
-from infscale.execution.config_runner import ConfigRunner
+from infscale.execution.config_runner import ConfigManager
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.router import Router
@@ -68,13 +68,12 @@ class Pipeline:
         self.wcomm = wcomm
         self.spec: ServeConfig = None
         self.device = None
-        self.world_infos: dict[str, WorldInfo] = {}
         self.cfg_event = asyncio.Event()
         self._micro_batch_size = 1
         self._initialized = False
         self._inspector = PipelineInspector()
         self._status: WorkerStatus = WorkerStatus.READY
-        self.config_runner = ConfigRunner()
+        self.config_manager = ConfigManager()
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -118,7 +117,9 @@ class Pipeline:
         """Set worker status in pipeline and channel."""
         self._status = status
 
-        for world_info in self.world_infos.values():
+        world_infos = self.config_manager.get_world_infos()
+
+        for world_info in world_infos.values():
             world_info.channel.set_worker_status(status)
 
     def _set_n_send_worker_status(self, status: WorkerStatus) -> None:
@@ -143,15 +144,17 @@ class Pipeline:
 
     async def _cleanup_recovered_worlds(self) -> None:
         """Clean up world infos for recovered worlds."""
+        world_infos = self.config_manager.get_world_infos()
+
         # if I'm the recovered worker, return
-        if len(self.world_infos) == 0:
+        if len(world_infos) == 0:
             return
 
         recover_worlds = [
             world_info
             for world_list in self.spec.flow_graph.values()
             for world_info in world_list
-            if world_info.recover and world_info.name in self.world_infos
+            if world_info.recover and world_info.name in world_infos
         ]
 
         # no worlds to recover
@@ -159,33 +162,27 @@ class Pipeline:
             return
 
         for world_info in recover_worlds:
-            wi = self.world_infos.get(world_info.name, None)
+            wi = world_infos.get(world_info.name, None)
 
             await self.router.cleanup_world(wi)
             self._reset_control_channel(wi)
             self._reset_multiworld(wi)
 
-            del self.world_infos[wi.name]
+            self.config_manager.remove_world_info(wi.name)
 
     async def _configure(self) -> None:
         """(Re)configure multiworld, control channel and router."""
         await self._cleanup_recovered_worlds()
 
-        is_first_run = not self.world_infos
+        is_first_run = self.config_manager.is_first_run()
 
         if not is_first_run:
             self._set_worker_status(WorkerStatus.UPDATING)
 
-        new_world_infos = self._build_world_infos()
-        new = new_world_infos.keys()
-        cur = self.world_infos.keys()
+        worlds_to_add, worlds_to_remove = (
+            self.config_manager.get_worlds_to_add_and_remove()
+        )
 
-        worlds_to_add = [new_world_infos[name] for name in new - cur]
-        worlds_to_remove = [self.world_infos[name] for name in cur - new]
-
-        self.config_runner.set_worlds_to_configure(new - cur)
-
-        # handle new worlds
         tasks = []
         # 1. set up control channel
         for world_info in worlds_to_add:
@@ -207,12 +204,14 @@ class Pipeline:
         await asyncio.gather(*tasks)
 
         # update world_info for added worlds
-        for world_info in worlds_to_add:
-            self.world_infos[world_info.name] = world_info
+        self.config_manager.set_world_infos(worlds_to_add)
 
         # configure router with worlds to add and remove
         await self.router.configure(
-            self.spec, self.device, worlds_to_add, worlds_to_remove
+            self.spec,
+            self.device,
+            worlds_to_add,
+            worlds_to_remove,
         )
 
         # handle unnecessary world
@@ -223,7 +222,7 @@ class Pipeline:
             # 2. remove unnecessary world from multiworld
             self._reset_multiworld(world_info)
 
-            del self.world_infos[world_info.name]
+            self.config_manager.remove_world_info(world_info.name)
 
         worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
 
@@ -426,7 +425,7 @@ class Pipeline:
         if spec is None:
             return
 
-        self.config_runner.handle_new_spec(spec)
+        self.config_manager.handle_new_spec(spec)
 
         self._configure_variables(spec)
 
@@ -435,61 +434,7 @@ class Pipeline:
         self._initialize_once()
 
         # (re)configure the pipeline
-        await self.config_runner.schedule(self._configure)
-
-    def _build_world_infos(self) -> dict[str, WorldInfo]:
-        world_infos: dict[str, WorldInfo] = {}
-
-        my_id = self.spec.stage.id
-        for k, v in self.spec.flow_graph.items():
-            for cfg_world_info in v:
-                # NOTE: no. of peers is always 1 for now
-                assert len(cfg_world_info.peers) == 1
-
-                if my_id == k:
-                    my_rank = 0
-                    other_rank = 1
-                    other_id = cfg_world_info.peers[0]
-                elif my_id in cfg_world_info.peers:
-                    # NOTE: this is always 1 for now
-                    my_rank = cfg_world_info.peers.index(my_id) + 1
-                    other_rank = 0
-                    other_id = k
-                else:
-                    continue
-
-                name, backend, addr, data_port, ctrl_port, recover, conflict_count = (
-                    cfg_world_info.name,
-                    cfg_world_info.backend,
-                    cfg_world_info.addr,
-                    cfg_world_info.data_port,
-                    cfg_world_info.ctrl_port,
-                    cfg_world_info.recover,
-                    cfg_world_info.conflict_count,
-                )
-
-                world_size = len(cfg_world_info.peers) + 1
-                ctrl_ch = CtrlCh(my_rank, world_size, addr, ctrl_port)
-
-                data = {
-                    "name": name,
-                    "size": world_size,
-                    "addr": addr,
-                    "port": data_port,
-                    "backend": backend,
-                    "channel": ctrl_ch,
-                    "my_id": my_id,
-                    "me": my_rank,
-                    "other_id": other_id,
-                    "other": other_rank,
-                    "recover": recover,
-                    "conflict_count": conflict_count,
-                    "multiworld_name": f"{name}-{conflict_count}",
-                }
-                world_info = WorldInfo(**data)
-                world_infos[name] = world_info
-
-        return world_infos
+        await self.config_manager.schedule(self._configure)
 
     def _configure_variables(self, spec: ServeConfig) -> None:
         """Set variables that need to be updated."""
