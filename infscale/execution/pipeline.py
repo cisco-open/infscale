@@ -27,7 +27,7 @@ from multiworld.manager import WorldManager
 from infscale import get_logger
 from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.configs.job import ServeConfig
-from infscale.execution.config_runner import ConfigManager
+from infscale.execution.config_manager import ConfigManager
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.router import Router
