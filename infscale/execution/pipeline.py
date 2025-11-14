@@ -104,6 +104,8 @@ class Pipeline:
                 port=port,
                 device=self.device,
             )
+        except asyncio.CancelledError:
+            logger.warning(f"multiworld configuration cancelled for {world_info.name}")
         except Exception as e:
             logger.error(f"failed to initialize a multiworld {name}: {e}")
             condition = self._status != WorkerStatus.UPDATING
@@ -117,7 +119,7 @@ class Pipeline:
         """Set worker status in pipeline and channel."""
         self._status = status
 
-        world_infos = self.config_manager.get_world_infos()
+        world_infos = self.config_manager.get_curr_world_infos()
 
         for world_info in world_infos.values():
             world_info.channel.set_worker_status(status)
@@ -130,12 +132,20 @@ class Pipeline:
         self.wcomm.send(msg)
 
     async def _configure_control_channel(self, world_info: WorldInfo) -> None:
-        await world_info.channel.setup()
+        try:
+            await world_info.channel.setup()
 
-        await world_info.channel.wait_readiness()
+            await world_info.channel.wait_readiness()
+        except asyncio.CancelledError:
+            logger.warning(f"channel configuration cancelled for {world_info}")
 
     def _reset_multiworld(self, world_info: WorldInfo) -> None:
-        self.world_manager.remove_world(world_info.multiworld_name)
+        try:
+            self.world_manager.remove_world(world_info.multiworld_name)
+        except ValueError as e:
+            logger.warning(f"failed to reset {world_info.multiworld_name}: {e}")
+            return
+
         logger.info(f"remove world {world_info.multiworld_name} from multiworld")
 
     def _reset_control_channel(self, world_info: WorldInfo) -> None:
@@ -144,7 +154,7 @@ class Pipeline:
 
     async def _cleanup_recovered_worlds(self) -> None:
         """Clean up world infos for recovered worlds."""
-        world_infos = self.config_manager.get_world_infos()
+        world_infos = self.config_manager.get_curr_world_infos()
 
         # if I'm the recovered worker, return
         if len(world_infos) == 0:
@@ -179,14 +189,18 @@ class Pipeline:
         if not is_first_run:
             self._set_worker_status(WorkerStatus.UPDATING)
 
-        worlds_to_add, worlds_to_remove = (
+        world_names_to_add, world_names_to_remove = (
             self.config_manager.get_worlds_to_add_and_remove()
         )
 
         tasks = []
         # 1. set up control channel
-        for world_info in worlds_to_add:
-            task = self._configure_control_channel(world_info)
+        for world_name in world_names_to_add - self.config_manager.worlds_to_cancel:
+            world_info = self.config_manager.get_new_world_info(world_name)
+
+            task = self.config_manager.schedule_world_cfg(
+                world_info, self._configure_control_channel
+            )
             tasks.append(task)
 
         # TODO: this doesn't handle partial success
@@ -195,8 +209,11 @@ class Pipeline:
 
         tasks = []
         # 2. set up multiworld
-        for world_info in worlds_to_add:
-            task = self._configure_multiworld(world_info)
+        for world_name in world_names_to_add - self.config_manager.worlds_to_cancel:
+            world_info = self.config_manager.get_new_world_info(world_name)
+            task = self.config_manager.schedule_world_cfg(
+                world_info, self._configure_multiworld
+            )
             tasks.append(task)
 
         # TODO: this doesn't handle partial success
@@ -204,7 +221,16 @@ class Pipeline:
         await asyncio.gather(*tasks)
 
         # update world_info for added worlds
-        self.config_manager.set_world_infos(worlds_to_add)
+        self.config_manager.update_world_infos(
+            world_names_to_add - self.config_manager.worlds_to_cancel
+        )
+
+        worlds_to_add = self.config_manager.get_world_infos_by_name(
+            world_names_to_add - self.config_manager.worlds_to_cancel
+        )
+        worlds_to_remove = self.config_manager.get_world_infos_by_name(
+            world_names_to_remove, True
+        )
 
         # configure router with worlds to add and remove
         await self.router.configure(
@@ -216,16 +242,17 @@ class Pipeline:
 
         # handle unnecessary world
         # remove is executed in the reverse order of add
-        for world_info in worlds_to_remove:
+        for world_name in worlds_to_remove:
             # 1. remove unnecessary world from control channel
-            self._reset_control_channel(world_info)
+            self._reset_control_channel(world_name)
             # 2. remove unnecessary world from multiworld
-            self._reset_multiworld(world_info)
+            self._reset_multiworld(world_name)
 
-            self.config_manager.remove_world_info(world_info.name)
+            self.config_manager.remove_world_info(world_name.name)
 
         worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
 
+        self.config_manager.unblock_next_config()
         self._set_n_send_worker_status(worker_status)
 
         self.cfg_event.set()
@@ -424,16 +451,16 @@ class Pipeline:
         if spec is None:
             return
 
-        self.config_manager.handle_new_spec(spec)
-
         self._configure_variables(spec)
 
         self._inspector.configure(self.spec)
 
         self._initialize_once()
-
         # (re)configure the pipeline
-        await self.config_manager.schedule(self._configure)
+        await self.config_manager.handle_new_spec(spec)
+        # run configure as a separate task since we need to unblock receiving
+        # a new config to be processed when current configuration is finished
+        _ = asyncio.create_task(self._configure())
 
     def _configure_variables(self, spec: ServeConfig) -> None:
         """Set variables that need to be updated."""
