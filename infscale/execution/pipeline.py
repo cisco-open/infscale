@@ -134,14 +134,6 @@ class Pipeline:
 
         await world_info.channel.wait_readiness()
 
-    def _reset_multiworld(self, world_info: WorldInfo) -> None:
-        self.world_manager.remove_world(world_info.multiworld_name)
-        logger.info(f"remove world {world_info.multiworld_name} from multiworld")
-
-    def _reset_control_channel(self, world_info: WorldInfo) -> None:
-        world_info.channel.cleanup()
-        logger.info(f"remove world {world_info.name} from control channel")
-
     async def _cleanup_recovered_worlds(self) -> None:
         """Clean up world infos for recovered worlds."""
         world_infos = self.config_manager.get_world_infos()
@@ -165,8 +157,6 @@ class Pipeline:
             wi = world_infos.get(world_info.name, None)
 
             await self.router.cleanup_world(wi)
-            self._reset_control_channel(wi)
-            self._reset_multiworld(wi)
 
             self.config_manager.remove_world_info(wi.name)
 
@@ -217,10 +207,11 @@ class Pipeline:
         # handle unnecessary world
         # remove is executed in the reverse order of add
         for world_info in worlds_to_remove:
-            # 1. remove unnecessary world from control channel
-            self._reset_control_channel(world_info)
-            # 2. remove unnecessary world from multiworld
-            self._reset_multiworld(world_info)
+            # cleanup of control channel and multiworld was moved into router
+            # since we need to do async world cleanup based on certain scenarios
+            # sender can do the cleanup when new config is processed to stop
+            # sending requests to failed / removed worker
+            # received needs to keep waiting for requests until an exception is raised
 
             self.config_manager.remove_world_info(world_info.name)
 

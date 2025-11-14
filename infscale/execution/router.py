@@ -153,6 +153,7 @@ class Router:
             if world_info.me == 0:
                 continue
 
+            # do cleanup for send task and world
             await self.cleanup_world(world_info)
 
     async def _recv(self, world_info: WorldInfo, cancellable: asyncio.Event) -> None:
@@ -201,7 +202,7 @@ class Router:
     async def cleanup_world(
         self, world_info: WorldInfo, cancel_task: bool = True
     ) -> None:
-        """Cleanup state info on world."""
+        """Cleanup state info, channel and multiworld for world."""
         # reset tx q related to a given world info
         self._cleanup_tx_q(world_info)
 
@@ -216,6 +217,9 @@ class Router:
             task.cancel()
         except Exception as e:
             logger.warning(f"failed to cancel task for world {name}: {e}")
+
+        world_info.channel.cleanup()
+        self.world_manager.remove_world(world_info.multiworld_name)
 
     def _find_tx_q(self, world_info: WorldInfo) -> asyncio.Queue:
         for _, v in self.__tx_qs.items():
