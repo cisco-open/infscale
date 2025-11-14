@@ -85,7 +85,7 @@ class ConfigManager:
         cur = self._world_infos.keys()
 
         worlds_to_add = [new_world_infos[name] for name in new - cur]
-        worlds_to_remove = [new_world_infos[name] for name in cur - new]
+        worlds_to_remove = [self._world_infos[name] for name in cur - new]
 
         return worlds_to_add, worlds_to_remove
 
