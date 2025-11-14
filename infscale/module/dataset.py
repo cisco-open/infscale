@@ -23,7 +23,6 @@ SOFTWARE.
 # This file was modified from
 # https://github.com/SymbioticLab/Oobleck/blob/3b7a0c2f19bff0991e623ffbeb8a5b365853bf3a/oobleck/execution/dataset.py
 
-import math
 from typing import Optional, Tuple, Type
 
 import torch
@@ -51,8 +50,11 @@ class HuggingFaceDataset:
         dataset_name: Optional[str] = None,
         split: Optional[str] = "test",
         max_seq_length: Optional[int] = None,
+        micro_batch_size: int = 1,
     ):
         """Initialize the class."""
+        self.micro_batch_size = micro_batch_size
+
         if mmd.model_group == ModelGroup.LANG:
             self.tokenizer, self.dataset = HuggingFaceDataset.create_language_dataset(
                 mmd.name,
@@ -60,6 +62,7 @@ class HuggingFaceDataset:
                 dataset_name,
                 split,
                 max_seq_length,
+                micro_batch_size,
             )
 
             def collate_fn(examples):
@@ -108,11 +111,8 @@ class HuggingFaceDataset:
         self.model_group = mmd.model_group
         self._curr_batch: Tensor = None
 
-    def configure(
-        self, micro_batch_size: int, device: torch.device, in_memory: bool, replay: int
-    ) -> None:
+    def configure(self, device: torch.device, in_memory: bool, replay: int) -> None:
         """Configure dataset."""
-        self.micro_batch_size = micro_batch_size
         self.device = device
         self._in_memory = in_memory
         self._replay = int(replay)
@@ -243,6 +243,7 @@ class HuggingFaceDataset:
         dataset_name: Optional[str],
         split: Optional[str] = None,
         max_seq_length: Optional[int] = None,
+        micro_batch_size: int = 1,
     ) -> Tuple[Type[PreTrainedTokenizerBase], Dataset]:
         """Create language dataset."""
         tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -272,6 +273,7 @@ class HuggingFaceDataset:
             batched=True,
             remove_columns=column_names,
             load_from_cache_file=True,
+            batch_size=micro_batch_size,
         )
 
         return tokenizer, tokenized_dataset

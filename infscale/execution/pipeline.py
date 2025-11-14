@@ -331,7 +331,6 @@ class Pipeline:
         # For this we need to run configure() in a thread so the event loop stays responsive
         await asyncio.to_thread(
             self.dataset.configure,
-            self._micro_batch_size,
             self.device,
             self.spec.reqgen_config.params.in_memory,
             self.spec.reqgen_config.params.replay,
@@ -464,7 +463,13 @@ class Pipeline:
         )
 
         # load dataset
-        self.dataset = HuggingFaceDataset(mmd, path, name, split)
+        self.dataset = HuggingFaceDataset(
+            mmd,
+            path,
+            dataset_name=name,
+            split=split,
+            micro_batch_size=self._micro_batch_size,
+        )
         self.device = torch.device(self.spec.device)
 
         # load model intermediate representation
