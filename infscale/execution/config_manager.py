@@ -139,7 +139,7 @@ class ConfigManager:
                 )
 
                 world_size = len(cfg_world_info.peers) + 1
-                ctrl_ch = CtrlCh(my_rank, world_size, addr, ctrl_port)
+                ctrl_ch = CtrlCh(my_rank, world_size, addr, ctrl_port, name)
 
                 data = {
                     "name": name,

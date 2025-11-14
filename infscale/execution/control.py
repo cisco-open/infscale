@@ -62,12 +62,13 @@ class ControlMessage:
 class Channel:
     """Control Channel class."""
 
-    def __init__(self, rank: int, world_size: int, addr: str, port: int):
+    def __init__(self, rank: int, world_size: int, addr: str, port: int, name: str):
         """Initialize an instance."""
         global logger
         logger = get_logger()
 
         self.rank = rank
+        self.name = name
         self.world_size = world_size
         self.addr = addr
         self.port = port
@@ -173,6 +174,8 @@ class Channel:
 
         for _, writer in self.peers.values():
             writer.close()
+
+        logger.info(f"remove world {self.name} from control channel")
 
     async def send_ctrl_msg(
         self, rank: int, tensors: dict[str, Tensor], seqno: int = 0

@@ -217,10 +217,11 @@ class Pipeline:
         # handle unnecessary world
         # remove is executed in the reverse order of add
         for world_info in worlds_to_remove:
-            # 1. remove unnecessary world from control channel
-            self._reset_control_channel(world_info)
-            # 2. remove unnecessary world from multiworld
-            self._reset_multiworld(world_info)
+            # cleanup of control channel and multiworld was moved into router
+            # since we need to do async world cleanup based on certain scenarios
+            # sender can do the cleanup when new config is processed to stop
+            # sending requests to failed / removed worker
+            # received needs to keep waiting for requests until an exception is raised
 
             self.config_manager.remove_world_info(world_info.name)
 

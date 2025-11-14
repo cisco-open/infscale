@@ -153,7 +153,10 @@ class Router:
             if world_info.me == 0:
                 continue
 
+            # do cleanup for send task and world
             await self.cleanup_world(world_info)
+            world_info.channel.cleanup()
+            self.world_manager.remove_world(world_info.multiworld_name)
 
     async def _recv(self, world_info: WorldInfo, cancellable: asyncio.Event) -> None:
         recv_dev = torch.device("cpu") if world_info.backend == "gloo" else self.device
@@ -188,6 +191,9 @@ class Router:
             await self.__rx_q.put((tensors, seqno))
 
         await self.cleanup_world(world_info, cancel_task=False)
+        world_info.channel.cleanup()
+        self.world_manager.remove_world(world_info.multiworld_name)
+        logger.info(f"remove world {world_info.multiworld_name} from multiworld")
 
     async def wait_on_term_ready(self) -> None:
         """Wait for pending requests to be processed."""
