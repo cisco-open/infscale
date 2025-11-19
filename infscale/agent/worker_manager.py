@@ -223,7 +223,7 @@ class WorkerManager:
         self, worker: WorkerMetaData, msg_type: MessageType
     ) -> None:
         """Signal a worker that needs to be terminated."""
-        valid = [WorkerStatus.READY, WorkerStatus.RUNNING]
+        valid = [WorkerStatus.READY, WorkerStatus.RUNNING, WorkerStatus.UPDATED]
         if worker.status in valid:
             worker.status = WorkerStatus.TERMINATED
 
