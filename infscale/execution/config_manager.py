@@ -22,6 +22,7 @@ from typing import Awaitable, Callable
 from infscale.configs.job import ServeConfig
 from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.world import WorldInfo
+from infscale.worker.pipeline_inspector import PipelineInspector
 
 
 class ConfigManager:
@@ -34,15 +35,16 @@ class ConfigManager:
         self._config_event = asyncio.Event()
         self._config_event.set()
         self._world_tasks: dict[str, asyncio.Task] = {}
-        self._curr_spec: ServeConfig = None
+        self._spec: ServeConfig = None
         self._curr_world_infos: dict[str, WorldInfo] = {}
         self._new_world_infos: dict[str, WorldInfo] = {}
         self.worlds_to_cancel = set()
+        self._inspector = PipelineInspector()
 
-    async def handle_new_spec(self, spec: ServeConfig) -> None:
+    async def handle_new_spec(self, new_spec: ServeConfig) -> None:
         """Handle new spec."""
         new_worlds_to_configure = ServeConfig.get_worlds_to_configure(
-            self._curr_spec, spec
+            self._spec, new_spec
         )
 
         # on the first run, both new and cur will be empty sets
@@ -59,12 +61,18 @@ class ConfigManager:
         await self._config_event.wait()
 
         # executed after each configuration
-        self._new_world_infos = self._build_world_infos(spec)
-        self._curr_spec = spec
+        self._new_world_infos = self._build_world_infos(new_spec)
+        self._spec = new_spec
         self.worlds_to_cancel = set()
+
+        self._inspector.configure(self._spec)
 
         # block handling new spec after doing cleanup for the current one
         self._config_event.clear()
+
+    def get_spec(self) -> ServeConfig:
+        """Return spec."""
+        return self._spec
 
     def unblock_next_config(self) -> None:
         """Set task event and unblock next config process."""
@@ -77,12 +85,16 @@ class ConfigManager:
             self._curr_world_infos[world_info.name] = world_info
 
     def get_curr_world_infos(self) -> dict[str, WorldInfo]:
-        "Get current world infos."
+        """Get current world infos."""
         return self._curr_world_infos
 
     def is_first_run(self) -> bool:
-        "Return boolean if is first run or not."
+        """Return boolean if is first run or not."""
         return not self._curr_world_infos
+
+    def is_server(self) -> bool:
+        """Return bool if spec is for server or not."""
+        return self._spec.is_server
 
     def remove_world_info(self, world_name: str) -> None:
         """Remove world info by name."""
@@ -109,6 +121,19 @@ class ConfigManager:
     def get_worlds_to_remove(self, world_names: set[str]) -> list[WorldInfo]:
         """Return a list of world infos to remove."""
         return [self._curr_world_infos[world_name] for world_name in world_names]
+
+    def get_worlds_to_recover(self) -> list[WorldInfo]:
+        """Return a list of world infos for recovery."""
+        return [
+            world_info
+            for world_list in self._spec.flow_graph.values()
+            for world_info in world_list
+            if world_info.recover and world_info.name in self._curr_world_infos
+        ]
+
+    def get_suspended_worlds(self, failed_wids: set[str]) -> set[str]:
+        """Return the set of suspended world names based on failed worker id."""
+        return self._inspector.get_suspended_worlds(failed_wids)
 
     async def _cancel_world_configuration(self, world_names: set[str]):
         """Cancel only worlds that are impacted by new spec."""

@@ -28,7 +28,6 @@ from infscale import get_logger
 from infscale.common.job_msg import Message, MessageType, WorkerStatus
 from infscale.configs.job import ServeConfig
 from infscale.execution.config_manager import ConfigManager
-from infscale.execution.control import Channel as CtrlCh
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.router import Router
 from infscale.execution.stage import Stage
@@ -38,9 +37,10 @@ from infscale.module.modelir import ModelIR
 from infscale.module.zoo import Zoo
 from infscale.request.generator import GeneratorFactory
 from infscale.worker.fatal import kill_worker
-from infscale.worker.pipeline_inspector import PipelineInspector
 from infscale.worker.worker_comm import WorkerCommunicator
 
+
+METRICS_INTERVAL = 1  # one second
 
 logger = None
 
@@ -60,20 +60,18 @@ class Pipeline:
         global logger
         logger = get_logger()
 
-        self.stage: Stage = None
+        self._stage: Stage = None
         self._mc = MetricsCollector()
-        self.world_manager = WorldManager()
-        self.router = Router(self.world_manager, self._mc)
-        self.job_id = job_id
-        self.wcomm = wcomm
-        self.spec: ServeConfig = None
-        self.device = None
-        self.cfg_event = asyncio.Event()
+        self._world_manager = WorldManager()
+        self._router = Router(self._world_manager, self._mc)
+        self._config_manager = ConfigManager()
+        self._job_id = job_id
+        self._wcomm = wcomm
+        self._device = None
+        self._initial_cfg_event = asyncio.Event()
         self._micro_batch_size = 1
         self._initialized = False
-        self._inspector = PipelineInspector()
         self._status: WorkerStatus = WorkerStatus.READY
-        self.config_manager = ConfigManager()
 
         # TODO: these variables are only for a server (i.e., dispatcher)
         #       need to consider refactoring pipeline such that server code
@@ -81,8 +79,6 @@ class Pipeline:
         self.n_inflight = 0
         self.tx_allow_evt = asyncio.Event()
         self.tx_allow_evt.set()
-
-        self.metrics_interval = 1  # 1 second
 
     async def _configure_multiworld(self, world_info: WorldInfo) -> None:
         (name, world_size, addr, port, backend, my_rank) = (
@@ -95,14 +91,14 @@ class Pipeline:
         )
 
         try:
-            await self.world_manager.initialize_world(
+            await self._world_manager.initialize_world(
                 name,
                 my_rank,
                 world_size,
                 backend=backend,
                 addr=addr,
                 port=port,
-                device=self.device,
+                device=self._device,
             )
         except asyncio.CancelledError:
             logger.warning(f"multiworld configuration cancelled for {world_info.name}")
@@ -119,7 +115,7 @@ class Pipeline:
         """Set worker status in pipeline and channel."""
         self._status = status
 
-        world_infos = self.config_manager.get_curr_world_infos()
+        world_infos = self._config_manager.get_curr_world_infos()
 
         for world_info in world_infos.values():
             world_info.channel.set_worker_status(status)
@@ -127,9 +123,8 @@ class Pipeline:
     def _set_n_send_worker_status(self, status: WorkerStatus) -> None:
         """Set and send worker status."""
         self._set_worker_status(status)
-
-        msg = Message(MessageType.STATUS, status, self.spec.job_id)
-        self.wcomm.send(msg)
+        msg = Message(MessageType.STATUS, status, self._job_id)
+        self._wcomm.send(msg)
 
     async def _configure_control_channel(self, world_info: WorldInfo) -> None:
         try:
@@ -141,18 +136,13 @@ class Pipeline:
 
     async def _cleanup_recovered_worlds(self) -> None:
         """Clean up world infos for recovered worlds."""
-        world_infos = self.config_manager.get_curr_world_infos()
+        world_infos = self._config_manager.get_curr_world_infos()
 
         # if I'm the recovered worker, return
         if len(world_infos) == 0:
             return
 
-        recover_worlds = [
-            world_info
-            for world_list in self.spec.flow_graph.values()
-            for world_info in world_list
-            if world_info.recover and world_info.name in world_infos
-        ]
+        recover_worlds = self._config_manager.get_worlds_to_recover()
 
         # no worlds to recover
         if len(recover_worlds) == 0:
@@ -161,29 +151,29 @@ class Pipeline:
         for world_info in recover_worlds:
             wi = world_infos.get(world_info.name, None)
 
-            await self.router.cleanup_world(wi)
+            await self._router.cleanup_world(wi)
 
-            self.config_manager.remove_world_info(wi.name)
+            self._config_manager.remove_world_info(wi.name)
 
     async def _configure(self) -> None:
         """(Re)configure multiworld, control channel and router."""
         await self._cleanup_recovered_worlds()
 
-        is_first_run = self.config_manager.is_first_run()
+        is_first_run = self._config_manager.is_first_run()
 
         if not is_first_run:
             self._set_worker_status(WorkerStatus.UPDATING)
 
         world_names_to_add, world_names_to_remove = (
-            self.config_manager.get_worlds_to_add_and_remove()
+            self._config_manager.get_worlds_to_add_and_remove()
         )
 
         tasks = []
         # 1. set up control channel
-        for world_name in world_names_to_add - self.config_manager.worlds_to_cancel:
-            world_info = self.config_manager.get_new_world_info(world_name)
+        for world_name in world_names_to_add - self._config_manager.worlds_to_cancel:
+            world_info = self._config_manager.get_new_world_info(world_name)
 
-            task = self.config_manager.schedule_world_cfg(
+            task = self._config_manager.schedule_world_cfg(
                 world_info, self._configure_control_channel
             )
             tasks.append(task)
@@ -194,9 +184,9 @@ class Pipeline:
 
         tasks = []
         # 2. set up multiworld
-        for world_name in world_names_to_add - self.config_manager.worlds_to_cancel:
-            world_info = self.config_manager.get_new_world_info(world_name)
-            task = self.config_manager.schedule_world_cfg(
+        for world_name in world_names_to_add - self._config_manager.worlds_to_cancel:
+            world_info = self._config_manager.get_new_world_info(world_name)
+            task = self._config_manager.schedule_world_cfg(
                 world_info, self._configure_multiworld
             )
             tasks.append(task)
@@ -206,22 +196,23 @@ class Pipeline:
         await asyncio.gather(*tasks)
 
         # update world_info for added worlds
-        self.config_manager.update_world_infos(
-            world_names_to_add - self.config_manager.worlds_to_cancel
+        self._config_manager.update_world_infos(
+            world_names_to_add - self._config_manager.worlds_to_cancel
         )
 
-        worlds_to_add = self.config_manager.get_worlds_to_add(
-            world_names_to_add - self.config_manager.worlds_to_cancel
+        worlds_to_add = self._config_manager.get_worlds_to_add(
+            world_names_to_add - self._config_manager.worlds_to_cancel
         )
 
-        worlds_to_remove = self.config_manager.get_worlds_to_remove(
+        worlds_to_remove = self._config_manager.get_worlds_to_remove(
             world_names_to_remove
         )
 
+        spec = self._config_manager.get_spec()
         # configure router with worlds to add and remove
-        await self.router.configure(
-            self.spec,
-            self.device,
+        await self._router.configure(
+            spec,
+            self._device,
             worlds_to_add,
             worlds_to_remove,
         )
@@ -235,22 +226,22 @@ class Pipeline:
             # sending requests to failed / removed worker
             # received needs to keep waiting for requests until an exception is raised
 
-            self.config_manager.remove_world_info(world_info.name)
+            self._config_manager.remove_world_info(world_info.name)
 
         worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
 
-        self.config_manager.unblock_next_config()
+        self._config_manager.unblock_next_config()
         self._set_n_send_worker_status(worker_status)
 
-        self.cfg_event.set()
+        self._initial_cfg_event.set()
 
-    def _initialize_worker(self, modelir: ModelIR):
-        self.stage = Stage(
-            self.spec.stage.id,
+    def _initialize_worker(self, modelir: ModelIR, spec: ServeConfig):
+        self._stage = Stage(
+            spec.stage.id,
             modelir=modelir,
-            start=self.spec.stage.start,
-            end=self.spec.stage.end,
-            device=self.device,
+            start=spec.stage.start,
+            end=spec.stage.end,
+            device=self._device,
             max_inflight=self.max_inflight,
         )
 
@@ -327,7 +318,7 @@ class Pipeline:
 
         end_time = time.perf_counter()
         print(
-            f"Server recv done, Job: {self.spec.job_id} elapsed time: {end_time - start_time}"
+            f"Server recv done, Job: {self._job_id} elapsed time: {end_time - start_time}"
         )
 
         self._set_n_send_worker_status(WorkerStatus.SERVING_DONE)
@@ -337,6 +328,8 @@ class Pipeline:
         # so that we can collect metrics at _server_send and _server_recv tasks
         self._mc.enable_in_router(False)
 
+        spec = self._config_manager.get_spec()
+
         # TODO: we read data directly from a dataset right now.
         #       in the future, we need to take dataset from stream as well.
         # Loading dataset with some settings might take some time and block
@@ -345,22 +338,22 @@ class Pipeline:
         # For this we need to run configure() in a thread so the event loop stays responsive
         await asyncio.to_thread(
             self.dataset.configure,
-            self.device,
-            self.spec.reqgen_config.params.in_memory,
-            self.spec.reqgen_config.params.replay,
+            self._device,
+            spec.reqgen_config.params.in_memory,
+            spec.reqgen_config.params.replay,
         )
 
-        self.req_generator = GeneratorFactory.get(self.spec.reqgen_config.sort)
+        self.req_generator = GeneratorFactory.get(spec.reqgen_config.sort)
         self.req_generator.initialize(
             self.dataset,
-            self.spec.reqgen_config.params,
+            spec.reqgen_config.params,
             self._micro_batch_size,
             self._mc,
         )
 
         # send and recv asynchronously
-        send_task = asyncio.create_task(self._server_send(self.router))
-        recv_task = asyncio.create_task(self._server_recv(self.router))
+        send_task = asyncio.create_task(self._server_send(self._router))
+        recv_task = asyncio.create_task(self._server_recv(self._router))
 
         await asyncio.gather(*[send_task, recv_task])
 
@@ -371,25 +364,25 @@ class Pipeline:
 
     async def _run_worker(self):
         while True:
-            inputs, seqno = await self.router.recv()
+            inputs, seqno = await self._router.recv()
             with torch.inference_mode():
-                outputs, next_layer = self.stage.predict(seqno, **inputs)
-            await self.router.send(seqno, outputs, next_layer)
+                outputs, next_layer = self._stage.predict(seqno, **inputs)
+            await self._router.send(seqno, outputs, next_layer)
 
     async def _collect_metrics(self):
         while True:
             metrics = self._mc.retrieve()
-            msg = Message(MessageType.METRICS, metrics, self.job_id)
-            self.wcomm.send(msg)
+            msg = Message(MessageType.METRICS, metrics, self._job_id)
+            self._wcomm.send(msg)
 
             # wait for an interval
-            await asyncio.sleep(self.metrics_interval)
+            await asyncio.sleep(METRICS_INTERVAL)
 
     def _terminate_worker(self) -> None:
         """Terminate worker."""
         status = WorkerStatus.TERMINATED
-        resp = Message(MessageType.STATUS, status, self.job_id)
-        self.wcomm.send(resp)
+        resp = Message(MessageType.STATUS, status, self._job_id)
+        self._wcomm.send(resp)
 
         sys.stdout.flush()
         # TODO: This forcibly terminates the entire process.
@@ -399,7 +392,7 @@ class Pipeline:
     async def _handle_message(self) -> None:
         """Handle a message from an agent."""
         while True:
-            msg = await self.wcomm.recv()
+            msg = await self._wcomm.recv()
 
             match msg.type:
                 case MessageType.CONFIG:
@@ -409,13 +402,15 @@ class Pipeline:
                     self._terminate_worker()
 
                 case MessageType.TERMINATE:
-                    await self.router.wait_on_term_ready()
+                    await self._router.wait_on_term_ready()
                     self._terminate_worker()
 
                 case MessageType.CHECK_LOOP:
                     failed_wids = msg.content
-                    suspended_worlds = self._inspector.get_suspended_worlds(failed_wids)
-                    self.router.handle_suspended_worlds(suspended_worlds)
+                    suspended_worlds = self._config_manager.get_suspended_worlds(
+                        failed_wids
+                    )
+                    self._router.handle_suspended_worlds(suspended_worlds)
 
                     # if failed wids is empty, the job is recovered
                     # and we can reset inflight requests and tx event
@@ -425,8 +420,8 @@ class Pipeline:
                 case MessageType.FINISH_JOB:
                     # TODO: do the clean-up before transitioning to DONE
                     status = WorkerStatus.DONE
-                    resp = Message(MessageType.STATUS, status, self.job_id)
-                    self.wcomm.send(resp)
+                    resp = Message(MessageType.STATUS, status, self._job_id)
+                    self._wcomm.send(resp)
 
                     sys.stdout.flush()
                     # TODO: This forcibly terminates the entire process.
@@ -438,13 +433,11 @@ class Pipeline:
         if spec is None:
             return
 
+        await self._config_manager.handle_new_spec(spec)
+
         self._configure_variables(spec)
 
-        self._inspector.configure(self.spec)
-
-        self._initialize_once()
-
-        await self.config_manager.handle_new_spec(spec)
+        self._initialize_once(spec)
 
         # run configure as a separate task since we need to unblock receiving
         # a new config to be processed when current configuration is finished
@@ -452,29 +445,28 @@ class Pipeline:
 
     def _configure_variables(self, spec: ServeConfig) -> None:
         """Set variables that need to be updated."""
-        self.spec = spec
         self.max_inflight = spec.max_inflight
 
-    def _initialize_once(self) -> None:
+    def _initialize_once(self, spec: ServeConfig) -> None:
         if self._initialized:
             return
 
         # specify batch size once
-        self._micro_batch_size = self.spec.micro_batch_size
+        self._micro_batch_size = spec.micro_batch_size
         self._mc.set_batch_size(self._micro_batch_size)
 
-        self._init_assets()
-        self._prepare_worker()
+        self._init_assets(spec)
+        self._prepare_worker(spec)
 
         self._initialized = True
 
-    def _init_assets(self) -> None:
+    def _init_assets(self, spec: ServeConfig) -> None:
         # load model meta info from zoo
-        mmd = Zoo.get_model_metadata(self.spec.model)
+        mmd = Zoo.get_model_metadata(spec.model)
         (path, name, split) = (
-            self.spec.dataset.path,
-            self.spec.dataset.name,
-            self.spec.dataset.split,
+            spec.dataset.path,
+            spec.dataset.name,
+            spec.dataset.split,
         )
 
         # load dataset
@@ -485,25 +477,26 @@ class Pipeline:
             split=split,
             micro_batch_size=self._micro_batch_size,
         )
-        self.device = torch.device(self.spec.device)
+        self._device = torch.device(spec.device)
 
         # load model intermediate representation
         self.modelir = ModelIR(mmd)
 
-    def _prepare_worker(self) -> None:
-        if self.spec.is_server:
+    def _prepare_worker(self, spec: ServeConfig) -> None:
+        if spec.is_server:
             self._predict_fn = self.modelir.predict_fn
         else:
-            self._initialize_worker(self.modelir)
+            self._initialize_worker(self.modelir, spec)
 
     async def run(self) -> None:
         """Run pipeline."""
         _ = asyncio.create_task(self._collect_metrics())
         _ = asyncio.create_task(self._handle_message())
-        await self.cfg_event.wait()
+
+        await self._initial_cfg_event.wait()
 
         try:
-            if self.spec.is_server:
+            if self._config_manager.is_server():
                 await self._run_server()
             else:
                 await self._run_worker()
