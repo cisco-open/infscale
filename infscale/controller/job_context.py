@@ -49,7 +49,8 @@ from infscale.controller.planner import DemandData
 if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
-MAX_RECOVER_RETRIES = 8  # max retries with exponential backoff.
+MAX_RES_RECOVER_RETRIES = 8  # max resources retries with exponential backoff.
+MAX_DEPLOY_RECOVER_RETRIES = 5  # maximum deploy recovery retries
 
 
 logger = None
@@ -412,17 +413,17 @@ class RecoveryState(BaseJobState):
     def __init__(self, context: JobContext):
         """Initialize RecoveryState instance."""
         super().__init__(context)
-        self.recovery_task = asyncio.create_task(self._start_recovery())
+        self._recovery_task = asyncio.create_task(self._start_recovery())
+        self._recovery_count = 1
 
     def on_exit(self) -> None:
         """Cleanup when the state gets destroyed."""
-        self.recovery_task.cancel()
+        self._recovery_task.cancel()
 
     async def _assign_resources_for_recovery(
         self, failed_wrk_ids: set[str]
     ) -> dict[str, str]:
         """Assign resources to workers for recovery."""
-        max_retries = MAX_RECOVER_RETRIES
         delay = 1
         retries = 0
         wrk_resources_map = {}
@@ -435,7 +436,7 @@ class RecoveryState(BaseJobState):
 
             retries += 1
 
-            if retries >= max_retries:
+            if retries >= MAX_RES_RECOVER_RETRIES:
                 break
 
             await asyncio.sleep(delay)
@@ -445,6 +446,12 @@ class RecoveryState(BaseJobState):
 
         return wrk_resources_map
 
+    def _get_failed_wrk_ids(self) -> set[str]:
+        """Return a set of failed worker ids."""
+        return {
+            k for k, v in self.context.wrk_status.items() if v == WorkerStatus.FAILED
+        }
+
     async def _start_recovery(self) -> None:
         """Start recovery tasks for failed workers."""
         # in the case of no available agents, transition to failed.
@@ -453,9 +460,7 @@ class RecoveryState(BaseJobState):
 
             return
 
-        failed_wrk_ids = {
-            k for k, v in self.context.wrk_status.items() if v == WorkerStatus.FAILED
-        }
+        failed_wrk_ids = self._get_failed_wrk_ids()
 
         wrk_resources_map = await self._assign_resources_for_recovery(failed_wrk_ids)
 
@@ -639,13 +644,22 @@ class RecoveryState(BaseJobState):
 
     async def cond_recovery(self):
         """Handle the transition to failed."""
-        # there's no support for subsequent worker failure
-        # while recovering, if there is a new worker failure
-        # we send a stop command to agents to kill all workers
-        # and transition the job to failed
-        # TODO: add support for multiple worker failure
-        await self.context.send_stop_command()
-        self.context.set_state(JobStateEnum.FAILED)
+        if self._recovery_count == MAX_DEPLOY_RECOVER_RETRIES:
+            failed_wrk_ids = self._get_failed_wrk_ids()
+            await self._remove_pipeline_n_update(failed_wrk_ids, self.context._cur_cfg)
+
+            self._recovery_count = 0
+
+            return
+
+        self._recovery_count += 1
+
+        # cancel previous recovery task if still running
+        if self._recovery_task and not self._recovery_task.done():
+            self._recovery_task.cancel()
+
+        # start a new recovery cycle with all current failed workers
+        self._recovery_task = asyncio.create_task(self._start_recovery())
 
 
 class JobContext:

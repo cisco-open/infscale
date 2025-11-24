@@ -40,19 +40,25 @@ class ConfigManager:
         self._new_world_infos: dict[str, WorldInfo] = {}
         self.worlds_to_cancel = set()
         self._inspector = PipelineInspector()
+        self.has_pending_cfg = False
 
     async def handle_new_spec(self, new_spec: ServeConfig) -> None:
         """Handle new spec."""
+        self.has_pending_cfg = True
+
         new_worlds_to_configure = ServeConfig.get_worlds_to_configure(
             self._spec, new_spec
         )
+        worlds_to_remove = ServeConfig.get_worlds_to_remove(self._spec, new_spec)
 
         # on the first run, both new and cur will be empty sets
         new = self._new_world_infos.keys()
         cur = self._curr_world_infos.keys()
         curr_worlds_to_configure = new - cur
 
-        self.worlds_to_cancel = new_worlds_to_configure & curr_worlds_to_configure
+        self.worlds_to_cancel = (
+            new_worlds_to_configure & curr_worlds_to_configure
+        ) | worlds_to_remove
 
         if len(self.worlds_to_cancel):
             await self._cancel_world_configuration(self.worlds_to_cancel)
@@ -64,6 +70,7 @@ class ConfigManager:
         self._new_world_infos = self._build_world_infos(new_spec)
         self._spec = new_spec
         self.worlds_to_cancel = set()
+        self.has_pending_cfg = False
 
         self._inspector.configure(self._spec)
 

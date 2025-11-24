@@ -228,10 +228,12 @@ class Pipeline:
 
             self._config_manager.remove_world_info(world_info.name)
 
-        worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
+        if not self._config_manager.has_pending_cfg:
+            # only update and send worker status if there is no pending request
+            worker_status = WorkerStatus.RUNNING if is_first_run else WorkerStatus.UPDATED
+            self._set_n_send_worker_status(worker_status)
 
         self._config_manager.unblock_next_config()
-        self._set_n_send_worker_status(worker_status)
 
         self._initial_cfg_event.set()
 
