@@ -110,6 +110,25 @@ class Planner:
 
         self.pipeline_data: dict[str, list[PipelineData]] = {}
 
+    def update_pipeline_data(self, wids_to_remove: set[str], job_id: str) -> None:
+        """Update pipeline data based on worker ids."""
+        if job_id not in self.pipeline_data:
+            return
+
+        updated_pipelines = []
+
+        for pipeline in self.pipeline_data[job_id]:
+            # create a new set of worker IDs, excluding the ones to remove
+            remaining_workers = pipeline.worker_ids - wids_to_remove
+
+            # if the pipeline still has workers, update it and add it to our new list
+            if remaining_workers:
+                pipeline.worker_ids = remaining_workers
+                updated_pipelines.append(pipeline)
+
+        # replace the old list with the new, filtered list
+        self.pipeline_data[job_id] = updated_pipelines
+
     def build_config(
         self,
         source: JobConfig,

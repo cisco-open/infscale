@@ -473,6 +473,8 @@ class RecoveryState(BaseJobState):
     ) -> None:
         """Remove pipeline and update job."""
         updated_cfg = JobConfig.remove_pipeline(cfg, failed_wrk_ids)
+        worker_diff = JobConfig.get_workers_diff(cfg, updated_cfg)
+        self.context.ctrl.planner.update_pipeline_data(worker_diff, self.context.job_id)
 
         self.context._reconcile_wrk_status(cfg, updated_cfg)
 
