@@ -171,10 +171,9 @@ def draw_graph(
 
     ax.set_axis_off()
     plt.tight_layout()
+
     if output_path:
-        # save PNG in the same folder as this script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        output_file = os.path.join(script_dir, f"{file_name}.png")
+        output_file = os.path.join(output_path, f"{file_name}.png")
         plt.savefig(output_file, dpi=300, bbox_inches="tight")
         print(f"Graph saved at: {output_file}")
 
@@ -200,7 +199,9 @@ def main():
         return
 
     graph, worker_stage = build_graph(config)
-    output_path = os.path.dirname(os.path.abspath(__file__)) if args.save else None
+    config_dir = os.path.dirname(os.path.abspath(args.config_path))
+    output_path = config_dir if args.save else None
+
     try:
         draw_graph(graph, worker_stage, file_name, output_path)
     except nx.exception.NetworkXError as e:
