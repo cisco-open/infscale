@@ -89,6 +89,7 @@ class Channel:
             )
             setup_done.set()
         except Exception as e:
+            logger.error(f"failed to start control channel server: {e}")
             condition = self._status != WorkerStatus.UPDATING
             kill_worker(e, condition)
 

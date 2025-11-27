@@ -103,13 +103,13 @@ class Pipeline:
         except asyncio.CancelledError:
             logger.warning(f"multiworld configuration cancelled for {world_info.name}")
         except Exception as e:
-            logger.error(f"failed to initialize a multiworld {name}: {e}")
+            logger.error(f"failed to initialize multiworld {name}: {e}")
             condition = self._status != WorkerStatus.UPDATING
             kill_worker(e, condition)
 
             return
 
-        logger.debug(f"done initializing multiworld {name}")
+        logger.info(f"initialized multiworld {name}")
 
     def _set_worker_status(self, status: WorkerStatus) -> None:
         """Set worker status in pipeline and channel."""

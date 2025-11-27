@@ -261,15 +261,15 @@ class Agent:
         """Reserve available ports based on number of worlds."""
         available_ports = []
         while len(available_ports) < port_count:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                try:
-                    s.bind((self.ip_address, 0))
-                    port = s.getsockname()[1]
-                except OSError:
-                    pass
-                else:
-                    self.world_ports[port] = s
-                    available_ports.append(port)
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.bind((self.ip_address, 0))
+                port = s.getsockname()[1]
+            except OSError:
+                s.close()
+            else:
+                self.world_ports[port] = s
+                available_ports.append(port)
 
         return available_ports
 
