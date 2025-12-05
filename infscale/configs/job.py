@@ -184,6 +184,24 @@ class ServeConfig:
 
         return deploy_worlds | updated_worlds
 
+    @staticmethod
+    def get_worlds_to_remove(curr_spec: ServeConfig, new_spec: ServeConfig) -> set[str]:
+        """Compare two specs and return worlds to remove."""
+        # if current spec is not available,
+        # return worlds from the new spec.
+        if curr_spec is None:
+            return set()
+
+        helper = ServeConfigHelper()
+
+        new_worlds = helper._get_worlds(new_spec)
+        new_world_names = set(new_worlds.keys())
+
+        curr_worlds = helper._get_worlds(curr_spec)
+        curr_world_names = set(curr_worlds.keys())
+
+        return curr_world_names - new_world_names
+
 
 class ServeConfigHelper:
     """Class for defining helper methods for serve config."""

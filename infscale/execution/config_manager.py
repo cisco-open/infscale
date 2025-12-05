@@ -46,13 +46,16 @@ class ConfigManager:
         new_worlds_to_configure = ServeConfig.get_worlds_to_configure(
             self._spec, new_spec
         )
+        worlds_to_remove = ServeConfig.get_worlds_to_remove(self._spec, new_spec)
 
         # on the first run, both new and cur will be empty sets
         new = self._new_world_infos.keys()
         cur = self._curr_world_infos.keys()
         curr_worlds_to_configure = new - cur
 
-        self.worlds_to_cancel = new_worlds_to_configure & curr_worlds_to_configure
+        self.worlds_to_cancel = (
+            new_worlds_to_configure & curr_worlds_to_configure
+        ) | worlds_to_remove
 
         if len(self.worlds_to_cancel):
             await self._cancel_world_configuration(self.worlds_to_cancel)
@@ -69,6 +72,10 @@ class ConfigManager:
 
         # block handling new spec after doing cleanup for the current one
         self._config_event.clear()
+
+    def has_pending_cfg(self) -> bool:
+        """Return bool wether there is a pending config or not."""
+        return len(self.worlds_to_cancel) > 0
 
     def get_spec(self) -> ServeConfig:
         """Return spec."""
