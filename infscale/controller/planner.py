@@ -110,6 +110,11 @@ class Planner:
 
         self.pipeline_data: dict[str, list[PipelineData]] = {}
 
+    def remove_pipeline_data(self, job_id: str) -> None:
+        """Remove pipeline data for job id."""
+        if job_id in self.pipeline_data:
+            del self.pipeline_data[job_id]
+
     def update_pipeline_data(self, wids_to_remove: set[str], job_id: str) -> None:
         """Update pipeline data based on worker ids."""
         if job_id not in self.pipeline_data:
