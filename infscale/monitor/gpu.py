@@ -15,7 +15,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 """GPU monitoring class."""
-import asyncio
 import dataclasses
 import json
 from dataclasses import dataclass
@@ -36,8 +35,6 @@ from pynvml import (
 from infscale import get_logger
 from infscale.proto import management_pb2 as pb2
 
-
-DEFAULT_INTERVAL = 10  # 10 seconds
 
 logger = None
 
@@ -85,7 +82,7 @@ class VramStat:
 class GpuMonitor:
     """GpuMonitor class."""
 
-    def __init__(self, interval: int = DEFAULT_INTERVAL):
+    def __init__(self):
         """Initialize GpuMonitor instance."""
         global logger
         logger = get_logger()
@@ -99,12 +96,6 @@ class GpuMonitor:
             logger.warning("Failed to initialize NVML. No GPU available.")
             logger.debug(f"Exception: {e}")
 
-        self.interval = interval
-
-        self.mon_event = asyncio.Event()
-        self.computes = list()
-        self.mems = list()
-
     def get_metrics(self) -> tuple[list[GpuStat], list[VramStat]]:
         """Return gpu and vram statistics."""
         if not self.gpu_available:
@@ -114,38 +105,6 @@ class GpuMonitor:
         computes, mems = self._get_gpu_stats()
 
         return computes, mems
-
-    async def metrics(self) -> tuple[list[GpuStat], list[VramStat]]:
-        """Return statistics on GPU resources."""
-        # Wait until data refreshes
-        logger.debug("wait for monitor event")
-        await self.mon_event.wait()
-        logger.debug("monitor event is set")
-        # block metrics() call again
-        self.mon_event.clear()
-
-        return self.computes, self.mems
-
-    async def start(self):
-        """Start to monitor GPU statistics - utilization and vram usage.
-
-        utilization reports device's utilization.
-        it's not a per-application metric.
-        vram usage is also an aggregated metric, not a per-application metric.
-        """
-        if not self.gpu_available:
-            logger.info("no GPU available, skipping metrics collection.")
-            return
-
-        while True:
-            computes, mems = self._get_gpu_stats()
-
-            self.mems = mems
-            self.computes = computes
-            # unlbock metrics() call
-            self.mon_event.set()
-
-            await asyncio.sleep(self.interval)
 
     def _get_gpu_stats(self) -> tuple[list[GpuStat], list[VramStat]]:
         """Return GPU and VRam resources."""

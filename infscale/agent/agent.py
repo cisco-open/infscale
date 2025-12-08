@@ -219,9 +219,6 @@ class Agent:
         # create a task to send heart beat periodically
         _ = asyncio.create_task(self.heart_beat())
 
-        # create a task to send status in an event-driven fashion
-        _ = asyncio.create_task(self.report())
-
         # create a task to wait for controller commands
         _ = asyncio.create_task(self.fetch_command())
 
@@ -311,6 +308,27 @@ class Agent:
                 self.worker_mgr._signal_terminate_wrkrs(
                     action.job_id, msg_type=MessageType.FORCE_TERMINATE
                 )
+
+            case CommandAction.GET_RESOURCES_INFO:
+                gpu_stats, vram_stats = self.gpu_monitor.get_metrics()
+                cpu_stats, dram_stats = self.cpu_monitor.get_metrics()
+
+                gpu_msg_list = GpuMonitor.stats_to_proto(gpu_stats)
+                vram_msg_list = GpuMonitor.stats_to_proto(vram_stats)
+                cpu_stats_msg = CpuMonitor.stats_to_proto(cpu_stats)
+                dram_stats_msg = CpuMonitor.stats_to_proto(dram_stats)
+
+                status_msg = pb2.ResourceStats(
+                    id=self.id,
+                    gpu_stats=gpu_msg_list,
+                    vram_stats=vram_msg_list,
+                    cpu_stats=cpu_stats_msg,
+                    dram_stats=dram_stats_msg,
+                )
+                try:
+                    self.stub.update_resources(status_msg)
+                except Exception as e:
+                    logger.error(f"Failed to update resources {e}")
 
             case CommandAction.SETUP:
                 port_count = int.from_bytes(action.manifest, byteorder="big")
@@ -415,42 +433,10 @@ class Agent:
         )
         self.worker_mgr._signal_terminate_wrkrs(job_id, True, stop_wrkrs, msg_type)
 
-    async def report(self):
-        """Report resource stats to controller."""
-        while True:
-            gpu_stats, vram_stats = await self.gpu_monitor.metrics()
-            cpu_stats, dram_stats = await self.cpu_monitor.metrics()
-
-            gpu_msg_list = GpuMonitor.stats_to_proto(gpu_stats)
-            vram_msg_list = GpuMonitor.stats_to_proto(vram_stats)
-            cpu_stats_msg = CpuMonitor.stats_to_proto(cpu_stats)
-            dram_stats_msg = CpuMonitor.stats_to_proto(dram_stats)
-
-            status_msg = pb2.ResourceStats(
-                id=self.id,
-                gpu_stats=gpu_msg_list,
-                vram_stats=vram_msg_list,
-                cpu_stats=cpu_stats_msg,
-                dram_stats=dram_stats_msg,
-            )
-            try:
-                self.stub.update_resources(status_msg)
-            except Exception as e:
-                logger.error(f"Failed to update resources {e}")
-                break
-
     def monitor(self):
         """Monitor workers and resources."""
         _ = asyncio.create_task(self._monitor_status())
         _ = asyncio.create_task(self._monitor_metrics())
-        _ = asyncio.create_task(self._monitor_gpu())
-        _ = asyncio.create_task(self._monitor_cpu())
-
-    async def _monitor_gpu(self):
-        await self.gpu_monitor.start()
-
-    async def _monitor_cpu(self):
-        await self.cpu_monitor.start()
 
     async def run(self):
         """Start the agent."""
