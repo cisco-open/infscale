@@ -148,6 +148,7 @@ class AgentContext:
         self.grpc_ctx_event = asyncio.Event()
 
         self.alive: bool = False
+        self.resources_ready = False
         self.timer: Timer = None
 
         self.resources = AgentResources()

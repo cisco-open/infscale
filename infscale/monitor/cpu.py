@@ -59,14 +59,6 @@ class DRAMStats:
 class CpuMonitor:
     """CpuMonitor class."""
 
-    def __init__(self, interval: int = DEFAULT_INTERVAL):
-        """Initialize CpuMonitor instance."""
-        self.interval = interval
-
-        self.mon_event = asyncio.Event()
-        self.cpu_stats = None
-        self.dram_stats = None
-
     def get_metrics(self) -> tuple[CPUStats, DRAMStats]:
         """Start to monitor CPU statistics."""
         # total number of CPUs (logical)
@@ -86,27 +78,6 @@ class CpuMonitor:
         )
 
         return cpu_stats, dram_stats
-
-    async def metrics(self) -> tuple[CPUStats, DRAMStats]:
-        """Return statistics on CPU and DRAM resources."""
-        # Wait until data refreshes
-        await self.mon_event.wait()
-        # block metrics() call again
-        self.mon_event.clear()
-
-        return self.cpu_stats, self.dram_stats
-
-    async def start(self):
-        """Start to monitor CPU statistics."""
-        while True:
-            cpu_stats, dram_stats = self.get_metrics()
-
-            self.cpu_stats = cpu_stats
-            self.dram_stats = dram_stats
-            # unlbock metrics() call
-            self.mon_event.set()
-
-            await asyncio.sleep(self.interval)
 
     @staticmethod
     def stats_to_proto(

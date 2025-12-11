@@ -72,7 +72,9 @@ class AgentMetaData:
         self.num_new_worlds = num_new_worlds
         self.ports = ports
         self.job_setup_event = asyncio.Event()
+        self.resources_event = asyncio.Event()
         self.ready_to_config = False
+        self.resources_updated = False
         self.wids_to_deploy: set[str] = set()
         self.assignment_coll = AssignmentCollection()
         self.past_assignment_coll = AssignmentCollection()
@@ -1396,6 +1398,12 @@ class JobContext:
         # (e.g., RunningState, RecoveryState, etc).
         self._manage_agent_metadata()
 
+        # get latest agents resources
+        await self.ctrl.get_agents_resources()
+
+        # wait to gather resources from all agents
+        await self.ctrl.agents_resources_event.wait()
+
         try:
             self.process_cfg()
         except InvalidConfig as e:
@@ -1463,6 +1471,11 @@ class JobContext:
         # Call it only in methods of a state instance
         # (e.g., ReadyState, CompleteState, etc).
         self._manage_agent_metadata()
+
+        await self.ctrl.get_agents_resources()
+        
+        # wait to gather resources from all agents
+        await self.ctrl.agents_resources_event.wait()
 
         self._check_agent_info()
 

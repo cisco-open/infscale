@@ -61,6 +61,8 @@ class Controller:
         self.port = config.ctrl_port
 
         self.agent_contexts: dict[str, AgentContext] = dict()
+        # event to update agent resources
+        self.agents_resources_event = asyncio.Event()
         self.job_contexts: dict[str, JobContext] = dict()
 
         self.apiserver = ApiServer(self, config.api_port)
@@ -129,6 +131,19 @@ class Controller:
         agent_context.update_resource_statistics(
             gpu_stats, vram_stats, cpu_stats, dram_stats
         )
+
+        agent_context.resources_ready = True
+
+        if all(ctx.resources_ready for ctx in self.agent_contexts.values()):
+            self.agents_resources_event.set()
+            self._reset_agent_contexts_res_flag()
+
+        self.agents_resources_event.clear()
+
+    def _reset_agent_contexts_res_flag(self) -> None:
+        """Reset agent contexts resources flag."""
+        for agent_context in self.agent_contexts.values():
+            agent_context.resources_ready = False
 
     async def handle_wrk_status(self, req: pb2.WorkerStatus) -> None:
         """Handle worker status."""
@@ -221,6 +236,19 @@ class Controller:
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
         await context.write(payload)
+
+    async def get_agents_resources(self) -> None:
+        """Send a request to agents to fetch resources."""
+        tasks = []
+        for agent_id in self.agent_contexts.keys():
+            agent_context = self.agent_contexts[agent_id]
+            context = agent_context.get_grpc_ctx()
+
+            payload = pb2.Action(type=CommandAction.GET_RESOURCES)
+            task = context.write(payload)
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
 
     async def send_config_to_agent(
         self, agent_id: str, cfg: JobConfig, action: CommandActionModel
