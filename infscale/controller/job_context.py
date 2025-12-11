@@ -428,6 +428,7 @@ class RecoveryState(BaseJobState):
         wrk_resources_map = {}
 
         while True:
+            self.context._manage_agent_metadata()
             wrk_resources_map = self._get_wrk_resources_map(failed_wrk_ids)
 
             if len(wrk_resources_map) == len(failed_wrk_ids):
@@ -608,9 +609,12 @@ class RecoveryState(BaseJobState):
             if agent_id == curr_agent_id:
                 continue
 
-            return self._assign_available_gpu_to_worker(
+            assign_success = self._assign_available_gpu_to_worker(
                 agent_id, resources, wrk_id, wrk_agent_map, agent_gpu_map
             )
+            
+            if assign_success:
+                return True
 
         return False
 
