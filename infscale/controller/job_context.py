@@ -428,6 +428,7 @@ class RecoveryState(BaseJobState):
         wrk_resources_map = {}
 
         while True:
+            self.context.manage_agent_metadata()
             wrk_resources_map = self._get_wrk_resources_map(failed_wrk_ids)
 
             if len(wrk_resources_map) == len(failed_wrk_ids):
@@ -608,9 +609,12 @@ class RecoveryState(BaseJobState):
             if agent_id == curr_agent_id:
                 continue
 
-            return self._assign_available_gpu_to_worker(
+            assign_success = self._assign_available_gpu_to_worker(
                 agent_id, resources, wrk_id, wrk_agent_map, agent_gpu_map
             )
+
+            if assign_success:
+                return True
 
         return False
 
@@ -1207,7 +1211,7 @@ class JobContext:
         }
         return state_mapping[state_enum]
 
-    def _manage_agent_metadata(self) -> None:
+    def manage_agent_metadata(self) -> None:
         """Manage agent metadata by create/update/delete."""
         agent_contexts = self.ctrl.agent_contexts
 
@@ -1380,7 +1384,7 @@ class JobContext:
         # DO NOT call this method in job_context instance or any other places.
         # Call it only in methods of a state instance
         # (e.g., RunningState, RecoveryState, etc).
-        self._manage_agent_metadata()
+        self.manage_agent_metadata()
 
         try:
             self.process_cfg()
@@ -1448,7 +1452,7 @@ class JobContext:
         # DO NOT call this method in job_context instance or any other places.
         # Call it only in methods of a state instance
         # (e.g., ReadyState, CompleteState, etc).
-        self._manage_agent_metadata()
+        self.manage_agent_metadata()
 
         self._check_agent_info()
 
