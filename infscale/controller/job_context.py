@@ -243,6 +243,11 @@ class StartingState(BaseJobState):
             self.context._cur_cfg = self.context._new_cfg
             self.context.set_state(JobStateEnum.RUNNING)
 
+    async def cond_failing(self):
+        """Handle the transition to failing."""
+        await self.context.send_stop_command()
+        self.context.set_state(JobStateEnum.FAILING)
+
 
 class StoppedState(BaseJobState):
     """StoppedState class."""
@@ -745,7 +750,8 @@ class JobContext:
                 self._release_gpu_resource_by_worker_id(wid)
                 await self.send_check_loop_command()
 
-                if self._cur_cfg.recover:
+                # if failure happens while starting, current config is None
+                if self._cur_cfg is not None and self._cur_cfg.recover:
                     await self.cond_recovery()
 
                     return
