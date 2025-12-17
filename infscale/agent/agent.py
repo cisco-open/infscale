@@ -165,7 +165,7 @@ class Agent:
         if status not in valid:
             return
 
-        self.worker_mgr.remove_worker(wrk_id)
+        self.worker_mgr.remove_worker(wrk_id, job_id)
 
         if not self.worker_mgr.has_workers_for_job(job_id):
             self.job_mgr.cleanup(job_id)

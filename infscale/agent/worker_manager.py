@@ -17,6 +17,7 @@
 """worker_manager.py."""
 
 import asyncio
+from collections import defaultdict
 from dataclasses import dataclass
 from multiprocessing import connection
 
@@ -54,7 +55,9 @@ class WorkerManager:
         global logger
         logger = get_logger()
 
-        self._workers: dict[int, WorkerMetaData] = {}
+        # agent can deploy workers from multiple jobs
+        # we group workers by job id
+        self._workers: defaultdict[str, dict[int, WorkerMetaData]] = defaultdict(dict)
         self.status_q: asyncio.Queue[WorkerStatusMessage] = asyncio.Queue()
         self.metrics_q: asyncio.Queue[tuple[str, str, PerfMetrics]] = asyncio.Queue()
 
@@ -72,30 +75,27 @@ class WorkerManager:
         as a dictionary. At the end it returns the worker metadata instance.
         """
         worker = WorkerMetaData(pipe, process, job_id, stage_id, status)
-        self._workers[worker.pipe.fileno()] = worker
+        fd = pipe.fileno()
+
+        self._workers[job_id][fd] = worker
 
         return worker
 
     def has_workers_for_job(self, job_id: str) -> bool:
         """Return True if there are any workers assigned to the given job ID."""
-        return any(worker.job_id == job_id for worker in self._workers.values())
+        return len(self._workers[job_id]) > 0
 
     def get_workers_by_job_id(self, job_id: str) -> dict[str, WorkerMetaData]:
         """Return workers that match job_id."""
-        results = {}
-        for v in self._workers.values():
-            if v.job_id == job_id:
-                results[v.id] = v
-
-        return results
+        return {w.id: w for w in self._workers[job_id].values()}
 
     def get_workers(
         self, job_id: str, worker_ids: set[str]
     ) -> dict[str, WorkerMetaData]:
         """Return workers that match job_id and id in worker_ids."""
         results = {}
-        for v in self._workers.values():
-            if v.job_id == job_id and v.id in worker_ids:
+        for v in self._workers[job_id].values():
+            if v.id in worker_ids:
                 results[v.id] = v
 
         return results
@@ -137,11 +137,11 @@ class WorkerManager:
                 # so we only need to ignore this error.
                 pass
 
-    def remove_worker(self, wrk_id: str) -> None:
+    def remove_worker(self, wrk_id: str, job_id: str) -> None:
         """Remove worker related data."""
-        for k, v in list(self._workers.items()):
+        for k, v in list(self._workers[job_id].items()):
             if wrk_id == v.id:
-                del self._workers[k]
+                del self._workers[job_id][k]
 
     def _handle_message(
         self, message: Message, worker: WorkerMetaData, fd: int
@@ -159,13 +159,17 @@ class WorkerManager:
 
     def _handle_status(self, message: Message, fd: int) -> None:
         """Handle status update from Workers."""
-        if fd not in self._workers:
+        if fd not in self._workers[message.job_id]:
             return
 
         self._update_worker_status(message, fd)
 
     def _handle_metrics(self, message: Message, fd: int) -> None:
-        wrk = self._workers[fd]
+        """Handle metrics update from workers."""
+        if fd not in self._workers[message.job_id]:
+            return
+
+        wrk = self._workers[message.job_id][fd]
         data = (message.job_id, wrk.id, message.content)
 
         loop = asyncio.get_running_loop()
@@ -173,13 +177,14 @@ class WorkerManager:
 
     def _update_worker_status(self, message: Message, fd: int) -> None:
         """Update Worker status."""
-        wrk = self._workers[fd]
-        msg = WorkerStatusMessage(wrk.id, message.job_id, message.content)
+        job_id, content = message.job_id, message.content
+        wrk = self._workers[job_id][fd]
+        msg = WorkerStatusMessage(wrk.id, job_id, content)
 
         loop = asyncio.get_running_loop()
         asyncio.run_coroutine_threadsafe(self.status_q.put(msg), loop)
 
-        self._workers[fd].status = message.content
+        self._workers[job_id][fd].status = content
 
     def _remove_reader(self, worker: WorkerMetaData) -> None:
         """Remove and close pipe reader."""
@@ -200,10 +205,7 @@ class WorkerManager:
         are terminated.
         """
         terminated = False
-        for worker in self._workers.values():
-            if worker.job_id != job_id:
-                continue
-
+        for worker in self._workers[job_id].values():
             if by_worker_id and worker.id not in worker_ids:
                 continue
 
