@@ -42,6 +42,10 @@ from infscale.controller.planner import Planner
 from infscale.monitor.cpu import CpuMonitor
 from infscale.monitor.gpu import GpuMonitor
 from infscale.proto import management_pb2 as pb2, management_pb2_grpc as pb2_grpc
+from infscale.utils.timer import Timer
+
+
+RESOURCES_INFO_TIMEOUT = 3  # time to wait for agent resources information
 
 
 logger = None
@@ -74,6 +78,8 @@ class Controller:
             self.autoscaler = AutoScaler(self)
 
         self.planner = Planner(config.job_plans, config.autoscale)
+        self.resources_info_timer: Timer = None
+        self.resources_info_evt = asyncio.Event()
 
     async def _start_server(self):
         server_options = [
@@ -129,6 +135,8 @@ class Controller:
         agent_context.update_resource_statistics(
             gpu_stats, vram_stats, cpu_stats, dram_stats
         )
+
+        self.resources_info_timer.renew()
 
     async def handle_wrk_status(self, req: pb2.WorkerStatus) -> None:
         """Handle worker status."""
@@ -221,6 +229,34 @@ class Controller:
         agent_context = self.agent_contexts[agent_id]
         context = agent_context.get_grpc_ctx()
         await context.write(payload)
+
+    async def get_agents_res_info(self) -> None:
+        """Get agents resources information."""
+        self.resources_info_evt.clear()
+        tasks = []
+
+        if self.resources_info_timer is not None:
+            return
+
+        for agent_id in self.agent_contexts.keys():
+            agent_context = self.agent_contexts[agent_id]
+            context = agent_context.get_grpc_ctx()
+
+            payload = pb2.Action(type=CommandAction.GET_RESOURCES_INFO)
+            task = context.write(payload)
+            tasks.append(task)
+
+        await asyncio.gather(*tasks)
+
+        if not self.resources_info_timer:
+            self.resources_info_timer = Timer(
+                RESOURCES_INFO_TIMEOUT, self._cleanup_res_info_evt
+            )
+
+    def _cleanup_res_info_evt(self) -> None:
+        """Unblock resources info event."""
+        self.resources_info_timer = None
+        self.resources_info_evt.set()
 
     async def send_config_to_agent(
         self, agent_id: str, cfg: JobConfig, action: CommandActionModel

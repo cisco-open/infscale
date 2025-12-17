@@ -1400,6 +1400,12 @@ class JobContext:
         # (e.g., RunningState, RecoveryState, etc).
         self.manage_agent_metadata()
 
+        # get latest agents resource information
+        await self.ctrl.get_agents_res_info()
+
+        # wait to gather resources information from all agents
+        await self.ctrl.resources_info_evt.wait()
+
         try:
             self.process_cfg()
         except InvalidConfig as e:
@@ -1467,6 +1473,12 @@ class JobContext:
         # Call it only in methods of a state instance
         # (e.g., ReadyState, CompleteState, etc).
         self.manage_agent_metadata()
+
+        # get latest agents resource information
+        await self.ctrl.get_agents_res_info()
+
+        # wait to gather resources information from all agents
+        await self.ctrl.resources_info_evt.wait()
 
         self._check_agent_info()
 

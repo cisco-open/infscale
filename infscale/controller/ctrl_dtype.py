@@ -38,6 +38,9 @@ class CommandAction(str, Enum):
     STOP = "stop"  # CLI - Controller stop command, ctrl<->agent on worker failure
     UPDATE = "update"  # CLI - Controller update command
     SETUP = "setup"  # ctrl<->agent setup job, assign port numbers to workers
+    GET_RESOURCES_INFO = (
+        "get_resources_info"  # ctrl<->agent request resources information
+    )
     FINISH_JOB = "finish_job"  # ctrl<->agent action to notify job's completion
     CHECK_LOOP = (
         "check_loop"  # ctrl<->agent action for workers to check their pipeline loops
