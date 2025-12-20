@@ -18,8 +18,17 @@ flow_graph:
       peers: [0-0]
       addr: 164.107.112.46
       backend: nccl
+    - name: w3
+      peers: [0-1]
+      addr: 164.107.112.46
+      backend: nccl
   0-0:
     - name: w1
+      peers: [s-0]
+      addr: 164.107.112.46
+      backend: nccl
+  0-1:
+    - name: w2
       peers: [s-0]
       addr: 164.107.112.46
       backend: nccl
@@ -37,7 +46,12 @@ workers:
       start: -1
       end: -1
   - id: 0-0
-    device: cuda:1
+    device: cuda:2
+    stage:
+      start: 0
+      end: 34
+  - id: 0-1
+    device: cuda:3
     stage:
       start: 0
       end: 34

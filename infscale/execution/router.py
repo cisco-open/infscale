@@ -54,6 +54,9 @@ class Router:
         self._rx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
         self._tx_q = asyncio.Queue(DEFAULT_QUEUE_SIZE)  # used in pipeline
 
+        # queue used by a worker stage to consume tensors locally
+        self._stage_rx_q: asyncio.Queue | None = None
+
         # maintains the tasks of send / recv for worlds
         self._tasks: dict[str, tuple[asyncio.Task, asyncio.Event]] = {}
         self.__tx_qs: dict[int, list[tuple[WorldInfo, asyncio.Queue]]] = {}
@@ -77,6 +80,19 @@ class Router:
     def tx_q(self) -> asyncio.Queue:
         """Return transmit queue."""
         return self._tx_q
+
+    def register_stage_consumer(self, maxsize: int) -> asyncio.Queue:
+        """Set up a per-stage queue used to deliver tensors to the local worker."""
+        maxsize = max(1, maxsize)
+        if self._stage_rx_q is None:
+            self._stage_rx_q = asyncio.Queue(maxsize=maxsize)
+        elif self._stage_rx_q.maxsize != maxsize:
+            logger.warning(
+                "stage rx queue already exists with different maxsize "
+                f"({self._stage_rx_q.maxsize} -> {maxsize}); keeping existing queue"
+            )
+
+        return self._stage_rx_q
 
     def handle_suspended_worlds(self, suspended_worlds: list[str]) -> None:
         """Handle suspended worlds by adding or removing them from the pipeline."""
@@ -321,7 +337,10 @@ class Router:
             try:
                 tensor, seqno = await self.__rx_q.get()
 
-                if (
+                if not self._is_server and self._stage_rx_q is not None:
+                    # We put the tensor into the stage_rx_q so that the worker compution task can consume it.
+                    await self._stage_rx_q.put((tensor, seqno))
+                elif (
                     self._is_server
                     and self._fwder.is_sticky()
                     and "tokens" not in tensor

@@ -79,6 +79,8 @@ class Pipeline:
         self.n_inflight = 0
         self.tx_allow_evt = asyncio.Event()
         self.tx_allow_evt.set()
+        self._compute_queue: asyncio.Queue | None = None
+        self._results_queue: asyncio.Queue | None = None
 
     async def _configure_multiworld(self, world_info: WorldInfo) -> None:
         (name, world_size, addr, port, backend, my_rank) = (
@@ -366,12 +368,40 @@ class Pipeline:
         # wait forever
         await asyncio.Event().wait()
 
-    async def _run_worker(self):
+    def _init_worker_queues(self) -> None:
+        maxsize = max(self.max_inflight, 1)
+        self._compute_queue = self._router.register_stage_consumer(maxsize)
+        self._results_queue = asyncio.Queue(maxsize=maxsize)
+
+    def _run_stage_predict(self, seqno: int, inputs: dict[str, torch.Tensor]):
+        with torch.inference_mode():
+            return self._stage.predict(seqno, **inputs)
+
+    async def _compute_loop(self) -> None:
+        assert self._compute_queue is not None
+        assert self._results_queue is not None
+
         while True:
-            inputs, seqno = await self._router.recv()
-            with torch.inference_mode():
-                outputs, next_layer = self._stage.predict(seqno, **inputs)
+            inputs, seqno = await self._compute_queue.get()
+            outputs, next_layer = await asyncio.to_thread(
+                self._run_stage_predict, seqno, inputs
+            )
+            await self._results_queue.put((seqno, outputs, next_layer))
+
+    async def _sender_loop(self) -> None:
+        assert self._results_queue is not None
+
+        while True:
+            seqno, outputs, next_layer = await self._results_queue.get()
             await self._router.send(seqno, outputs, next_layer)
+
+    async def _run_worker(self):
+        self._init_worker_queues()
+
+        await asyncio.gather(
+            self._compute_loop(),
+            self._sender_loop(),
+        )
 
     async def _collect_metrics(self):
         while True:

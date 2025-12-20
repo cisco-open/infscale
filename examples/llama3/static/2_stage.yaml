@@ -15,12 +15,17 @@ max_inflight: 2
 flow_graph:
   s-0:
     - name: w0
-      peers: [0-0]
+      peers: [1-0]
       addr: 164.107.112.46
       backend: nccl
   0-0:
     - name: w1
       peers: [s-0]
+      addr: 164.107.112.46
+      backend: nccl
+  1-0:
+    - name: w2
+      peers: [0-0]
       addr: 164.107.112.46
       backend: nccl
 
@@ -40,4 +45,9 @@ workers:
     device: cuda:1
     stage:
       start: 0
+      end: 18
+  - id: 1-0
+    device: cuda:2
+    stage:
+      start: 19
       end: 34

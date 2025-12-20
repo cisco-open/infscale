@@ -19,6 +19,7 @@ from abc import abstractmethod
 from enum import Enum
 from typing import Callable, List, Union
 
+import os
 import torch
 from accelerate import init_empty_weights
 from torch import Tensor
@@ -147,7 +148,17 @@ class Llama3ModelMetaData(BaseModelMetaData):
             self.top_p = self.config.top_p
         logger.debug(f"top_p = {self.top_p}")
 
-        self.max_new_tokens = 64
+        env_override = os.getenv("LLAMA3_MAX_NEW_TOKENS")
+        if env_override is not None:
+            try:
+                print(f"Using LLAMA3_MAX_NEW_TOKENS value '{env_override}'")
+                self.max_new_tokens = int(env_override)
+            except ValueError:
+                print(f"Invalid LLAMA3_MAX_NEW_TOKENS value '{env_override}'; falling back to default max_new_tokens = 64")
+                self.max_new_tokens = 64
+        else:
+            print(f"Using default max_new_tokens = 64")
+            self.max_new_tokens = 64
 
     @property
     def trace_inputs(self) -> list[str]:
