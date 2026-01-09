@@ -367,10 +367,13 @@ class Pipeline:
         await asyncio.Event().wait()
 
     async def _run_worker(self):
+        def _stage_inner(seqno: int, inputs: dict[str, torch.Tensor]):
+            with torch.inference_mode():
+                return self._stage.predict(seqno, **inputs)
+
         while True:
             inputs, seqno = await self._router.recv()
-            with torch.inference_mode():
-                outputs, next_layer = self._stage.predict(seqno, **inputs)
+            outputs, next_layer = await asyncio.to_thread(_stage_inner, seqno, inputs)
             await self._router.send(seqno, outputs, next_layer)
 
     async def _collect_metrics(self):
