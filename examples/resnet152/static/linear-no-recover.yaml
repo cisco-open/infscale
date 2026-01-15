@@ -11,7 +11,9 @@ fwd_policy: "rr"
 job_id: "job11"
 # maximum number of requests in flight at any given point in time
 max_inflight: 8
-recover: False
+recovery:
+  enable: false # default: true
+  attempts: 3 # default: 5
 
 # Note: IP addresses should be agents'
 flow_graph:

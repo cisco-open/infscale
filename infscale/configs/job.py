@@ -86,6 +86,14 @@ class WorkerData:
 
 
 @dataclass
+class Recovery:
+    """Specification about recovery."""
+
+    enable: bool = True
+    attempts: int = 5
+
+
+@dataclass
 class ServeConfig:
     """Class for keeping config values of serve specification."""
 
@@ -228,11 +236,11 @@ class JobConfig:
     flow_graph: dict[str, list[WorldInfo]]
     dataset: Dataset
     job_id: str
+    recovery: Recovery | dict | None = None
     nfaults: int = 0
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
-    recover: bool = True
     force_terminate: bool = False
 
     # this will be set by controller  based on its configuration
@@ -240,6 +248,11 @@ class JobConfig:
 
     def __post_init__(self) -> None:
         """Handle post init class variables."""
+        if self.recovery is None:
+            self.recovery = Recovery()
+        elif not isinstance(self.recovery, Recovery):
+            self.recovery = Recovery(**self.recovery)
+
         for k in list(self.flow_graph.keys()):
             for i, item in enumerate(self.flow_graph[k]):
                 world_info = item if isinstance(item, WorldInfo) else WorldInfo(**item)

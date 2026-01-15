@@ -50,7 +50,6 @@ if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
 MAX_RES_RECOVER_RETRIES = 8  # max resources retries with exponential backoff.
-MAX_DEPLOY_RECOVER_RETRIES = 5  # maximum deploy recovery retries
 
 
 logger = None
@@ -653,7 +652,7 @@ class RecoveryState(BaseJobState):
 
     async def cond_recovery(self):
         """Handle the transition to failed."""
-        if self._recovery_count == MAX_DEPLOY_RECOVER_RETRIES:
+        if self._recovery_count == self.context._cur_cfg.recovery.attempts:
             failed_wrk_ids = self._get_failed_wrk_ids()
             await self._remove_pipeline_n_update(failed_wrk_ids, self.context._cur_cfg)
 
@@ -755,7 +754,7 @@ class JobContext:
                 await self.send_check_loop_command()
 
                 # if failure happens while starting, current config is None
-                if self._cur_cfg is not None and self._cur_cfg.recover:
+                if self._cur_cfg is not None and self._cur_cfg.recovery.enable:
                     await self.cond_recovery()
 
                     return
