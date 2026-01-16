@@ -411,6 +411,15 @@ class FailedState(BaseJobState):
 
         self.context.set_state(JobStateEnum.STARTING)
 
+    def cond_stopped(self):
+        """Handle the transition to stopped."""
+        # when a worker fails and is unrecoverable, we need to
+        # remove that worker and the pipeline of that worker.
+        # This means that some workers will send Failed status,
+        # others will send Terminated status. This will avoid any
+        # unnecessary exceptions since the job is already in Failed.
+        pass
+
 
 class RecoveryState(BaseJobState):
     """RecoveryState class."""
@@ -837,7 +846,7 @@ class JobContext:
             worker_diff = JobConfig.get_workers_diff(cur_cfg, new_cfg)
             self.remove_wrk_status(worker_diff)
 
-        for w in self._new_cfg.workers:
+        for w in new_cfg.workers:
             if w.id not in self.wrk_status:
                 self.wrk_status[w.id] = WorkerStatus.READY
 
