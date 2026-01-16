@@ -1295,6 +1295,8 @@ class JobContext:
         self._flow_graph_patched = False
         self._worlds_conflict_count = {}
         self.ctrl.planner.remove_pipeline_data(self.job_id)
+        # reset demand data to initial value
+        self._demand_data = DemandData()
 
     def _release_gpu_resources(self, agent_data: AgentMetaData) -> None:
         resources = self.ctrl.agent_contexts[agent_data.id].resources
