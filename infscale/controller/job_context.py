@@ -435,6 +435,13 @@ class RecoveryState(BaseJobState):
 
         while True:
             self.context.manage_agent_metadata()
+
+            # get latest agents resource information
+            await self.context.ctrl.get_agents_res_info()
+
+            # wait to gather resources information from all agents
+            await self.context.ctrl.resources_info_evt.wait()
+
             wrk_resources_map = self._get_wrk_resources_map(failed_wrk_ids)
 
             if len(wrk_resources_map) == len(failed_wrk_ids):
