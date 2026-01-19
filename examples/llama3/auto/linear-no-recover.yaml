@@ -35,7 +35,7 @@ dataset: # huggingface dataset
 
 workers:
   - id: s-0
-    is_server: True
+    is_server: true
     stage:
       start: -1
       end: -1
