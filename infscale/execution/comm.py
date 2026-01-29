@@ -106,7 +106,7 @@ class TensorReceiver:
 
         recvd = {}
         for k, v in self.buffer.items():
-            recvd[k] = v.clone().detach()
+            recvd[k] = v.detach().clone()
 
         return recvd, seqno
 
