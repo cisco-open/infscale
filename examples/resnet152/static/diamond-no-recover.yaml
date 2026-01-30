@@ -14,7 +14,9 @@ fwd_policy: "rr"
 job_id: "job10"
 # maximum number of requests in flight at any given point in time
 max_inflight: 800
-recover: False
+recovery:
+  enable: false # default: true
+  attempts: 3 # default: 5
 
 # Note: IP addresses should be agents'
 flow_graph:
@@ -51,7 +53,7 @@ dataset: # huggingface dataset
 workers:
   - id: s-0
     device: cuda:0
-    is_server: True
+    is_server: true
     stage:
       start: -1
       end: -1

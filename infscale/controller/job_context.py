@@ -50,7 +50,6 @@ if TYPE_CHECKING:
     from infscale.controller.controller import Controller
 
 MAX_RES_RECOVER_RETRIES = 8  # max resources retries with exponential backoff.
-MAX_DEPLOY_RECOVER_RETRIES = 5  # maximum deploy recovery retries
 
 
 logger = None
@@ -299,6 +298,10 @@ class FailingState(BaseJobState):
         """Return failing state enum."""
         return JobStateEnum.FAILING
 
+    async def stop(self):
+        """Transition to Stopping state."""
+        await self.context._JobContext__stop()
+
     def cond_stopped(self):
         """Handle the transition to failed."""
         if self.context.in_statuses_for_all_workers(
@@ -411,6 +414,15 @@ class FailedState(BaseJobState):
 
         self.context.set_state(JobStateEnum.STARTING)
 
+    def cond_stopped(self):
+        """Handle the transition to stopped."""
+        # when a worker fails and is unrecoverable, we need to
+        # remove that worker and the pipeline of that worker.
+        # This means that some workers will send Failed status,
+        # others will send Terminated status. This will avoid any
+        # unnecessary exceptions since the job is already in Failed.
+        pass
+
 
 class RecoveryState(BaseJobState):
     """RecoveryState class."""
@@ -435,6 +447,13 @@ class RecoveryState(BaseJobState):
 
         while True:
             self.context.manage_agent_metadata()
+
+            # get latest agents resource information
+            await self.context.ctrl.get_agents_res_info()
+
+            # wait to gather resources information from all agents
+            await self.context.ctrl.resources_info_evt.wait()
+
             wrk_resources_map = self._get_wrk_resources_map(failed_wrk_ids)
 
             if len(wrk_resources_map) == len(failed_wrk_ids):
@@ -653,7 +672,7 @@ class RecoveryState(BaseJobState):
 
     async def cond_recovery(self):
         """Handle the transition to failed."""
-        if self._recovery_count == MAX_DEPLOY_RECOVER_RETRIES:
+        if self._recovery_count == self.context._cur_cfg.recovery.attempts:
             failed_wrk_ids = self._get_failed_wrk_ids()
             await self._remove_pipeline_n_update(failed_wrk_ids, self.context._cur_cfg)
 
@@ -755,7 +774,7 @@ class JobContext:
                 await self.send_check_loop_command()
 
                 # if failure happens while starting, current config is None
-                if self._cur_cfg is not None and self._cur_cfg.recover:
+                if self._cur_cfg is not None and self._cur_cfg.recovery.enable:
                     await self.cond_recovery()
 
                     return
@@ -837,7 +856,7 @@ class JobContext:
             worker_diff = JobConfig.get_workers_diff(cur_cfg, new_cfg)
             self.remove_wrk_status(worker_diff)
 
-        for w in self._new_cfg.workers:
+        for w in new_cfg.workers:
             if w.id not in self.wrk_status:
                 self.wrk_status[w.id] = WorkerStatus.READY
 
@@ -858,7 +877,7 @@ class JobContext:
 
         self._reconcile_wrk_status(self._cur_cfg, self._new_cfg)
 
-        self._update_worlds_conflict_count(self._cur_cfg, self._new_cfg)
+        self._init_worlds_conflict_count(self._new_cfg)
 
         self._new_cfg.reqgen_config = self.ctrl.reqgen_config
 
@@ -882,32 +901,24 @@ class JobContext:
 
         self.job_checker.setup(self._new_cfg)
 
-    def _update_worlds_conflict_count(
-        self, cur_cfg: JobConfig, new_cfg: JobConfig
-    ) -> None:
-        """Update world infos duplicate count."""
-        if cur_cfg:
-            new_workers = JobConfig.get_workers_diff(new_cfg, cur_cfg)
-        else:
-            new_workers = {worker.id for worker in new_cfg.workers}
-
-        for wid, world_list in new_cfg.flow_graph.items():
+    def _init_worlds_conflict_count(self, new_cfg: JobConfig) -> None:
+        """Init world infos conflict count."""
+        for world_list in new_cfg.flow_graph.values():
             for world_info in world_list:
-                is_peer = any(wrk_id in world_info.peers for wrk_id in new_workers)
+                name = world_info.name
+                if name not in self._worlds_conflict_count:
+                    self._worlds_conflict_count[name] = 0
 
-                if wid in new_workers or is_peer:
-                    name = world_info.name
-                    self._set_world_conflict_count(name)
-                    world_info.conflict_count = self._worlds_conflict_count[name]
+    def _update_world_conflict_count(
+        self, cfg: JobConfig, recover_wids: set[str]
+    ) -> None:
+        """Update world conflict count."""
+        for wid, world_list in cfg.flow_graph.items():
+            for world_info in world_list:
+                is_peer = any(wrk_id in world_info.peers for wrk_id in recover_wids)
 
-    def _set_world_conflict_count(self, world_name: str) -> None:
-        """Set worlds conflict count."""
-        if world_name in self._worlds_conflict_count:
-            self._worlds_conflict_count[world_name] += 1
-
-            return
-
-        self._worlds_conflict_count[world_name] = 0
+                if wid in recover_wids or is_peer:
+                    self._worlds_conflict_count[world_info.name] += 1
 
     def reset_cfg_recover_flags(self) -> None:
         """Reset recover flags on config."""
@@ -918,6 +929,8 @@ class JobContext:
     ) -> JobConfig:
         """Update config with recovered worker and agent data."""
         cfg = copy.deepcopy(self._cur_cfg)
+
+        self._update_world_conflict_count(cfg, wrk_resource_map.keys())
 
         for wrk_id, (ip, gpu_id) in wrk_resource_map.items():
             self._update_recovery_flow_graph(cfg, wrk_id, ip)
@@ -935,7 +948,6 @@ class JobContext:
 
         for world_info in recover_flow_graph:
             name = world_info.name
-            self._set_world_conflict_count(name)
             world_info.addr = ip
             world_info.recover = True
             world_info.conflict_count = self._worlds_conflict_count[name]
@@ -943,10 +955,10 @@ class JobContext:
         for world_list in cfg.flow_graph.values():
             for world_info in world_list:
                 if recover_wid in world_info.peers:
-                    name = world_info.name
-                    self._set_world_conflict_count(name)
                     world_info.recover = True
-                    world_info.conflict_count = self._worlds_conflict_count[name]
+                    world_info.conflict_count = self._worlds_conflict_count[
+                        world_info.name
+                    ]
 
     def _update_recovery_worker_data(
         self, cfg: JobConfig, wrk_id: str, gpu_id: int
@@ -1295,6 +1307,8 @@ class JobContext:
         self._flow_graph_patched = False
         self._worlds_conflict_count = {}
         self.ctrl.planner.remove_pipeline_data(self.job_id)
+        # reset demand data to initial value
+        self._demand_data = DemandData()
 
     def _release_gpu_resources(self, agent_data: AgentMetaData) -> None:
         resources = self.ctrl.agent_contexts[agent_data.id].resources
