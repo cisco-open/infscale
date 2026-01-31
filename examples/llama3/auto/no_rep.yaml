@@ -33,4 +33,4 @@ workers:
   - id: 0-0
     stage:
       start: 0
-      end: 34
+      end: 31

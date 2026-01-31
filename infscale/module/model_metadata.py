@@ -124,28 +124,29 @@ class Llama3ModelMetaData(BaseModelMetaData):
         self.bos_token_id = 128000
         if hasattr(self.config, "bos_token_id"):
             self.bos_token_id = self.config.bos_token_id
-        logger.debug(f"bos_token_id = {self.bos_token_id}")
+        logger.info(f"bos_token_id = {self.bos_token_id}")
 
         if hasattr(self.config, "do_sample"):
             self.do_sample = self.config.do_sample
-        # let's keep sampling true
-        self.do_sample = True
-        logger.debug(f"do_sample = {self.do_sample}")
+        else:
+            # Default to greedy decoding (matching vanilla transformers behavior)
+            self.do_sample = False
+        logger.info(f"do_sample = {self.do_sample}")
 
         self.eos_token_id = 128001
         if hasattr(self.config, "eos_token_id"):
             self.eos_token_id = self.config.eos_token_id
-        logger.debug(f"eos_token_id = {self.eos_token_id}")
+        logger.info(f"eos_token_id = {self.eos_token_id}")
 
         self.temperature = 0.6
         if hasattr(self.config, "temperature"):
             self.temperature = self.config.temperature
-        logger.debug(f"temperature = {self.temperature}")
+        logger.info(f"temperature = {self.temperature}")
 
-        self.top_p = 1.0
+        self.top_p = 0.9  # Changed from 1.0 to enable nucleus sampling
         if hasattr(self.config, "top_p"):
             self.top_p = self.config.top_p
-        logger.debug(f"top_p = {self.top_p}")
+        logger.info(f"top_p = {self.top_p}")
 
         self.max_new_tokens = 64
 
@@ -197,9 +198,24 @@ class Llama3ModelMetaData(BaseModelMetaData):
         def inner(
             seqno: int, outputs: dict[str, Tensor], attention_mask: Tensor
         ) -> dict[str, Tensor]:
-            next_token_logits = outputs["logits"][:, -1, :]
-            batch_size = next_token_logits.size(0)
-            device = next_token_logits.device
+            # With left padding, all sequences are padded to the same length,
+            # Extract logits for the last valid token position
+            batch_size = outputs["logits"].size(0)
+            seq_len = outputs["logits"].size(1)
+            device = outputs["logits"].device
+            
+            # During generation with cache, logits shape is [batch, 1, vocab]
+            # During initial pass, logits shape is [batch, full_seq_len, vocab]
+            if seq_len == 1:
+                # Generation step with cache: only one new token
+                next_token_logits = outputs["logits"][:, 0, :]
+            else:
+                # Initial forward pass: need to find last valid token
+                # For left padding: [0, 0, 1, 1, 1] → last valid at position 4 (index 4)
+                # For right padding: [1, 1, 1, 0, 0] → last valid at position 2 (index 2)
+                sequence_lengths = attention_mask.sum(dim=1) - 1  # [batch_size]
+                batch_indices = torch.arange(batch_size, device=device)
+                next_token_logits = outputs["logits"][batch_indices, sequence_lengths, :]
 
             state = self.generated_tokens.get(seqno)
             if state is None:
@@ -208,6 +224,9 @@ class Llama3ModelMetaData(BaseModelMetaData):
                     "finished": [False] * batch_size,
                 }
                 self.generated_tokens[seqno] = state
+                # CRITICAL: Clear KV cache when starting a new sample to prevent contamination
+                if "past_key_values" in outputs:
+                    outputs["past_key_values"] = None
 
             gen_tokens = state["tokens"]
             finished = state["finished"]
@@ -223,7 +242,7 @@ class Llama3ModelMetaData(BaseModelMetaData):
                     next_token_logits = next_token_logits / self.temperature
                 else:
                     self.do_sample = False
-                    logger.debug(f"temperature is 0.0, switching to greedy decoding")
+                    logger.info(f"temperature is 0.0, switching to greedy decoding")
 
             eos_token_id = self.eos_token_id
 

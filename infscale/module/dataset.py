@@ -247,6 +247,10 @@ class HuggingFaceDataset:
     ) -> Tuple[Type[PreTrainedTokenizerBase], Dataset]:
         """Create language dataset."""
         tokenizer = AutoTokenizer.from_pretrained(model_name)
+        # Enable left padding for ManualSharder
+        tokenizer.padding_side = "left"
+        # Set pad token for LLaMA models (use EOS as pad token)
+        tokenizer.pad_token = tokenizer.eos_token
 
         # no need to load all datasets; since we need a dataset for inference
         dataset = load_dataset(dataset_path, dataset_name, split=split)
@@ -263,9 +267,12 @@ class HuggingFaceDataset:
             max_seq_length = tokenizer.model_max_length
 
         def tokenize_function(examples):
-            tokenizer.pad_token = tokenizer.eos_token
             return tokenizer(
-                examples[text_column_name], padding=True, return_tensors="pt"
+                examples[text_column_name], 
+                padding=True, 
+                truncation=True,
+                max_length=max_seq_length,
+                return_tensors="pt"
             )
 
         tokenized_dataset = dataset.map(

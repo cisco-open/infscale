@@ -189,14 +189,27 @@ class Stage(nn.Module):
         self, seqno: int, cache: DynamicCache, **inputs
     ) -> dict[str, Tensor]:
         outputs = inputs
+        
+        # DEBUG: Save INITIAL input tokens (before generation loop)
+        if seqno < 3:  # Only log first 3 samples
+            input_ids = inputs["input_ids"]
+            attention_mask = inputs["attention_mask"]
+            import os
+            debug_dir = os.path.join(os.getcwd(), "debug_tokens")
+            os.makedirs(debug_dir, exist_ok=True)
+            with open(f"{debug_dir}/infscale_tokens_sample_{seqno}.txt", "w") as f:
+                f.write(f"Seqno: {seqno}\n")
+                f.write(f"Input shape: {input_ids.shape}\n")
+                f.write(f"Input IDs: {input_ids[0].tolist()}\n")
+                f.write(f"Attention mask: {attention_mask[0].tolist()}\n")
+            print(f"[DEBUG] Saved infscale INITIAL tokens for sample {seqno}")
+            print(f"[DEBUG] Input shape: {input_ids.shape}")
+            print(f"[DEBUG] Input token IDs (first 20): {input_ids[0].tolist()[:20]}")
+            print(f"[DEBUG] Input token IDs (last 20): {input_ids[0].tolist()[-20:]}")
 
         while True:
             input_ids = outputs["input_ids"]
             attention_mask = outputs["attention_mask"]
-            logger.debug(
-                f"input_ids's size: {input_ids.size()} ",
-                f"attention_mask's size: {attention_mask.size()}",
-            )
 
             outputs = self.forward(
                 **outputs,
@@ -219,15 +232,15 @@ class Stage(nn.Module):
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
 
-        logger.debug(
-            f"input_ids's size: {input_ids.size()} "
-            + f"attention_mask's size: {attention_mask.size()}"
-        )
-
         outputs = self.forward(**inputs, use_cache=True, past_key_values=cache)
 
         # add attention mask to outputs to pass it to next stage
         outputs["attention_mask"] = attention_mask
+        
+        # Remove non-serializable objects before sending to next stage
+        outputs.pop("past_key_values", None)  # DynamicCache can't be serialized
+        outputs.pop("position_embeddings", None)  # Tuple can't be serialized
+        outputs.pop("use_cache", None)  # Boolean can't be serialized
 
         return outputs
 
@@ -239,11 +252,16 @@ class Stage(nn.Module):
         # during inference. we save it to pass it to the next stage
         attention_mask = inputs["attention_mask"]
         del inputs["attention_mask"]
-
-        outputs = self.forward(**inputs, past_key_values=cache)
+        
+        outputs = self.forward(**inputs, use_cache=True, past_key_values=cache)
 
         # add attention mask to outputs to pass it to next stage
         outputs["attention_mask"] = attention_mask
+        
+        # Remove non-serializable objects before sending to next stage
+        outputs.pop("past_key_values", None)  # DynamicCache can't be serialized
+        outputs.pop("position_embeddings", None)  # Tuple can't be serialized
+        outputs.pop("use_cache", None)  # Boolean can't be serialized
 
         return outputs
 
@@ -256,7 +274,12 @@ class Stage(nn.Module):
         attention_mask = inputs["attention_mask"]
         del inputs["attention_mask"]
 
-        outputs = self.forward(**inputs, past_key_values=cache)
+        outputs = self.forward(**inputs, use_cache=True, past_key_values=cache)
+        
+        # Remove non-serializable objects before parsing
+        outputs.pop("past_key_values", None)  # DynamicCache can't be serialized
+        outputs.pop("position_embeddings", None)  # Tuple can't be serialized
+        outputs.pop("use_cache", None)  # Boolean can't be serialized
 
         outputs = self._output_parser(seqno, outputs, attention_mask)
 
@@ -323,6 +346,7 @@ class Stage(nn.Module):
     def _init_layers(self):
         """Initialize meta layers and move them to a device."""
         model = self.modelir.mmd.load_model()
+        model.eval()  # CRITICAL: Set to eval mode to disable dropout and other training-time operations
 
         named_parameters = dict()
         for name, param in model.named_parameters():
@@ -342,8 +366,55 @@ class Stage(nn.Module):
         for name, buffer in model.named_buffers():
             named_buffers[name] = buffer
 
-        for layer in self.layers:
+        for idx, layer in enumerate(self.layers):
             self._init_tensors(layer, named_parameters, named_buffers)
+            
+            # DEBUG: Check if weights were loaded correctly
+            # Check layer 0 (has decoder + embed_tokens)
+            if idx == 0 and hasattr(layer, 'layer') and layer.layer is not None:
+                weight_stats = []
+                weight_stats.append("="*80)
+                weight_stats.append("INFSCALE WEIGHT STATISTICS")
+                weight_stats.append("="*80)
+                
+                # Check decoder layer weight
+                q_proj_weight = layer.layer.self_attn.q_proj.weight
+                line = f"Layer 0 decoder q_proj.weight: shape={q_proj_weight.shape}, mean={q_proj_weight.mean().item():.6f}, std={q_proj_weight.std().item():.6f}"
+                print(f"[DEBUG] {line}")
+                weight_stats.append(line)
+                
+                # Check embed_tokens
+                if hasattr(layer, 'embed_tokens') and layer.embed_tokens is not None:
+                    embed_weight = layer.embed_tokens.weight
+                    line = f"Layer 0 embed_tokens.weight: shape={embed_weight.shape}, mean={embed_weight.mean().item():.6f}, std={embed_weight.std().item():.6f}"
+                    print(f"[DEBUG] {line}")
+                    weight_stats.append(line)
+                
+                # Store for later (will add layer 31 stats before writing)
+                self._weight_stats = weight_stats
+            
+            # Check layer 31 (has norm + lm_head)
+            if idx == len(self.layers) - 1:
+                # Check norm and lm_head on last layer
+                if hasattr(layer, 'norm') and layer.norm is not None:
+                    norm_weight = layer.norm.weight
+                    line = f"Layer 31 norm.weight: shape={norm_weight.shape}, mean={norm_weight.mean().item():.6f}, std={norm_weight.std().item():.6f}"
+                    print(f"[DEBUG] {line}")
+                    if hasattr(self, '_weight_stats'):
+                        self._weight_stats.append(line)
+                
+                if hasattr(layer, 'lm_head') and layer.lm_head is not None:
+                    lm_head_weight = layer.lm_head.weight
+                    line = f"Layer 31 lm_head.weight: shape={lm_head_weight.shape}, mean={lm_head_weight.mean().item():.6f}, std={lm_head_weight.std().item():.6f}"
+                    print(f"[DEBUG] {line}")
+                    if hasattr(self, '_weight_stats'):
+                        self._weight_stats.append(line)
+                
+                # Write to file after collecting all stats
+                if hasattr(self, '_weight_stats'):
+                    with open('weight_stats_infscale.txt', 'w') as f:
+                        f.write('\n'.join(self._weight_stats))
+                    print("[DEBUG] Weight statistics written to weight_stats_infscale.txt")
 
         del named_parameters
         del named_buffers
@@ -351,27 +422,71 @@ class Stage(nn.Module):
 
     def _init_tensors(
         self,
-        layer: fx.GraphModule,
+        layer: torch.nn.Module,
         named_parameters: dict[str, Parameter],
         named_buffers: dict[str, Tensor],
     ):
         """Initialize meta tensors and move them to a device."""
+        # Check if this is a manual sharder wrapper (has layer_idx attribute)
+        is_manual_wrapper = hasattr(layer, 'layer_idx')
+        
+        param_count = 0
         for name, _ in layer.named_parameters():
-            assert name in named_parameters, f"parameter {name} not found"
+            # Map wrapper parameter names to model parameter names
+            if is_manual_wrapper:
+                model_param_name = self._map_wrapper_param_name(name, layer.layer_idx)
+            else:
+                model_param_name = name
+            
+            assert model_param_name in named_parameters, f"parameter {model_param_name} not found (wrapper name: {name})"
 
             set_module_tensor_to_device(
                 layer,
                 name,
                 self.device,
-                named_parameters[name].data,
+                named_parameters[model_param_name].data,
             )
-
+            param_count += 1
+        
         for name, _ in layer.named_buffers():
-            assert name in named_buffers, f"buffer {name} not found"
+            # Map wrapper buffer names to model buffer names
+            if is_manual_wrapper:
+                model_buffer_name = self._map_wrapper_param_name(name, layer.layer_idx)
+            else:
+                model_buffer_name = name
+            
+            assert model_buffer_name in named_buffers, f"buffer {model_buffer_name} not found (wrapper name: {name})"
 
             set_module_tensor_to_device(
                 layer,
                 name,
                 self.device,
-                named_buffers[name].data,
+                named_buffers[model_buffer_name].data,
             )
+    
+    def _map_wrapper_param_name(self, wrapper_name: str, layer_idx: int) -> str:
+        """
+        Map manual sharder wrapper parameter name to model parameter name.
+        
+        Wrapper names: layer.self_attn.q_proj.weight, embed_tokens.weight, etc.
+        Model names: model.layers.{idx}.self_attn.q_proj.weight, model.embed_tokens.weight, etc.
+        """
+        if wrapper_name.startswith("layer."):
+            # Decoder layer parameter: layer.* -> model.layers.{idx}.*
+            param_name = wrapper_name[6:]  # Remove "layer." prefix
+            return f"model.layers.{layer_idx}.{param_name}"
+        elif wrapper_name.startswith("embed_tokens"):
+            # Embedding: embed_tokens -> model.embed_tokens or embed_tokens.weight -> model.embed_tokens.weight
+            return f"model.{wrapper_name}"
+        elif wrapper_name.startswith("rotary_emb"):
+            # RoPE: rotary_emb.* -> model.rotary_emb.*
+            return f"model.{wrapper_name}"
+        elif wrapper_name.startswith("norm"):
+            # Norm: norm -> model.norm or norm.weight -> model.norm.weight
+            return f"model.{wrapper_name}"
+        elif wrapper_name.startswith("lm_head"):
+            # LM head: lm_head.* stays the same
+            return wrapper_name
+        else:
+            # Unknown, return as-is
+            return wrapper_name

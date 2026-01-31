@@ -30,7 +30,8 @@ from typing import TYPE_CHECKING, Callable, Union
 import torch
 
 from infscale import get_logger
-from infscale.module.sharder import Sharder
+# from infscale.module.sharder import Sharder  # torch.fx version
+from infscale.module.sharder_manual import ManualSharder as Sharder  # Manual version
 
 
 if TYPE_CHECKING:
@@ -48,8 +49,11 @@ class ModelIR:
     HuggingFace models are downloaded from Hugging Face Hub
     (https://huggingface.co/models).
 
-    It runs huggingface.utils.fx.symbolic_trace to get GraphModule
-    and shard it to multiple GraphModules for pipeline execution.
+    It shards the model into multiple modules for pipeline execution.
+    
+    Uses manual layer extraction (ManualSharder) instead of torch.fx 
+    symbolic tracing to support left padding and avoid control flow
+    limitations.
 
     Model initialization must be done before distributed initialization.
     """

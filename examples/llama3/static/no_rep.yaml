@@ -9,19 +9,19 @@ micro_batch_size: 2
 fwd_policy: "static"
 job_id: "job6"
 # maximum number of requests in flight at any given point in time
-max_inflight: 2
+max_inflight: 1
 
 # Note: IP addresses should be agents'
 flow_graph:
   s-0:
     - name: w0
       peers: [0-0]
-      addr: 10.20.1.50
+      addr: 10.20.1.72
       backend: gloo
   0-0:
     - name: w1
       peers: [s-0]
-      addr: 10.20.1.50
+      addr: 10.20.1.72
       backend: gloo
 
 dataset: # huggingface dataset
@@ -40,4 +40,4 @@ workers:
     device: cpu
     stage:
       start: 0
-      end: 34
+      end: 31
