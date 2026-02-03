@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import time
 import traceback
 from typing import TYPE_CHECKING, Callable, Union
 
@@ -104,7 +105,24 @@ class Stage(nn.Module):
             return
 
         # further set up LLM causal LM parameters
-        self.caches: dict[int, DynamicCache] = {}
+        # Cache structure: seqno -> (DynamicCache, last_access_timestamp)
+        self.caches: dict[int, tuple[DynamicCache, float]] = {}
+
+        # EMA tracking for adaptive timeout
+        self.ema_inter_arrival = None  # EMA of inter-arrival times
+        self.ema_alpha = 0.5  # Smoothing factor (increased for faster adaptation to load changes)
+        self.last_request_time = None  # Track last request timestamp
+
+        # Adaptive timeout configuration
+        self.timeout_multiplier = 10  # Safety factor (increased to handle pipeline round-trip)
+        self.adaptive_timeout = 10.0  # Initial default
+        self.min_timeout = 0.5  # Lower bound
+        self.max_timeout = 30.0  # Upper bound
+
+        # Cleanup configuration
+        self.last_cleanup_time = time.time()
+        self.cleanup_interval = 0.5  # Check every 0.5s
+
 
         if self.is_full_model:
             self._run_llm = self._run_llm_full_model
@@ -116,6 +134,56 @@ class Stage(nn.Module):
             self._run_llm = self._run_llm_last_stage
         else:
             self._run_llm = self._run_llm_middle_stage
+
+    def _update_adaptive_timeout(self) -> None:
+        """Update adaptive timeout using EMA of inter-arrival times."""
+        current_time = time.time()
+
+        # Calculate inter-arrival time
+        if self.last_request_time is not None:
+            inter_arrival = current_time - self.last_request_time
+
+            # Update EMA
+            if self.ema_inter_arrival is None:
+                self.ema_inter_arrival = inter_arrival
+            else:
+                self.ema_inter_arrival = (
+                    self.ema_alpha * inter_arrival
+                    + (1 - self.ema_alpha) * self.ema_inter_arrival
+                )
+
+            # Compute timeout: EMA × 2 × max_inflight
+            timeout = (
+                self.ema_inter_arrival * self.timeout_multiplier * self.max_inflight
+            )
+
+            # Apply bounds
+            self.adaptive_timeout = max(
+                self.min_timeout, min(self.max_timeout, timeout)
+            )
+
+        self.last_request_time = current_time
+
+    def _cleanup_idle_caches(self) -> None:
+        """Remove caches for completed requests based on idle time."""
+        current_time = time.time()
+
+        # Rate limit cleanup checks
+        if current_time - self.last_cleanup_time < self.cleanup_interval:
+            return
+
+        self.last_cleanup_time = current_time
+
+        # Find and evict idle caches
+        to_evict = [
+            seqno
+            for seqno, (cache, last_access) in self.caches.items()
+            if current_time - last_access > self.adaptive_timeout
+        ]
+
+        # Evict
+        for seqno in to_evict:
+            del self.caches[seqno]
 
     def _run_llm_full_model(
         self, seqno: int, cache: DynamicCache, **inputs
@@ -203,24 +271,20 @@ class Stage(nn.Module):
         2nd value: contains an index of layer that the results need to go back.
                    -1 means that the results goes back to the serving server.
         """
-        # remove kv cache for batch that is already served to save memory
-        # we do max_inflight+5 instead of max_inflight to be safe
-        # TODO: An out-of-order llm request serving case can happen in infscale
-        #       because it allows the arrival of other requests. Specifically,
-        #       for the requests submitted late, if the llm produces shorter
-        #       responses, the out-of-order serving is possible. The logic to
-        #       remove kv caches of the served requests is built with assumption
-        #       that the requests are served in order. This discrepancy sometimes
-        #       creates an error at runtime. To fundamentally resolve the issue,
-        #       we need an additional mechanism to determine which request is
-        #       served. For now, to mitigate the issue, we lazily remove kv cache
-        #       corresponding to a request whose sequence number is
-        #       (seqno of the current request - (max_inflight + 5)).
-        self.caches.pop(seqno - (self.max_inflight + 5), None)
+        # Update adaptive timeout based on inter-arrival pattern
+        self._update_adaptive_timeout()
 
+        # Periodic cleanup of idle caches
+        self._cleanup_idle_caches()
+
+        # Get or create cache with timestamp
+        current_time = time.time()
         if seqno not in self.caches:
-            self.caches[seqno] = DynamicCache()
-        cache = self.caches[seqno]
+            cache = DynamicCache()
+            self.caches[seqno] = (cache, current_time)
+        else:
+            cache, _ = self.caches[seqno]
+            self.caches[seqno] = (cache, current_time)  # Update timestamp
 
         outputs = self._run_llm(seqno, cache, **inputs)
         # If DynamicCache is returned in outputs, it can't be forwarded
