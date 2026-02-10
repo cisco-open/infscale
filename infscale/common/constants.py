@@ -19,6 +19,9 @@
 # This file contains project-level constants.
 # Note: DO NOT ADD CONSTANTS SPECIFIC TO A SINGLE FILE OR SUBMODULE
 
+# Key for the evict sentinel dict in execution (comm/stage/router). Value is seqno to evict.
+EVICT_SEQNO_KEY = "_evict_seqno"
+
 APISERVER_PORT = 8080
 APISERVER_ENDPOINT = f"http://localhost:{APISERVER_PORT}"
 CONTROLLER_PORT = 31310

@@ -24,6 +24,7 @@ from torch import Tensor
 
 from infscale import get_logger
 from infscale.configs.job import ServeConfig
+from infscale.common.constants import EVICT_SEQNO_KEY
 from infscale.execution.comm import TensorReceiver, TensorSender
 from infscale.execution.metrics_collector import MetricsCollector
 from infscale.execution.world import WorldInfo
@@ -182,7 +183,8 @@ class Router:
                 # update metrics for request
                 self._mc.update(seqno)
 
-            if recv_dev != self.device:
+            # Evict control message has no tensor data; skip device transfer
+            if EVICT_SEQNO_KEY not in tensors and recv_dev != self.device:
                 for k in tensors.keys():
                     tensors[k] = tensors[k].to(self.device)
 
@@ -279,17 +281,27 @@ class Router:
             except Exception as e:
                 kill_worker(e)
 
-            if send_dev != self.device:
-                for k in tensors.keys():
-                    tensors[k] = tensors[k].to(send_dev)
+            if EVICT_SEQNO_KEY in tensors:
+                # Evict control (no tensor data): send evict message only.
+                try:
+                    await sender.send_evict(seqno)
+                    self.requests_count -= 1
+                except Exception as e:
+                    cancellable.set()
+                    logger.warning(f"{world_info.multiworld_name} error: {e}")
+                    break
+            else:
+                if send_dev != self.device:
+                    for k in tensors.keys():
+                        tensors[k] = tensors[k].to(send_dev)
 
-            try:
-                await sender.send(tensors, seqno)
-                self.requests_count -= 1
-            except Exception as e:
-                cancellable.set()
-                logger.warning(f"{world_info.multiworld_name} error: {e}")
-                break
+                try:
+                    await sender.send(tensors, seqno)
+                    self.requests_count -= 1
+                except Exception as e:
+                    cancellable.set()
+                    logger.warning(f"{world_info.multiworld_name} error: {e}")
+                    break
 
             if self._mc.can_collect_in_router():
                 # update metrics for request
@@ -316,6 +328,15 @@ class Router:
         # we call this one more time
         await _drain_and_put_inner()
 
+    def _send_evict_to_first_stage(self, tensor: dict, seqno: int) -> None:
+        """Queue evict for first stage so the send task runs it (avoids concurrent sync on same channel)."""
+        if (
+            self._is_server
+            and self._fwder.is_sticky()
+            and "tokens" in tensor
+        ):
+            self._tx_q.put_nowait((seqno, {EVICT_SEQNO_KEY: seqno}, 0))
+
     async def _recv_arbiter(self) -> None:
         while True:
             try:
@@ -340,6 +361,7 @@ class Router:
                 else:
                     # TODO: introduce a prioritization policy
                     await self._rx_q.put((tensor, seqno))
+                    self._send_evict_to_first_stage(tensor, seqno)
             except Exception as e:
                 # this is very likely to be a no-op due to the simple
                 # get and put operations we do on the asyncio queues.
@@ -353,6 +375,10 @@ class Router:
                 # In case of this error, we know that there is no orphan
                 # data, so we can proceed to fetch data from _tx_q
                 seqno, tensor, next_layer = await self._tx_q.get()
+
+            # Last stage must not send evict back to server; drop it here.
+            if next_layer == -1 and EVICT_SEQNO_KEY in tensor:
+                continue
 
             while len(self.__tx_qs[next_layer]) == 0:
                 await asyncio.sleep(DEFAULT_SLEEP_TIME)

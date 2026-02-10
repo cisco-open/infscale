@@ -36,6 +36,7 @@ logger = None
 MSG_SIZE = 10000
 MSG_MODE_SEND = "send"
 MSG_MODE_ACK = "ack"
+MSG_MODE_EVICT = "evict"  # KV cache eviction (no tensor data)
 
 WAIT_DURATION = 3  # 3 seconds
 NUM_OF_RETRIES = 100  # in total, wait for 5 minutes to set up a control channel
@@ -57,6 +58,8 @@ class ControlMessage:
         self.seqno: int = 0
         self.ditto: bool = False
         self.metas: dict[str, MetaData] = {}
+        # When True, this is an evict-only message (no tensor data follows); evict cache for self.seqno.
+        self.evict: bool = False
 
 
 class Channel:
@@ -215,6 +218,16 @@ class Channel:
         writer.write(msg_bytes)
         await writer.drain()
 
+    async def send_evict_msg(self, rank: int, seqno: int) -> None:
+        """Send evict control message (no tensor data). Receiver should evict KV cache for seqno."""
+        msg = ControlMessage()
+        msg.seqno = seqno
+        msg.evict = True
+        msg_bytes = pickle.dumps(msg)
+        _, writer = self.peers[rank]
+        writer.write(msg_bytes)
+        await writer.drain()
+
     async def recv_ctrl_msg(self, rank: int) -> ControlMessage:
         """Receive control information from a sender."""
         reader, _ = self.peers[rank]
@@ -234,6 +247,14 @@ class Channel:
         """Synchronize send/recv."""
         if mode == MSG_MODE_SEND:
             await self.send_ctrl_msg(rank, tensors, seqno)
+
+            # wait for acknowledgment message
+            reader, _ = self.peers[rank]
+            _ = await reader.read(MSG_SIZE)
+
+            return None
+        elif mode == MSG_MODE_EVICT:
+            await self.send_evict_msg(rank, seqno)
 
             # wait for acknowledgment message
             reader, _ = self.peers[rank]

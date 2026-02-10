@@ -18,7 +18,8 @@
 import torch
 from multiworld.communicator import WorldCommunicator
 
-from infscale.execution.control import MSG_MODE_ACK, Channel, ControlMessage
+from infscale.common.constants import EVICT_SEQNO_KEY
+from infscale.execution.control import MSG_MODE_ACK, MSG_MODE_EVICT, Channel, ControlMessage
 
 
 class TensorSender:
@@ -53,6 +54,10 @@ class TensorSender:
         for _, tensor in tensors.items():
             await self.communicator.send(tensor, self.rank, self.world_name)
 
+    async def send_evict(self, seqno: int) -> None:
+        """Send evict control message (no tensor data). Receiver should evict KV cache for seqno."""
+        await self.channel.sync(self.rank, mode=MSG_MODE_EVICT, seqno=seqno)
+
     def is_broken(self) -> bool:
         """Check if world is broken or not."""
         return self.communicator.is_broken(self.world_name)
@@ -82,11 +87,18 @@ class TensorReceiver:
         """Receive tensors from source rank.
 
         seqno: the seqno of a tensor; will be used to keep track of tensors
-        traversing a pipeline
+        traversing a pipeline.
+
+        When the control message has evict=True, returns a sentinel dict
+        {EVICT_SEQNO_KEY: seqno} and no tensor data (caller should evict cache and optionally forward).
         """
         # to minimize the overhead of busy-waiting by communicator's operations
         # we coordinate send/recv via control channel
         ctrl_msg: ControlMessage = await self.channel.sync(self.rank, mode=MSG_MODE_ACK)
+
+        if ctrl_msg.evict:
+            return {EVICT_SEQNO_KEY: ctrl_msg.seqno}, ctrl_msg.seqno
+
         if not ctrl_msg.ditto:
             # since there is change in tensor format, reallocate buffer
             self.buffer = {}
