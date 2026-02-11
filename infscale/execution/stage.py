@@ -29,6 +29,7 @@ from torch.nn import Parameter
 from transformers import DynamicCache
 
 from infscale import get_logger
+from infscale.common.constants import EVICT_SEQNO_KEY
 from infscale.module.model_metadata import Llama3ModelMetaData
 from infscale.module.modelir import ModelIR
 
@@ -271,6 +272,14 @@ class Stage(nn.Module):
         2nd value: contains an index of layer that the results need to go back.
                    -1 means that the results goes back to the serving server.
         """
+        next_layer = -1 if self.is_last else self.end + 1
+
+        # Explicit evict (LLM-only): evict KV cache and forward sentinel
+        if EVICT_SEQNO_KEY in inputs:
+            if seqno in self.caches:
+                del self.caches[seqno]
+            return ({EVICT_SEQNO_KEY: seqno}, next_layer)
+
         # Update adaptive timeout based on inter-arrival pattern
         self._update_adaptive_timeout()
 
@@ -293,12 +302,10 @@ class Stage(nn.Module):
         # a better way to handle this
         outputs.pop("past_key_values", None)
 
-        next_layer = -1 if self.is_last else self.end + 1
-
         return outputs, next_layer
 
     def predict(self, seqno: int, **inputs) -> tuple[dict[str, Tensor], int]:
-        """Coduct inference."""
+        """Conduct inference."""
         if isinstance(self.modelir.mmd, Llama3ModelMetaData):
             # do generation; needs multiple passes of the layers in a stateful manner
             # we have to maintain the state

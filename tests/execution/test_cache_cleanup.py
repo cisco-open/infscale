@@ -23,6 +23,7 @@ import pytest
 import torch
 from transformers import DynamicCache
 
+from infscale.common.constants import EVICT_SEQNO_KEY
 from infscale.execution.stage import Stage
 from infscale.module.model_metadata import Llama3ModelMetaData
 from infscale.module.modelir import ModelIR
@@ -226,6 +227,29 @@ def test_ema_smoothing(stage):
     # EMA should have increased but not doubled (due to smoothing)
     assert stage.ema_inter_arrival > first_ema
     assert stage.ema_inter_arrival < first_ema * 2
+
+
+def test_explicit_evict_removes_cache_and_returns_sentinel(stage):
+    """Test that explicit evict control (EVICT_SEQNO_KEY) evicts cache and returns sentinel with next_layer."""
+    stage._run_llm = Mock(return_value={"output": torch.tensor([1.0])})
+    stage._llm_generate(99, input_ids=torch.tensor([[1, 2, 3]]))
+    assert 99 in stage.caches
+
+    outputs, next_layer = stage.predict(99, **{EVICT_SEQNO_KEY: 99})
+
+    assert 99 not in stage.caches
+    assert outputs == {EVICT_SEQNO_KEY: 99}
+    assert next_layer == -1  # stage is last (end=9, len(layers)=10)
+
+
+def test_explicit_evict_no_op_when_cache_missing(stage):
+    """Test that explicit evict is a no-op when seqno is not in cache."""
+    assert 42 not in stage.caches
+
+    outputs, next_layer = stage.predict(42, **{EVICT_SEQNO_KEY: 42})
+
+    assert outputs == {EVICT_SEQNO_KEY: 42}
+    assert next_layer == -1
 
 
 def test_no_cache_leak_with_replicas(stage):
