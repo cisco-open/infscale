@@ -5,11 +5,11 @@ nfaults: 1
 # the following entries are for local development only
 # after development is done, they need to be revised accordingly
 # to automate building flow_graph, etc.
-micro_batch_size: 1
+micro_batch_size: 2
 fwd_policy: "static"
 job_id: "job5"
 # maximum number of requests in flight at any given point in time
-max_inflight: 1
+max_inflight: 4
 
 flow_graph:
   s-0:
