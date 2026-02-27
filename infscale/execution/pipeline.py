@@ -247,6 +247,7 @@ class Pipeline:
             end=spec.stage.end,
             device=self._device,
             max_inflight=self.max_inflight,
+            idle_cache_cleanup=self._idle_cache_cleanup,
         )
 
     async def _wait_tx_permission(self):
@@ -453,6 +454,7 @@ class Pipeline:
     def _configure_variables(self, spec: ServeConfig) -> None:
         """Set variables that need to be updated."""
         self.max_inflight = spec.max_inflight
+        self._idle_cache_cleanup = spec.idle_cache_cleanup
 
     def _initialize_once(self, spec: ServeConfig) -> None:
         if self._initialized:
