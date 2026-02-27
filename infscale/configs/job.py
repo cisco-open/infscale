@@ -124,6 +124,8 @@ class ServeConfig:
     # maximum number of requests in flight at any given point in time
     max_inflight: int = 1
 
+    idle_cache_cleanup: bool = False
+
     is_server: bool = False
 
     force_terminate: bool = False
@@ -241,6 +243,7 @@ class JobConfig:
     micro_batch_size: int = 8
     fwd_policy: str = "random"
     max_inflight: int = 1
+    idle_cache_cleanup: bool = False
     force_terminate: bool = False
 
     # this will be set by controller  based on its configuration
@@ -338,6 +341,7 @@ class JobConfig:
                 "workers_stage_info": workers_stage_info,
                 "job_id": self.job_id,
                 "max_inflight": self.max_inflight,
+                "idle_cache_cleanup": self.idle_cache_cleanup,
                 "is_server": item.is_server,
                 "reqgen_config": self.reqgen_config,
                 "force_terminate": self.force_terminate,

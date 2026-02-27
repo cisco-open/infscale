@@ -58,6 +58,7 @@ class Stage(nn.Module):
         end: int,
         device: torch.device = torch.device("cpu"),
         max_inflight: int = 1,
+        idle_cache_cleanup: bool = False,
     ):
         """Initialize stage class instance."""
         super().__init__()
@@ -65,6 +66,7 @@ class Stage(nn.Module):
         logger = get_logger()
 
         self.id = stage_id
+        self.idle_cache_cleanup = idle_cache_cleanup
 
         self.modelir = modelir
 
@@ -308,11 +310,9 @@ class Stage(nn.Module):
                     torch.cuda.empty_cache()
             return ({EVICT_SEQNO_KEY: seqno}, next_layer)
 
-        # Update adaptive timeout based on inter-arrival pattern
-        self._update_adaptive_timeout()
-
-        # Periodic cleanup of idle caches
-        self._cleanup_idle_caches()
+        if self.idle_cache_cleanup:
+            self._update_adaptive_timeout()
+            self._cleanup_idle_caches()
 
         # Get or create cache with timestamp
         current_time = time.time()
